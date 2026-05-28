@@ -1,0 +1,6 @@
+@pool_hub_HostAddress = http://localhost:5128
+
+GET {{pool_hub_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
