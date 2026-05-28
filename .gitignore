@@ -1,1 +1,32 @@
+# Visual Studio
 .vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# .NET / NuGet
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+*.cache
+
+# Local environment files
+.env
+.env.*
+!.env.example

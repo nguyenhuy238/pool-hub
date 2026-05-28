@@ -1,0 +1,1871 @@
+openapi: 3.0.3
+info:
+  title: PoolHub Entertainment Center Management API
+  description: |-
+    Đặc tả hệ thống RESTful API cho **PoolHub - Hệ thống quản lý trung tâm giải trí bi-a và dịch vụ** phục vụ môn học **PRN232 - Tuần 2**.
+    
+    Tài liệu này định nghĩa 100% tất cả các endpoint nghiệp vụ thực tế khớp với file thiết kế **Analysis PoolHub.xlsx**, hỗ trợ phân quyền truy cập chặt chẽ (Guest, Staff, Manager, Admin) và mô hình phản hồi JSON chuẩn hóa.
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local Development Server
+paths:
+  # ==========================================
+  # MODULE 1: AUTHENTICATION & SETTINGS
+  # ==========================================
+  /auth/register:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Đăng ký nhân viên (Admin Only)
+      description: Tạo tài khoản nhân viên mới (Staff hoặc Manager) dưới quyền quản trị viên Admin.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Đăng ký thành công tài khoản
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Dữ liệu đầu vào không hợp lệ hoặc bị trùng username/email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Chưa xác thực token JWT
+        '403':
+          description: Không đủ quyền Admin
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Đăng nhập hệ thống (Public)
+      description: Xác thực thông tin đăng nhập và trả về JWT Access Token để sử dụng các API bảo mật.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Sai email hoặc mật khẩu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Đăng xuất hệ thống
+      description: Vô hiệu hóa access token và xóa JWT token lưu ở cookie.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Đăng xuất thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đăng xuất thành công.
+
+  /auth/refresh-token:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Làm mới access token
+      description: Tạo access token mới sử dụng refresh token hợp lệ.
+      responses:
+        '200':
+          description: Tạo token mới thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accessToken:
+                        type: string
+                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication & Settings
+      summary: Lấy profile người dùng hiện tại
+      description: Trả về thông tin chi tiết người dùng đang đăng nhập dựa trên JWT token được gửi kèm.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lấy profile thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Token không hợp lệ hoặc hết hạn
+
+  /auth/change-password:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Đổi mật khẩu tài khoản
+      description: Cho phép người dùng đang đăng nhập thay đổi mật khẩu của mình.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Đổi mật khẩu thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đổi mật khẩu thành công.
+        '400':
+          description: Mật khẩu cũ không chính xác hoặc mật khẩu mới quá ngắn
+
+  /settings/pricing:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Tạo cấu hình giá giờ chơi (Admin Only)
+      description: Thiết lập bảng giá theo loại bàn bi-a và khung giờ phục vụ trong ngày.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingConfigRequest'
+      responses:
+        '201':
+          description: Tạo cấu hình giá thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingConfigResponse'
+    get:
+      tags:
+        - Authentication & Settings
+      summary: Xem danh sách cấu hình giá bàn
+      description: Trả về danh sách cấu hình giá bàn theo giờ đang áp dụng.
+      responses:
+        '200':
+          description: Lấy danh sách thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PricingConfigResponse'
+
+  /settings/pricing/{id}:
+    put:
+      tags:
+        - Authentication & Settings
+      summary: Cập nhật cấu hình giá giờ (Admin Only)
+      description: Chỉnh sửa lại khung giờ và đơn giá đã cài đặt.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 10
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingConfigRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingConfigResponse'
+    delete:
+      tags:
+        - Authentication & Settings
+      summary: Xóa cấu hình giá (Admin Only)
+      description: Xóa cấu hình giá khỏi hệ thống.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 10
+      responses:
+        '200':
+          description: Xóa thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Cấu hình giá đã được xóa.
+
+  /promotions:
+    post:
+      tags:
+        - Authentication & Settings
+      summary: Tạo chương trình Happy Hour / Khuyến mãi (Admin Only)
+      description: Thiết lập mã giảm giá hoặc giảm giá trực tiếp theo khung giờ thấp điểm.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromotionRequest'
+      responses:
+        '201':
+          description: Tạo chương trình thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionResponse'
+    get:
+      tags:
+        - Authentication & Settings
+      summary: Lấy danh sách khuyến mãi đang chạy
+      description: Xem các khuyến mãi đang hoạt động của trung tâm giải trí.
+      responses:
+        '200':
+          description: Lấy danh sách thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromotionResponse'
+
+  # ==========================================
+  # MODULE 2: TABLE & SESSION
+  # ==========================================
+  /tables:
+    post:
+      tags:
+        - Table & Session
+      summary: Thêm bàn chơi mới (Admin Only)
+      description: Thêm bàn bi-a mới vào hệ thống (số bàn, loại bàn, zone, đơn giá giờ).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTableRequest'
+      responses:
+        '201':
+          description: Tạo bàn thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableItem'
+    get:
+      tags:
+        - Table & Session
+      summary: Xem danh sách tất cả các bàn bi-a
+      description: Trả về danh sách bàn bi-a, hỗ trợ lọc theo khu vực (zone), loại bàn, trạng thái.
+      responses:
+        '200':
+          description: Tải danh sách bàn chơi thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TableItem'
+
+  /tables/{id}:
+    get:
+      tags:
+        - Table & Session
+      summary: Xem chi tiết một bàn bi-a
+      description: Trả về thông tin chi tiết cấu hình của bàn chơi.
+      responses:
+        '200':
+          description: Tải chi tiết bàn thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableItem'
+    put:
+      tags:
+        - Table & Session
+      summary: Cập nhật thông tin bàn chơi (Admin Only)
+      description: Sửa thông tin bàn, khu vực gán, loại bàn, đơn giá.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTableRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableItem'
+    delete:
+      tags:
+        - Table & Session
+      summary: Xóa bàn bi-a (Admin Only)
+      description: Xóa bàn bi-a khỏi hệ thống (chỉ được xóa khi bàn không ở trạng thái bận InUse).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Xóa thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Bàn chơi đã được xóa thành công.
+
+  /tables/floor-map:
+    get:
+      tags:
+        - Table & Session
+      summary: Tải sơ đồ bàn trực quan real-time (Floor Map)
+      description: Trả về trạng thái thời gian thực các bàn để phục vụ hiển thị sơ đồ bàn cho thu ngân.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Tải sơ đồ bàn chơi thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FloorMapItem'
+
+  /tables/{id}/maintenance:
+    patch:
+      tags:
+        - Table & Session
+      summary: Chuyển đổi trạng thái Bảo trì bàn chơi (Staff, Manager, Admin)
+      description: Bật/tắt trạng thái bảo trì cho bàn chơi khi cần sửa chữa bàn.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 3
+      responses:
+        '200':
+          description: Thay đổi trạng thái thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Bàn chơi đã được chuyển sang trạng thái bảo trì (Maintenance).
+
+  /sessions/start:
+    post:
+      tags:
+        - Table & Session
+      summary: Mở bàn chơi (Bắt đầu phiên chơi) (Staff, Manager, Admin)
+      description: Khởi chạy một phiên hoạt động mới cho bàn trống khi khách vào chơi bi-a.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tableId
+              properties:
+                tableId:
+                  type: integer
+                  example: 1
+      responses:
+        '201':
+          description: Bắt đầu phiên chơi thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStartResponse'
+        '400':
+          description: Bàn bi-a đang được sử dụng hoặc đang trong trạng thái bảo trì
+
+  /sessions/{sessionId}/end:
+    post:
+      tags:
+        - Table & Session
+      summary: Đóng bàn chơi & Tính tiền giờ (Staff, Manager, Admin)
+      description: Kết thúc phiên chơi, tự động tính tổng phút hoạt động và quy đổi tiền giờ theo khung giờ vàng.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ses_a1b2c3d4
+      responses:
+        '200':
+          description: Kết thúc phiên chơi và chốt tiền giờ thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionEndResponse'
+
+  /sessions/{sessionId}/switch:
+    post:
+      tags:
+        - Table & Session
+      summary: Chuyển đổi bàn chơi (Staff, Manager, Admin)
+      description: Chuyển khách sang bàn chơi trống khác mà vẫn bảo lưu và tiếp nối thời gian tính giờ của phiên chơi cũ.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ses_a1b2c3d4
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - targetTableId
+              properties:
+                targetTableId:
+                  type: integer
+                  example: 2
+      responses:
+        '200':
+          description: Chuyển bàn thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Chuyển khách thành công từ Bàn 01 sang Bàn 02.
+
+  # ==========================================
+  # MODULE 3: BOOKING & ORDER
+  # ==========================================
+  /bookings:
+    post:
+      tags:
+        - Booking & Order
+      summary: Đặt bàn trước (Guest)
+      description: Cho phép khách hàng đặt lịch hẹn giữ bàn trước qua ứng dụng Web (chọn ngày, giờ, loại bàn bi-a).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      responses:
+        '201':
+          description: Đăng ký đặt lịch thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+    get:
+      tags:
+        - Booking & Order
+      summary: Danh sách đặt lịch hệ thống (Staff, Manager)
+      description: Xem toàn bộ danh sách đặt bàn của khách để thu ngân xác thực hoặc chuẩn bị bàn.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lấy danh sách thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BookingResponse'
+
+  /bookings/me:
+    get:
+      tags:
+        - Booking & Order
+      summary: Lịch sử đặt lịch của khách hàng
+      description: Cho phép khách hàng đang đăng nhập xem lại danh sách bàn bi-a mình đã đặt trước.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Tải lịch sử thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BookingResponse'
+
+  /bookings/{id}/confirm:
+    post:
+      tags:
+        - Booking & Order
+      summary: Xác nhận lịch đặt bàn (Staff, Manager)
+      description: Nhân viên duyệt xác thực giữ bàn chơi cho khách hàng.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: bk_e5f6g7h8
+      responses:
+        '200':
+          description: Xác nhận đặt lịch thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đơn đặt bàn đã được xác nhận thành công.
+
+  /bookings/{id}/cancel:
+    post:
+      tags:
+        - Booking & Order
+      summary: Hủy lịch đặt bàn
+      description: Hủy đơn đặt giữ bàn của khách hàng (hỗ trợ hoàn tiền cọc nếu có cấu hình).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: bk_e5f6g7h8
+      responses:
+        '200':
+          description: Hủy đơn thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đơn đặt bàn đã được hủy bỏ thành công.
+
+  /bookings/auto-release:
+    post:
+      tags:
+        - Booking & Order
+      summary: Tự động giải phóng bàn trễ hẹn (System Trigger)
+      description: Hệ thống tự quét quét các lịch đặt bàn quá hạn 15 phút mà khách không đến nhận bàn để auto-hủy, giải phóng bàn chơi.
+      responses:
+        '200':
+          description: Thực hiện thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đã tự động giải phóng 2 bàn trễ hẹn thành công.
+
+  /products:
+    post:
+      tags:
+        - Booking & Order
+      summary: Thêm sản phẩm/dịch vụ mới (Admin Only)
+      description: Thêm đồ uống, đồ ăn nhẹ hoặc dịch vụ bổ sung vào thực đơn trung tâm bi-a.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductRequest'
+      responses:
+        '201':
+          description: Thêm sản phẩm thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+    get:
+      tags:
+        - Booking & Order
+      summary: Danh sách menu đồ uống & dịch vụ
+      description: Lấy danh sách thực đơn đồ uống và dịch vụ bổ sung theo danh mục (hỗ trợ phân trang).
+      responses:
+        '200':
+          description: Tải thực đơn thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductResponse'
+
+  /products/{id}:
+    put:
+      tags:
+        - Booking & Order
+      summary: Cập nhật sản phẩm trong menu (Admin Only)
+      description: Sửa tên sản phẩm, hình ảnh, đơn giá, số lượng tồn kho.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 101
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+    delete:
+      tags:
+        - Booking & Order
+      summary: Xóa sản phẩm khỏi thực đơn (Admin Only)
+      description: Gỡ sản phẩm khỏi thực đơn bi-a.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 101
+      responses:
+        '200':
+          description: Xóa thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Sản phẩm đã được gỡ bỏ khỏi thực đơn.
+
+  /sessions/{sessionId}/orders:
+    get:
+      tags:
+        - Booking & Order
+      summary: Xem danh sách đồ uống đã gọi của bàn chơi
+      description: Lấy danh sách toàn bộ các món uống, đồ ăn nhẹ được order tại bàn chơi hiện hành.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ses_a1b2c3d4
+      responses:
+        '200':
+          description: Tải danh sách order thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productName:
+                          type: string
+                          example: Bia Heineken
+                        quantity:
+                          type: integer
+                          example: 5
+                        price:
+                          type: number
+                          example: 25000.0
+
+  /orders/{orderId}/items/{itemId}:
+    put:
+      tags:
+        - Booking & Order
+      summary: Cập nhật số lượng món đã gọi (Staff, Manager)
+      description: Thay đổi tăng/giảm số lượng hoặc xóa bỏ món uống trước khi tiến hành thanh toán hóa đơn.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ord_z1y2x3w4
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - quantity
+              properties:
+                quantity:
+                  type: integer
+                  example: 3
+      responses:
+        '200':
+          description: Cập nhật số lượng món thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đã cập nhật số lượng món uống thành công.
+
+  /orders/{orderId}/status:
+    patch:
+      tags:
+        - Booking & Order
+      summary: Cập nhật trạng thái chế biến món (Staff, Manager)
+      description: Theo dõi quy trình hoàn thiện món nước từ Bar/Bếp (Đang pha, Đã phục vụ, Hủy món).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ord_z1y2x3w4
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [Pending, Preparing, Served, Cancelled]
+                  example: Served
+      responses:
+        '200':
+          description: Cập nhật trạng thái chế biến thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      orderId:
+                        type: string
+                        example: ord_z1y2x3w4
+                      status:
+                        type: string
+                        example: Served
+
+  /inventory/imports:
+    post:
+      tags:
+        - Booking & Order
+      summary: Nhập hàng vào kho (Manager, Admin)
+      description: Lưu trữ thông tin số lượng sản phẩm nhập kho thực tế, đơn giá nhập.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockImportRequest'
+      responses:
+        '201':
+          description: Nhập kho sản phẩm thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockImportResponse'
+
+  /inventory/status:
+    get:
+      tags:
+        - Booking & Order
+      summary: Kiểm tra mức độ tồn kho sản phẩm (Manager, Admin)
+      description: Trả về số lượng tồn kho của các đồ uống trong hệ thống.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lấy thông tin thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productId:
+                          type: integer
+                          example: 101
+                        productName:
+                          type: string
+                          example: Bia Heineken
+                        currentStock:
+                          type: integer
+                          example: 145
+
+  /inventory/alerts:
+    get:
+      tags:
+        - Booking & Order
+      summary: Danh sách cảnh báo tồn kho thấp (Staff, Manager, Admin)
+      description: Liệt kê các sản phẩm chạm/dưới ngưỡng tồn kho tối thiểu cần phải nhập hàng thêm.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lấy danh sách thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productId:
+                          type: integer
+                          example: 101
+                        productName:
+                          type: string
+                          example: Bia Heineken
+                        currentStock:
+                          type: integer
+                          example: 5
+                        minimumThreshold:
+                          type: integer
+                          example: 15
+
+  # ==========================================
+  # MODULE 4: INVOICE & PAYMENT
+  # ==========================================
+  /invoices:
+    post:
+      tags:
+        - Invoice & Payment
+      summary: Tạo hóa đơn thanh toán khi đóng phiên (Staff, Manager, Admin)
+      description: Hệ thống tự chốt phiên chơi, tính tổng tiền giờ + nước để tạo bản ghi hóa đơn nháp.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sessionId
+              properties:
+                sessionId:
+                  type: string
+                  example: ses_a1b2c3d4
+      responses:
+        '201':
+          description: Tạo hóa đơn nháp thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      invoiceId:
+                        type: string
+                        example: inv_v9u8t7s6
+                      sessionId:
+                        type: string
+                        example: ses_a1b2c3d4
+                      totalPayable:
+                        type: number
+                        example: 330000.0
+
+  /invoices/{invoiceId}:
+    get:
+      tags:
+        - Invoice & Payment
+      summary: Xem chi tiết một hóa đơn lưu trữ
+      description: Xem lại hóa đơn cũ đã thanh toán cùng đầy đủ tiền giờ, danh sách đồ uống gọi đi kèm.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: inv_v9u8t7s6
+      responses:
+        '200':
+          description: Tải hóa đơn thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+
+  /invoices/{invoiceId}/export-pdf:
+    get:
+      tags:
+        - Invoice & Payment
+      summary: In hóa đơn thanh toán / Xuất PDF (Staff, Manager, Admin)
+      description: Trả về file PDF hóa đơn chính thức để in bill gửi trực tiếp cho khách hàng.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: inv_v9u8t7s6
+      responses:
+        '200':
+          description: Trả về luồng file PDF chuyên nghiệp
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  # ==========================================
+  # MODULE 5: DASHBOARD & REPORT
+  # ==========================================
+  /reports/revenue:
+    get:
+      tags:
+        - Dashboard & Report
+      summary: Báo cáo doanh thu thời gian (Manager, Admin)
+      description: Truy xuất tổng doanh thu trong ngày, tuần, tháng (hỗ trợ lọc đa chiều).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "2026-05-01"
+        - name: endDate
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "2026-05-24"
+      responses:
+        '200':
+          description: Tải báo cáo doanh thu thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      totalRevenue:
+                        type: number
+                        example: 245000000.0
+                      playTimeRevenue:
+                        type: number
+                        example: 180000000.0
+                      beverageRevenue:
+                        type: number
+                        example: 65000000.0
+
+  /reports/revenue/export:
+    get:
+      tags:
+        - Dashboard & Report
+      summary: Xuất dữ liệu báo cáo ra Excel (Manager, Admin)
+      description: Kết xuất dữ liệu doanh thu chi tiết ra file Excel phục vụ kiểm toán nội bộ.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Trả về File Excel luồng nhị phân
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /reports/tables:
+    get:
+      tags:
+        - Dashboard & Report
+      summary: Thống kê hiệu suất sử dụng bàn chơi (Manager, Admin)
+      description: Báo cáo bàn chơi chạy nhiều nhất, công suất sử dụng từng bàn và tổng thời gian phục vụ.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Tải báo cáo hiệu suất bàn thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tableName:
+                          type: string
+                          example: Bàn 02
+                        totalHoursUsed:
+                          type: number
+                          example: 154.5
+                        occupancyPercentage:
+                          type: number
+                          example: 72.4
+
+  /reports/products:
+    get:
+      tags:
+        - Dashboard & Report
+      summary: Báo cáo top sản phẩm bán chạy (Manager, Admin)
+      description: Thống kê các đồ ăn uống được order nhiều nhất và tỷ suất đóng góp doanh thu theo danh mục.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Tải báo cáo bán chạy thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productName:
+                          type: string
+                          example: Bia Heineken
+                        quantitySold:
+                          type: integer
+                          example: 450
+                        totalRevenueGenerated:
+                          type: number
+                          example: 11250000.0
+
+  /system/alerts:
+    get:
+      tags:
+        - Dashboard & Report
+      summary: Danh sách cảnh báo thông minh toàn hệ thống (Staff, Manager, Admin)
+      description: Cảnh báo real-time khi bàn bi-a hoạt động quá 4 tiếng liên tục chưa chốt, hoặc kho sản phẩm cạn kiệt.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Tải các thông báo thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alertType:
+                          type: string
+                          example: TimeLimitExceeded
+                        target:
+                          type: string
+                          example: Bàn 02
+                        message:
+                          type: string
+                          example: Bàn đã chạy liên tục 4h 15m! Hãy đối soát khách!
+
+  /extend/game-center:
+    post:
+      tags:
+        - Dashboard & Report
+      summary: Tích hợp thiết bị mở rộng / Game Center (Admin Only)
+      description: Đăng ký thiết bị chơi game, phòng máy PS5 hoặc khu vực giải trí bổ trợ hoạt động chung cấu trúc bàn bi-a.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - deviceName
+                - deviceType
+                - hourlyRate
+              properties:
+                deviceName:
+                  type: string
+                  example: Máy PS5 - Phòng 01
+                deviceType:
+                  type: string
+                  example: GameConsole
+                hourlyRate:
+                  type: number
+                  example: 50000.0
+      responses:
+        '201':
+          description: Đăng ký thành công thiết bị mở rộng
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Đã tích hợp mở rộng máy game center thành công.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - fullName
+        - password
+        - role
+      properties:
+        username:
+          type: string
+          example: staff_nguyena
+        email:
+          type: string
+          example: nguyena@poolhub.vn
+        fullName:
+          type: string
+          example: Nguyen Van A
+        phone:
+          type: string
+          example: "0987654321"
+        password:
+          type: string
+          example: Password123@
+        role:
+          type: string
+          enum: [Staff, Manager, Admin]
+          example: Staff
+
+    RegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Đăng ký tài khoản nhân viên thành công.
+        data:
+          type: object
+          properties:
+            userId:
+              type: string
+              example: usr_9f8e7d6c
+            username:
+              type: string
+              example: staff_nguyena
+            email:
+              type: string
+              example: nguyena@poolhub.vn
+            role:
+              type: string
+              example: Staff
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          example: nguyena@poolhub.vn
+        password:
+          type: string
+          example: StrongPassword123@
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Đăng nhập thành công.
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            expiresIn:
+              type: integer
+              example: 28800
+            user:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  example: usr_9f8e7d6c
+                fullName:
+                  type: string
+                  example: Nguyen Van A
+                email:
+                  type: string
+                  example: nguyena@poolhub.vn
+                role:
+                  type: string
+                  example: Staff
+
+    UserProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            userId:
+              type: string
+              example: usr_9f8e7d6c
+            fullName:
+              type: string
+              example: Nguyen Van A
+            email:
+              type: string
+              example: nguyena@poolhub.vn
+            role:
+              type: string
+              example: Staff
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - oldPassword
+        - newPassword
+      properties:
+        oldPassword:
+          type: string
+          example: OldPassword123@
+        newPassword:
+          type: string
+          example: NewPassword123@
+
+    PricingConfigRequest:
+      type: object
+      required:
+        - tableType
+        - startTime
+        - endTime
+        - hourlyRate
+      properties:
+        tableType:
+          type: string
+          example: 9-Ball
+        startTime:
+          type: string
+          example: "17:00:00"
+        endTime:
+          type: string
+          example: "22:00:00"
+        hourlyRate:
+          type: number
+          example: 120000.0
+        isGoldenHour:
+          type: boolean
+          example: true
+
+    PricingConfigResponse:
+      type: object
+      properties:
+        pricingId:
+          type: integer
+          example: 10
+        tableType:
+          type: string
+          example: 9-Ball
+        startTime:
+          type: string
+          example: "17:00:00"
+        endTime:
+          type: string
+          example: "22:00:00"
+        hourlyRate:
+          type: number
+          example: 120000.0
+        isGoldenHour:
+          type: boolean
+          example: true
+
+    PromotionRequest:
+      type: object
+      required:
+        - promoName
+        - discountPercentage
+        - startTime
+        - endTime
+      properties:
+        promoName:
+          type: string
+          example: Happy Hour Thứ 4 Vui Vẻ
+        discountPercentage:
+          type: number
+          example: 15.0
+        startTime:
+          type: string
+          example: "2026-05-24T14:00:00Z"
+        endTime:
+          type: string
+          example: "2026-05-24T17:00:00Z"
+
+    PromotionResponse:
+      type: object
+      properties:
+        promoId:
+          type: integer
+          example: 1
+        promoName:
+          type: string
+          example: Happy Hour Thứ 4 Vui Vẻ
+        discountPercentage:
+          type: number
+          example: 15.0
+        status:
+          type: string
+          example: Active
+
+    CreateTableRequest:
+      type: object
+      required:
+        - tableName
+        - zone
+        - tableType
+      properties:
+        tableName:
+          type: string
+          example: Bàn VIP 09
+        zone:
+          type: string
+          example: Khu VIP
+        tableType:
+          type: string
+          example: 9-Ball
+        hourlyRate:
+          type: number
+          example: 150000.0
+
+    TableItem:
+      type: object
+      properties:
+        tableId:
+          type: integer
+          example: 1
+        tableName:
+          type: string
+          example: Bàn 01
+        zone:
+          type: string
+          example: Khu A VIP
+        tableType:
+          type: string
+          example: 9-Ball
+        hourlyRate:
+          type: number
+          example: 120000.0
+        status:
+          type: string
+          example: Available
+
+    FloorMapItem:
+      type: object
+      properties:
+        tableId:
+          type: integer
+          example: 1
+        tableName:
+          type: string
+          example: Bàn 01
+        zone:
+          type: string
+          example: Khu A VIP
+        tableType:
+          type: string
+          example: 9-Ball
+        hourlyRate:
+          type: number
+          example: 120000.0
+        status:
+          type: string
+          example: InUse
+        currentSession:
+          type: object
+          nullable: true
+          properties:
+            sessionId:
+              type: string
+              example: ses_a1b2c3d4
+            startTime:
+              type: string
+              example: "2026-05-24T16:15:00Z"
+
+    SessionStartResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Mở bàn thành công.
+        data:
+          type: object
+          properties:
+            sessionId:
+              type: string
+              example: ses_a1b2c3d4
+            tableId:
+              type: integer
+              example: 1
+            startTime:
+              type: string
+              example: "2026-05-24T17:50:00Z"
+            status:
+              type: string
+              example: Active
+
+    SessionEndResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            sessionId:
+              type: string
+              example: ses_a1b2c3d4
+            totalMinutes:
+              type: integer
+              example: 90
+            playTimeCost:
+              type: number
+              example: 180000.0
+            status:
+              type: string
+              example: Ended
+
+    BookingRequest:
+      type: object
+      required:
+        - customerName
+        - phone
+        - bookingDate
+        - bookingTime
+        - tableType
+      properties:
+        customerName:
+          type: string
+          example: Tran Van B
+        phone:
+          type: string
+          example: "0912345678"
+        bookingDate:
+          type: string
+          example: "2026-05-25"
+        bookingTime:
+          type: string
+          example: "19:30:00"
+        tableType:
+          type: string
+          example: 9-Ball
+
+    BookingResponse:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          example: bk_e5f6g7h8
+        customerName:
+          type: string
+          example: Tran Van B
+        phone:
+          type: string
+          example: "0912345678"
+        bookingDateTime:
+          type: string
+          example: "2026-05-25T19:30:00Z"
+        tableType:
+          type: string
+          example: 9-Ball
+        status:
+          type: string
+          example: Pending
+
+    ProductRequest:
+      type: object
+      required:
+        - productName
+        - category
+        - price
+      properties:
+        productName:
+          type: string
+          example: Cà Phê Sữa Đá
+        category:
+          type: string
+          example: Cafe
+        price:
+          type: number
+          example: 29000.0
+        stockQuantity:
+          type: integer
+          example: 50
+
+    ProductResponse:
+      type: object
+      properties:
+        productId:
+          type: integer
+          example: 102
+        productName:
+          type: string
+          example: Cà Phê Sữa Đá
+        category:
+          type: string
+          example: Cafe
+        price:
+          type: number
+          example: 29000.0
+        stockQuantity:
+          type: integer
+          example: 50
+
+    StockImportRequest:
+      type: object
+      required:
+        - productId
+        - quantityImported
+        - costPrice
+      properties:
+        productId:
+          type: integer
+          example: 101
+        quantityImported:
+          type: integer
+          example: 100
+        costPrice:
+          type: number
+          example: 15000.0
+
+    StockImportResponse:
+      type: object
+      properties:
+        importId:
+          type: integer
+          example: 55
+        productId:
+          type: integer
+          example: 101
+        currentStock:
+          type: integer
+          example: 145
+        importedAt:
+          type: string
+          example: "2026-05-24T18:30:00Z"
+
+    InvoiceDetailResponse:
+      type: object
+      properties:
+        invoiceId:
+          type: string
+          example: inv_v9u8t7s6
+        tableName:
+          type: string
+          example: Bàn 02
+        playTimeCost:
+          type: number
+          example: 180000.0
+        totalOrderCost:
+          type: number
+          example: 135000.0
+        discountAmount:
+          type: number
+          example: 15000.0
+        taxAmount:
+          type: number
+          example: 30000.0
+        totalPayable:
+          type: number
+          example: 330000.0
+        paymentStatus:
+          type: string
+          example: Paid
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Validate dữ liệu thất bại.
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: email
+              message:
+                type: string
+                example: Định dạng email không chính xác.

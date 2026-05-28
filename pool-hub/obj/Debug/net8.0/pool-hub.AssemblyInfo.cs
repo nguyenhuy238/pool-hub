@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("pool-hub")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9c3baeb8ad0e5a6de0eb88ead3a5566df637960f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2cede15e8e734926103196260d31b49cb4e0a443")]
 [assembly: System.Reflection.AssemblyProductAttribute("pool-hub")]
 [assembly: System.Reflection.AssemblyTitleAttribute("pool-hub")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

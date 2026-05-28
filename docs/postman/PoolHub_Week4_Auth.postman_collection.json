@@ -1,0 +1,20 @@
+{
+  "info": {
+    "name": "PoolHub Week4 Auth Demo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {"name":"1 Login admin success","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/login","body":{"mode":"raw","raw":"{\n  \"email\": \"admin@poolhub.com\",\n  \"password\": \"Admin@123\"\n}"}}},
+    {"name":"2 Login wrong password","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/login","body":{"mode":"raw","raw":"{\n  \"email\": \"admin@poolhub.com\",\n  \"password\": \"Wrong@123\"\n}"}}},
+    {"name":"3 Auth me with token","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"}],"url":"{{baseUrl}}/api/auth/me"}},
+    {"name":"4 Auth me without token","request":{"method":"GET","url":"{{baseUrl}}/api/auth/me"}},
+    {"name":"5 Admin create user staff","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"},{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/users","body":{"mode":"raw","raw":"{\n  \"fullName\": \"Staff New\",\n  \"email\": \"staff.new@poolhub.com\",\n  \"password\": \"Staff@123\",\n  \"role\": \"Staff\"\n}"}}},
+    {"name":"6 Staff access admin-only endpoint","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{staffToken}}"}],"url":"{{baseUrl}}/api/roles"}},
+    {"name":"7 Admin access admin-only endpoint","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"}],"url":"{{baseUrl}}/api/roles"}},
+    {"name":"8 Change password success","request":{"method":"PUT","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"},{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/change-password","body":{"mode":"raw","raw":"{\n  \"currentPassword\": \"Admin@123\",\n  \"newPassword\": \"Admin@1234\",\n  \"confirmNewPassword\": \"Admin@1234\"\n}"}}},
+    {"name":"9 Login old password fail","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/login","body":{"mode":"raw","raw":"{\n  \"email\": \"admin@poolhub.com\",\n  \"password\": \"Admin@123\"\n}"}}},
+    {"name":"10 Login new password success","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/login","body":{"mode":"raw","raw":"{\n  \"email\": \"admin@poolhub.com\",\n  \"password\": \"Admin@1234\"\n}"}}},
+    {"name":"11 Refresh token success","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/refresh-token","body":{"mode":"raw","raw":"{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"}}},
+    {"name":"12 Logout revoke refresh token","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"},{"key":"Content-Type","value":"application/json"}],"url":"{{baseUrl}}/api/auth/logout","body":{"mode":"raw","raw":"{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"}}}
+  ]
+}
