@@ -62,9 +62,9 @@ public static class DbSeeder
         db.PricingPlans.Add(plan);
 
         db.ProductCategories.AddRange(
-            new ProductCategory { Name = "Drinks", Code = "DRINK" },
-            new ProductCategory { Name = "Snacks", Code = "SNACK" },
-            new ProductCategory { Name = "Services", Code = "SERVICE" }
+            new ProductCategory { Name = "Drinks", Description = "Soft drinks", DisplayOrder = 1 },
+            new ProductCategory { Name = "Snacks", Description = "Snacks", DisplayOrder = 2 },
+            new ProductCategory { Name = "Services", Description = "Other services", DisplayOrder = 3 }
         );
 
         db.PaymentMethods.AddRange(
@@ -77,7 +77,7 @@ public static class DbSeeder
 
         var tableTypes = await db.TableTypes.OrderBy(x => x.TableTypeId).ToListAsync(ct);
         var zones = await db.Zones.OrderBy(x => x.ZoneId).ToListAsync(ct);
-        var categories = await db.ProductCategories.OrderBy(x => x.CategoryId).ToListAsync(ct);
+        var categories = await db.ProductCategories.OrderBy(x => x.ProductCategoryId).ToListAsync(ct);
 
         db.PricingPlanRules.AddRange(
             new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
@@ -97,8 +97,8 @@ public static class DbSeeder
                 OperationalStatus = 1
             });
 
-            var categoryId = i <= 4 ? categories[0].CategoryId : (i <= 7 ? categories[1].CategoryId : categories[2].CategoryId);
-            db.Products.Add(new Product { CategoryId = categoryId, Name = $"Product {i}", Code = $"P{i:00}", UnitPrice = 10000 + (i * 2000), StockQuantity = 30 });
+            var categoryId = i <= 4 ? categories[0].ProductCategoryId : (i <= 7 ? categories[1].ProductCategoryId : categories[2].ProductCategoryId);
+            db.Products.Add(new Product { ProductCategoryId = categoryId, Name = $"Product {i}", Sku = $"P{i:00}", UnitPrice = 10000 + (i * 2000), StockQuantity = 30 });
         }
 
         await db.SaveChangesAsync(ct);

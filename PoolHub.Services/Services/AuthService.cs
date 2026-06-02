@@ -19,7 +19,7 @@ public class AuthService(PoolHubDbContext db, IOptions<JwtSettings> jwtOptions) 
 {
     private readonly JwtSettings _jwt = jwtOptions.Value;
 
-    public async Task<AuthResponse> RegisterAsync(RegisterRequest request, int? currentUserId, CancellationToken cancellationToken)
+    public async Task<AuthResponse> RegisterAsync(RegisterRequest request, long? currentUserId, CancellationToken cancellationToken)
     {
         if (!RoleConstants.All.Contains(request.Role)) throw new ValidationException("Invalid role.");
         var exists = await db.Users.AnyAsync(x => x.Email == request.Email, cancellationToken);
@@ -55,14 +55,14 @@ public class AuthService(PoolHubDbContext db, IOptions<JwtSettings> jwtOptions) 
         return await BuildAuthResponseAsync(user, cancellationToken);
     }
 
-    public async Task<UserDto> MeAsync(int userId, CancellationToken cancellationToken)
+    public async Task<UserDto> MeAsync(long userId, CancellationToken cancellationToken)
     {
         var user = await db.Users.FindAsync([userId], cancellationToken) ?? throw new NotFoundException("User not found.");
         var roles = await (from ur in db.UserRoles join r in db.Roles on ur.RoleId equals r.RoleId where ur.UserId == userId select r.Name).ToListAsync(cancellationToken);
         return new UserDto { UserId = user.UserId, PublicId = user.PublicId, FullName = user.FullName, Email = user.Email, PhoneNumber = user.PhoneNumber, Status = user.Status, Roles = roles };
     }
 
-    public async Task ChangePasswordAsync(int userId, ChangePasswordRequest request, CancellationToken cancellationToken)
+    public async Task ChangePasswordAsync(long userId, ChangePasswordRequest request, CancellationToken cancellationToken)
     {
         if (request.NewPassword != request.ConfirmNewPassword) throw new ValidationException("Confirm password mismatch.");
         var user = await db.Users.FindAsync([userId], cancellationToken) ?? throw new NotFoundException("User not found.");

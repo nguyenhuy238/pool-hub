@@ -99,8 +99,8 @@ public class ProductsController(IProductService productService, ICrudService cru
 public class SessionsController(ISessionService sessionService) : ControllerBase
 {
     [HttpPost("start")] public async Task<ActionResult<ApiResponse<object>>> Start([FromBody] StartSessionRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await sessionService.StartAsync(User.GetUserId(), request, ct)));
-    [HttpPost("{sessionId:int}/end")] public async Task<ActionResult<ApiResponse<object>>> Close(int sessionId, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await sessionService.CloseAsync(sessionId, ct)));
-    [HttpPost("{sessionId:int}/switch")] public async Task<ActionResult<ApiResponse<object>>> Transfer(int sessionId, [FromBody] TransferTableRequest request, CancellationToken ct) { await sessionService.TransferTableAsync(sessionId, request.NewTableId, ct); return Ok(ApiResponse<object>.Ok(new { }, "Switched")); }
+    [HttpPost("{sessionId:long}/end")] public async Task<ActionResult<ApiResponse<object>>> Close(long sessionId, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await sessionService.CloseAsync(sessionId, User.GetUserId(), ct)));
+    [HttpPost("{sessionId:long}/switch")] public async Task<ActionResult<ApiResponse<object>>> Transfer(long sessionId, [FromBody] TransferTableRequest request, CancellationToken ct) { await sessionService.TransferTableAsync(sessionId, request.NewTableId, User.GetUserId(), ct); return Ok(ApiResponse<object>.Ok(new { }, "Switched")); }
 }
 
 [ApiController]
@@ -117,8 +117,8 @@ public class OrdersController(IOrderService orderService) : ControllerBase
 [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
 public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
 {
-    [HttpPost("generate/{sessionId:int}")] public async Task<ActionResult<ApiResponse<object>>> Generate(int sessionId, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await invoiceService.GenerateFromSessionAsync(sessionId, ct)));
-    [HttpPost("payments")] public async Task<ActionResult<ApiResponse<object>>> Payment([FromBody] CreatePaymentRequest request, CancellationToken ct) { await invoiceService.CreatePaymentAsync(request, ct); return Ok(ApiResponse<object>.Ok(new { }, "Payment created")); }
+    [HttpPost("generate/{sessionId:long}")] public async Task<ActionResult<ApiResponse<object>>> Generate(long sessionId, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await invoiceService.GenerateFromSessionAsync(sessionId, User.GetUserId(), ct)));
+    [HttpPost("payments")] public async Task<ActionResult<ApiResponse<object>>> Payment([FromBody] CreatePaymentRequest request, CancellationToken ct) { await invoiceService.CreatePaymentAsync(request, User.GetUserId(), ct); return Ok(ApiResponse<object>.Ok(new { }, "Payment created")); }
 }
 
 [ApiController]

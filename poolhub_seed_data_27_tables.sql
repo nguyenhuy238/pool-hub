@@ -12,6 +12,8 @@
 ============================================================
 */
 
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
@@ -400,13 +402,13 @@ BEGIN TRY
 
     INSERT INTO order_items (
         order_item_id, order_id, product_id, product_name_snapshot,
-        unit_price_snapshot, quantity, line_total_amount, note
+        unit_price_snapshot, quantity, line_total_amount, note, created_at_utc
     )
     VALUES
-        (1, 1, 1, N'Coca Cola', 15000.0000, 2, 30000.0000, NULL),
-        (2, 1, 3, N'Snack khoai tây', 20000.0000, 1, 20000.0000, NULL),
-        (3, 1, 4, N'Thuê găng tay', 10000.0000, 1, 10000.0000, NULL),
-        (4, 2, 1, N'Coca Cola', 15000.0000, 2, 30000.0000, NULL);
+        (1, 1, 1, N'Coca Cola', 15000.0000, 2, 30000.0000, NULL, SYSUTCDATETIME()),
+        (2, 1, 3, N'Snack khoai tây', 20000.0000, 1, 20000.0000, NULL, SYSUTCDATETIME()),
+        (3, 1, 4, N'Thuê găng tay', 10000.0000, 1, 10000.0000, NULL, SYSUTCDATETIME()),
+        (4, 2, 1, N'Coca Cola', 15000.0000, 2, 30000.0000, NULL, SYSUTCDATETIME());
 
     SET IDENTITY_INSERT order_items OFF;
 

@@ -27,7 +27,7 @@ public class UserService(PoolHubDbContext db) : IUserService
         };
     }
 
-    public async Task<UserDto> GetByIdAsync(int id, CancellationToken cancellationToken)
+    public async Task<UserDto> GetByIdAsync(long id, CancellationToken cancellationToken)
     {
         var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
         var roles = await (from ur in db.UserRoles join r in db.Roles on ur.RoleId equals r.RoleId where ur.UserId == id select r.Name).ToListAsync(cancellationToken);
@@ -46,7 +46,7 @@ public class UserService(PoolHubDbContext db) : IUserService
         return await GetByIdAsync(user.UserId, cancellationToken);
     }
 
-    public async Task<UserDto> UpdateAsync(int id, UpdateUserRequest request, CancellationToken cancellationToken)
+    public async Task<UserDto> UpdateAsync(long id, UpdateUserRequest request, CancellationToken cancellationToken)
     {
         var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
         user.FullName = request.FullName;
@@ -58,7 +58,7 @@ public class UserService(PoolHubDbContext db) : IUserService
         return await GetByIdAsync(id, cancellationToken);
     }
 
-    public async Task UpdateRolesAsync(int id, UpdateUserRoleRequest request, CancellationToken cancellationToken)
+    public async Task UpdateRolesAsync(long id, UpdateUserRoleRequest request, CancellationToken cancellationToken)
     {
         var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
         var roleIds = await db.Roles.Where(x => request.Roles.Contains(x.Name)).Select(x => x.RoleId).ToListAsync(cancellationToken);
@@ -70,7 +70,7 @@ public class UserService(PoolHubDbContext db) : IUserService
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateStatusAsync(int id, bool status, CancellationToken cancellationToken)
+    public async Task UpdateStatusAsync(long id, bool status, CancellationToken cancellationToken)
     {
         var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
         user.Status = status;
