@@ -5,10 +5,19 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using PoolHub.API.Middlewares;
 using PoolHub.Core.DTOs.Auth;
-using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
+using PoolHub.Core.Interfaces.Repositories;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Infrastructure.Repositories;
 using PoolHub.Infrastructure.Data.Seed;
-using PoolHub.Services.Services;
+using PoolHub.Services.Services.Auth;
+using PoolHub.Services.Services.Venue;
+using PoolHub.Services.Services.Booking;
+using PoolHub.Services.Services.Session;
+using PoolHub.Services.Services.Product;
+using PoolHub.Services.Services.Order;
+using PoolHub.Services.Services.Invoice;
+using PoolHub.Services.Services.Audit;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,6 +49,13 @@ builder.Services.AddAuthorization();
 builder.Services.AddDbContext<PoolHubDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddScoped<IVenueRepository, VenueRepository>();
+builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<ISessionRepository, SessionRepository>();
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IVenueService, VenueService>();
@@ -49,7 +65,6 @@ builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<ICrudService, CrudService>();
 
 builder.Services.AddSwaggerGen(c =>
 {

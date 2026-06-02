@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PoolHub.Core.DTOs.Auth;
-using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Extensions;
