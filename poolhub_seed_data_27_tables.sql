@@ -82,10 +82,10 @@ BEGIN TRY
         last_login_at_utc, created_at_utc, updated_at_utc
     )
     VALUES
-        (1, '11111111-1111-1111-1111-111111111111', N'PoolHub Admin',   N'admin@poolhub.local',   N'DEMO_HASH_ADMIN_123',   N'0900000001', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
-        (2, '22222222-2222-2222-2222-222222222222', N'Nguyễn Quản Lý',  N'manager@poolhub.local', N'DEMO_HASH_MANAGER_123', N'0900000002', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
-        (3, '33333333-3333-3333-3333-333333333333', N'Trần Nhân Viên',  N'staff@poolhub.local',   N'DEMO_HASH_STAFF_123',   N'0900000003', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
-        (4, '44444444-4444-4444-4444-444444444444', N'Lê Thu Ngân',     N'cashier@poolhub.local', N'DEMO_HASH_CASHIER_123', N'0900000004', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL);
+        (1, '11111111-1111-1111-1111-111111111111', N'PoolHub Admin',   N'admin@poolhub.local',   N'$2a$12$Ahs/.D69Cz.P2K377Jb8eOZeP4W55IaIhIUmicWwREtqGa7ggMAre', N'0900000001', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
+        (2, '22222222-2222-2222-2222-222222222222', N'Nguyễn Quản Lý',  N'manager@poolhub.local', N'$2a$12$surFTrJVqBrnaBf/y/50SeH342ENq6wBs94y7hGHt056zMSteK2IW', N'0900000002', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
+        (3, '33333333-3333-3333-3333-333333333333', N'Trần Nhân Viên',  N'staff@poolhub.local',   N'$2a$12$eLAs9QmdqQ25QYqMESH6Rehjczu8HXLDLi/RfsIMQT1dmwQ/j2jqO', N'0900000003', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
+        (4, '44444444-4444-4444-4444-444444444444', N'Lê Thu Ngân',     N'cashier@poolhub.local', N'$2a$12$Uqx2RtOx2kTGELQujgemzeWn0i.K9Nk6lHTOt3tGPNohzlTCjWpQa', N'0900000004', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL);
 
     SET IDENTITY_INSERT users OFF;
 
