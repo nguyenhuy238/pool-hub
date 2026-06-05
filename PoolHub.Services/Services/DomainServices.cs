@@ -7,7 +7,7 @@ using PoolHub.Core.DTOs.Product;
 using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.DTOs.Venue;
 using PoolHub.Core.Entities;
-using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;

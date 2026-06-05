@@ -8,7 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.DTOs.Users;
 using PoolHub.Core.Entities;
-using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;

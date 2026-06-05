@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.DTOs.Users;
 using PoolHub.Core.Entities;
-using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;

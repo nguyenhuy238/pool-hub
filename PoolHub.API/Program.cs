@@ -6,6 +6,7 @@ using Microsoft.OpenApi.Models;
 using PoolHub.API.Middlewares;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Infrastructure.Data.Seed;
 using PoolHub.Services.Services;
