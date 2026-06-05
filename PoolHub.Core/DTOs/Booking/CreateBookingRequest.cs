@@ -4,8 +4,12 @@ namespace PoolHub.Core.DTOs.Booking;
 
 public class CreateBookingRequest
 {
-    [Required]
-    public long CustomerId { get; set; }
+    public long? CustomerId { get; set; }
+
+    public string? CustomerName { get; set; }
+    
+    [Phone]
+    public string? PhoneNumber { get; set; }
 
     public long? TableId { get; set; }
     public long? TableTypeId { get; set; }
