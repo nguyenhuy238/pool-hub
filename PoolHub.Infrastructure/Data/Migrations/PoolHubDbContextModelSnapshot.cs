@@ -1539,10 +1539,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("created_at_utc");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit")
-                        .HasColumnName("is_active");
-
                     b.Property<int>("OperationalStatus")
                         .HasColumnType("int")
                         .HasColumnName("operational_status");
