@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 
 namespace PoolHub.API.Controllers;
@@ -7,7 +8,7 @@ namespace PoolHub.API.Controllers;
 [ApiController]
 [Route("api/notifications")]
 [Authorize]
-public class NotificationsController : ControllerBase
+public class NotificationsController(INotificationService notificationService) : ControllerBase
 {
-    [HttpGet] public ActionResult<ApiResponse<object>> Get() => Ok(ApiResponse<object>.Ok(new[] { new { id = 1, title = "Demo notification" } }));
+    [HttpGet] public ActionResult<ApiResponse<object>> Get() => Ok(ApiResponse<object>.Ok(notificationService.GetDemoNotifications()));
 }

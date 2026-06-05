@@ -37,12 +37,3 @@ public class UsersController(IUserService userService) : ControllerBase
     public async Task<ActionResult<ApiResponse<object>>> UpdateStatus(int id, [FromBody] UpdateUserStatusRequest request, CancellationToken ct)
     { await userService.UpdateStatusAsync(id, request.Status, ct); return Ok(ApiResponse<object>.Ok(new { }, "Status updated")); }
 }
-
-[ApiController]
-[Route("api/roles")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
-public class RolesController(IUserService userService) : ControllerBase
-{
-    [HttpGet]
-    public async Task<ActionResult<ApiResponse<object>>> Get(CancellationToken ct) => Ok(ApiResponse<object>.Ok(await userService.GetRolesAsync(ct)));
-}
