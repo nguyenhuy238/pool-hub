@@ -7,7 +7,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 
-namespace PoolHub.Services.Services;
+namespace PoolHub.Services.Users;
 
 public class UserService(PoolHubDbContext db) : IUserService
 {

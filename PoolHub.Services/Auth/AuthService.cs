@@ -13,7 +13,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 
-namespace PoolHub.Services.Services;
+namespace PoolHub.Services.Auth;
 
 public class AuthService(PoolHubDbContext db, IOptions<JwtSettings> jwtOptions) : IAuthService
 {

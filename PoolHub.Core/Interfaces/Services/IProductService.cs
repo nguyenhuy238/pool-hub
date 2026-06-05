@@ -8,5 +8,6 @@ public interface IProductService
 {
     Task<IEnumerable<ProductCategoryDto>> GetCategoriesAsync(CancellationToken ct);
     Task<PagedResult<ProductDto>> GetProductsAsync(PaginationRequest request, CancellationToken ct);
+    Task<ProductDto> GetProductByIdAsync(long id, CancellationToken ct);
     Task<ProductDto> CreateProductAsync(CreateProductRequest request, CancellationToken ct);
 }

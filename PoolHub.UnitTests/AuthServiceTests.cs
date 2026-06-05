@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Entities;
 using PoolHub.Infrastructure.Data;
-using PoolHub.Services.Services;
+using PoolHub.Services.Auth;
 
 namespace PoolHub.UnitTests;
 

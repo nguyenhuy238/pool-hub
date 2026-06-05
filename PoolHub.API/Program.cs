@@ -3,13 +3,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using PoolHub.API.Extensions;
 using PoolHub.API.Middlewares;
 using PoolHub.Core.DTOs.Auth;
-using PoolHub.Core.Interfaces;
-using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Infrastructure.Data.Seed;
-using PoolHub.Services.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,16 +39,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddDbContext<PoolHubDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IVenueService, VenueService>();
-builder.Services.AddScoped<IBookingService, BookingService>();
-builder.Services.AddScoped<IProductService, ProductService>();
-builder.Services.AddScoped<ISessionService, SessionService>();
-builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IInvoiceService, InvoiceService>();
-builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<ICrudService, CrudService>();
+builder.Services.AddPoolHubServices();
 
 builder.Services.AddSwaggerGen(c =>
 {

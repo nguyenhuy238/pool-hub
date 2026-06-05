@@ -1,20 +1,14 @@
 using Microsoft.EntityFrameworkCore;
-using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Common;
-using PoolHub.Core.DTOs.Product;
 using PoolHub.Core.DTOs.Venue;
 using PoolHub.Core.Entities;
-using PoolHub.Core.Interfaces;
-using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 
-namespace PoolHub.Services.Services;
+namespace PoolHub.Services.Common;
 
-public class CrudService(PoolHubDbContext db) : ICrudService
+public partial class CrudService
 {
-    private static PagedResult<T> Page<T>(IReadOnlyCollection<T> items, int page, int size, int total) => new() { Items = items, PageNumber = page, PageSize = size, TotalCount = total };
-
     public async Task<PagedResult<FloorDto>> GetFloorsAsync(PaginationRequest r, CancellationToken ct)
     {
         var q = db.Floors.AsQueryable();
@@ -170,59 +164,6 @@ public class CrudService(PoolHubDbContext db) : ICrudService
     {
         var x = await db.VenueTables.FindAsync([id], ct) ?? throw new NotFoundException("VenueTable not found.");
         db.VenueTables.Remove(x);
-        await db.SaveChangesAsync(ct);
-    }
-
-    public async Task<PagedResult<PricingPlanDto>> GetPricingPlansAsync(PaginationRequest r, CancellationToken ct)
-    {
-        var q = db.PricingPlans.AsQueryable();
-        var t = await q.CountAsync(ct);
-        var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new PricingPlanDto { PricingPlanId = x.PricingPlanId, Name = x.Name, IsDefault = x.IsDefault, IsActive = x.IsActive }).ToListAsync(ct);
-        return Page(i, r.PageNumber, r.PageSize, t);
-    }
-
-    public async Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PaginationRequest r, CancellationToken ct)
-    {
-        var q = db.PricingPlanRules.AsQueryable();
-        var t = await q.CountAsync(ct);
-        var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayOfWeek = x.DayOfWeek, HourlyRate = x.HourlyRate }).ToListAsync(ct);
-        return Page(i, r.PageNumber, r.PageSize, t);
-    }
-
-    public async Task<PagedResult<ProductCategoryDto>> GetProductCategoriesAsync(PaginationRequest r, CancellationToken ct)
-    {
-        var q = db.ProductCategories.AsQueryable();
-        var t = await q.CountAsync(ct);
-        var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new ProductCategoryDto { ProductCategoryId = x.ProductCategoryId, Name = x.Name }).ToListAsync(ct);
-        return Page(i, r.PageNumber, r.PageSize, t);
-    }
-
-    public async Task<ProductCategoryDto> CreateProductCategoryAsync(ProductCategoryDto d, CancellationToken ct)
-    {
-        var x = new ProductCategory { Name = d.Name, IsActive = true };
-        db.ProductCategories.Add(x);
-        await db.SaveChangesAsync(ct);
-        return new ProductCategoryDto { ProductCategoryId = x.ProductCategoryId, Name = x.Name };
-    }
-
-    public async Task<PagedResult<BookingDto>> GetBookingsCrudAsync(PaginationRequest request, CancellationToken ct)
-    {
-        var q = db.Bookings.AsQueryable();
-        var t = await q.CountAsync(ct);
-        var i = await q.Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).Select(x => new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status }).ToListAsync(ct);
-        return Page(i, request.PageNumber, request.PageSize, t);
-    }
-
-    public async Task<BookingDto> GetBookingAsync(long id, CancellationToken ct)
-    {
-        var x = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        return new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status };
-    }
-
-    public async Task DeleteBookingAsync(long id, CancellationToken ct)
-    {
-        var x = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        db.Bookings.Remove(x);
         await db.SaveChangesAsync(ct);
     }
 }
