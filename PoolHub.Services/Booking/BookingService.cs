@@ -5,26 +5,15 @@ using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
-using PoolHub.Shared.Exceptions;
 using EntityBooking = PoolHub.Core.Entities.Booking;
 
 namespace PoolHub.Services.Booking;
 
 public class BookingService(PoolHubDbContext db) : IBookingService
 {
-    public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
+    public async Task<PagedResult<BookingDto>> GetBookingsAsync(PaginationRequest request, CancellationToken ct)
     {
         var query = db.Bookings.AsQueryable();
-
-        if (request.Status.HasValue)
-            query = query.Where(x => x.Status == request.Status.Value);
-        
-        if (request.Date.HasValue)
-            query = query.Where(x => x.StartTimeUtc.Date == request.Date.Value.Date);
-
-        if (request.TableId.HasValue)
-            query = query.Where(x => x.TableId == request.TableId.Value);
-
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.BookingId).Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).Select(x => new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status }).ToListAsync(ct);
         return new PagedResult<BookingDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
@@ -32,79 +21,19 @@ public class BookingService(PoolHubDbContext db) : IBookingService
 
     public async Task<BookingDto> CreateAsync(CreateBookingRequest request, CancellationToken ct)
     {
-        long customerId = 0;
-
-        if (request.CustomerId.HasValue && request.CustomerId > 0)
-        {
-            customerId = request.CustomerId.Value;
-        }
-        else if (!string.IsNullOrEmpty(request.PhoneNumber))
-        {
-            var customer = await db.Customers.FirstOrDefaultAsync(c => c.PhoneNumber == request.PhoneNumber, ct);
-            if (customer != null)
-            {
-                customerId = customer.CustomerId;
-            }
-            else
-            {
-                var newCustomer = new Customer { PhoneNumber = request.PhoneNumber, FullName = request.CustomerName ?? "Anonymous" };
-                db.Customers.Add(newCustomer);
-                await db.SaveChangesAsync(ct);
-                customerId = newCustomer.CustomerId;
-            }
-        }
-        else
-        {
-            throw new Exception("Either CustomerId or PhoneNumber must be provided.");
-        }
-
-        if (request.TableId.HasValue)
-        {
-            var isConflict = await db.Bookings.AnyAsync(b => 
-                b.TableId == request.TableId.Value && 
-                b.Status == 2 && // Confirmed
-                b.StartTimeUtc < request.EndTimeUtc && 
-                b.EndTimeUtc > request.StartTimeUtc, ct);
-
-            if (isConflict)
-            {
-                throw new Exception("Table is already booked and confirmed for the selected time.");
-            }
-        }
-
         var entity = new EntityBooking
         {
-            CustomerId = customerId,
+            CustomerId = request.CustomerId,
             TableId = request.TableId,
             TableTypeId = request.TableTypeId,
             BookingCode = $"BK{DateTime.UtcNow:yyyyMMddHHmmss}",
             StartTimeUtc = request.StartTimeUtc,
             EndTimeUtc = request.EndTimeUtc,
             NumberOfGuests = request.NumberOfGuests,
-            Status = 1 // Pending
+            Status = 1
         };
         db.Bookings.Add(entity);
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = entity.BookingId, BookingCode = entity.BookingCode, CustomerId = entity.CustomerId, TableId = entity.TableId, StartTimeUtc = entity.StartTimeUtc, EndTimeUtc = entity.EndTimeUtc, Status = entity.Status };
-    }
-
-    public async Task<BookingDto> ConfirmAsync(long id, CancellationToken ct)
-    {
-        var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status != 1) throw new Exception("Only Pending bookings can be confirmed.");
-
-        booking.Status = 2; // Confirmed
-        await db.SaveChangesAsync(ct);
-        return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
-    }
-
-    public async Task<BookingDto> CancelAsync(long id, CancellationToken ct)
-    {
-        var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status == 3 || booking.Status == 4) throw new Exception("Booking cannot be cancelled.");
-
-        booking.Status = 3; // Cancelled
-        await db.SaveChangesAsync(ct);
-        return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
     }
 }
