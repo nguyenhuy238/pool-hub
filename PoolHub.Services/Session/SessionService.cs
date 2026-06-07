@@ -3,6 +3,7 @@ using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 using EntitySession = PoolHub.Core.Entities.Session;
 
@@ -10,8 +11,98 @@ namespace PoolHub.Services.Session;
 
 public class SessionService(PoolHubDbContext db) : ISessionService
 {
+    public async Task<PagedResult<SessionDto>> GetSessionsAsync(SessionQueryRequest request, CancellationToken ct)
+    {
+        var query = db.Sessions.AsQueryable();
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(x => x.Status == request.Status.Value);
+        }
+
+        if (request.Date.HasValue)
+        {
+            query = query.Where(x => x.StartedAtUtc.Date == request.Date.Value.Date);
+        }
+
+        if (request.TableId.HasValue)
+        {
+            query = query.Where(x => db.SessionTableAssignments.Any(sta => sta.SessionId == x.SessionId && sta.TableId == request.TableId.Value));
+        }
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(x => x.SessionId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new SessionDto
+            {
+                SessionId = x.SessionId,
+                SessionCode = x.SessionCode,
+                Status = x.Status,
+                StartedAtUtc = x.StartedAtUtc,
+                EndedAtUtc = x.EndedAtUtc
+            })
+            .ToListAsync(ct);
+
+        return new PagedResult<SessionDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
+    }
+
+    public async Task<SessionDetailDto> GetSessionByIdAsync(long id, CancellationToken ct)
+    {
+        var session = await db.Sessions.FindAsync([id], ct) ?? throw new NotFoundException("Session not found.");
+        
+        var assignments = await (from sta in db.SessionTableAssignments
+                                 join t in db.VenueTables on sta.TableId equals t.TableId
+                                 where sta.SessionId == id
+                                 select new SessionTableAssignmentDto
+                                 {
+                                     SessionTableAssignmentId = sta.SessionTableAssignmentId,
+                                     SessionId = sta.SessionId,
+                                     TableId = sta.TableId,
+                                     TableName = t.TableName,
+                                     TableCode = t.TableCode,
+                                     PricingPlanRuleId = sta.PricingPlanRuleId,
+                                     StartedAtUtc = sta.StartedAtUtc,
+                                     EndedAtUtc = sta.EndedAtUtc,
+                                     DurationMinutes = sta.DurationMinutes,
+                                     HourlyRateSnapshot = sta.HourlyRateSnapshot,
+                                     Amount = sta.Amount,
+                                     AssignedByUserId = sta.AssignedByUserId,
+                                     Note = sta.Note
+                                 })
+                                 .ToListAsync(ct);
+
+        return new SessionDetailDto
+        {
+            SessionId = session.SessionId,
+            SessionCode = session.SessionCode,
+            CustomerId = session.CustomerId,
+            BookingId = session.BookingId,
+            Status = session.Status,
+            StartedAtUtc = session.StartedAtUtc,
+            EndedAtUtc = session.EndedAtUtc,
+            OpenedByUserId = session.OpenedByUserId,
+            ClosedByUserId = session.ClosedByUserId,
+            Note = session.Note,
+            Assignments = assignments
+        };
+    }
+
     public async Task<SessionDto> StartAsync(long userId, StartSessionRequest request, CancellationToken ct)
     {
+        // 1. Active session guard: a table cannot have 2 active sessions at the same time
+        var hasActiveSession = await db.SessionTableAssignments
+            .AnyAsync(sta => sta.TableId == request.TableId && sta.EndedAtUtc == null && db.Sessions.Any(s => s.SessionId == sta.SessionId && s.Status == 1), ct);
+        if (hasActiveSession)
+        {
+            throw new BusinessRuleException("Table already has an active session.");
+        }
+
+        // 2. Find table and set OperationalStatus to 2 (Occupied)
+        var table = await db.VenueTables.FindAsync([request.TableId], ct) ?? throw new NotFoundException("Table not found.");
+        table.OperationalStatus = 2; // Occupied
+
         var session = new EntitySession
         {
             SessionCode = $"SS{DateTime.UtcNow:yyyyMMddHHmmss}",
@@ -24,26 +115,175 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         db.Sessions.Add(session);
         await db.SaveChangesAsync(ct);
 
-        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = session.SessionId, TableId = request.TableId, StartedAtUtc = DateTime.UtcNow, AssignedByUserId = userId });
+        // Fetch pricing plan and active rule for the table at start time
+        var rule = await FindActiveRuleAsync(table.TableTypeId, session.StartedAtUtc, ct);
+        var hourlyRate = rule?.HourlyRate ?? 50000; // Default to 50,000 VND/hour if no rule is found
+
+        var assignment = new SessionTableAssignment
+        {
+            SessionId = session.SessionId,
+            TableId = request.TableId,
+            StartedAtUtc = DateTime.UtcNow,
+            AssignedByUserId = userId,
+            PricingPlanRuleId = rule?.PricingPlanRuleId,
+            HourlyRateSnapshot = hourlyRate
+        };
+        db.SessionTableAssignments.Add(assignment);
         await db.SaveChangesAsync(ct);
+
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
 
     public async Task<SessionDto> CloseAsync(long sessionId, long? closedByUserId, CancellationToken ct)
     {
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
-        session.Status = 2;
-        session.EndedAtUtc = DateTime.UtcNow;
+        if (session.Status == 2)
+        {
+            return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
+        }
+
+        var endedAtUtc = DateTime.UtcNow;
+        session.Status = 2; // Closed
+        session.EndedAtUtc = endedAtUtc;
         session.ClosedByUserId = closedByUserId;
+
+        // Close all active assignments for this session and calculate their amounts
+        var activeAssignments = await db.SessionTableAssignments
+            .Where(x => x.SessionId == sessionId && x.EndedAtUtc == null)
+            .ToListAsync(ct);
+
+        foreach (var assignment in activeAssignments)
+        {
+            await CalculateAssignmentAmountAsync(assignment, endedAtUtc, ct);
+        }
+
         await db.SaveChangesAsync(ct);
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
 
     public async Task TransferTableAsync(long sessionId, long newTableId, long? assignedByUserId, CancellationToken ct)
     {
-        var current = await db.SessionTableAssignments.Where(x => x.SessionId == sessionId && x.EndedAtUtc == null).OrderByDescending(x => x.StartedAtUtc).FirstOrDefaultAsync(ct) ?? throw new NotFoundException("Active assignment not found.");
-        current.EndedAtUtc = DateTime.UtcNow;
-        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = sessionId, TableId = newTableId, StartedAtUtc = DateTime.UtcNow, AssignedByUserId = assignedByUserId });
+        // 1. Validate if the new table is already occupied / has an active session
+        var hasActiveSessionNewTable = await db.SessionTableAssignments
+            .AnyAsync(sta => sta.TableId == newTableId && sta.EndedAtUtc == null && db.Sessions.Any(s => s.SessionId == sta.SessionId && s.Status == 1), ct);
+        if (hasActiveSessionNewTable)
+        {
+            throw new BusinessRuleException("New table already has an active session.");
+        }
+
+        // 2. Find new table
+        var newTable = await db.VenueTables.FindAsync([newTableId], ct) ?? throw new NotFoundException("New table not found.");
+
+        // 3. Find current active assignment
+        var currentAssignment = await db.SessionTableAssignments
+            .Where(x => x.SessionId == sessionId && x.EndedAtUtc == null)
+            .OrderByDescending(x => x.StartedAtUtc)
+            .FirstOrDefaultAsync(ct) ?? throw new NotFoundException("Active assignment not found.");
+
+        var endedAtUtc = DateTime.UtcNow;
+
+        // 4. Calculate amount for current assignment, set its EndedAtUtc and free the old table
+        await CalculateAssignmentAmountAsync(currentAssignment, endedAtUtc, ct);
+
+        // 5. Set new table status to 2 (Occupied)
+        newTable.OperationalStatus = 2; // Occupied
+
+        // 6. Create new assignment for the new table
+        var rule = await FindActiveRuleAsync(newTable.TableTypeId, endedAtUtc, ct);
+        var hourlyRate = rule?.HourlyRate ?? 50000;
+
+        var newAssignment = new SessionTableAssignment
+        {
+            SessionId = sessionId,
+            TableId = newTableId,
+            StartedAtUtc = endedAtUtc,
+            AssignedByUserId = assignedByUserId,
+            PricingPlanRuleId = rule?.PricingPlanRuleId,
+            HourlyRateSnapshot = hourlyRate
+        };
+        db.SessionTableAssignments.Add(newAssignment);
+
         await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<PricingPlanRule?> FindActiveRuleAsync(long tableTypeId, DateTime time, CancellationToken ct)
+    {
+        int dayOfWeek = (int)time.DayOfWeek;
+        TimeSpan timeOfDay = time.TimeOfDay;
+
+        var activePlans = await db.PricingPlans
+            .Where(p => p.IsActive && p.StartsAtUtc <= time && (p.EndsAtUtc == null || p.EndsAtUtc >= time))
+            .ToListAsync(ct);
+
+        if (!activePlans.Any()) return null;
+
+        var planIds = activePlans.OrderBy(p => p.IsDefault).Select(p => p.PricingPlanId).ToList();
+
+        foreach (var planId in planIds)
+        {
+            var rule = await db.PricingPlanRules
+                .FirstOrDefaultAsync(r => r.PricingPlanId == planId && 
+                                          r.TableTypeId == tableTypeId && 
+                                          r.DayOfWeek == dayOfWeek && 
+                                          r.StartTime <= timeOfDay && 
+                                          r.EndTime >= timeOfDay && 
+                                          r.IsActive, ct);
+            if (rule != null) return rule;
+        }
+
+        var defaultPlan = activePlans.FirstOrDefault(p => p.IsDefault);
+        if (defaultPlan != null)
+        {
+            var rule = await db.PricingPlanRules
+                .FirstOrDefaultAsync(r => r.PricingPlanId == defaultPlan.PricingPlanId && 
+                                          r.TableTypeId == tableTypeId && 
+                                          r.DayOfWeek == dayOfWeek && 
+                                          r.IsActive, ct);
+            if (rule != null) return rule;
+        }
+
+        return null;
+    }
+
+    private async Task CalculateAssignmentAmountAsync(SessionTableAssignment assignment, DateTime endedAtUtc, CancellationToken ct)
+    {
+        assignment.EndedAtUtc = endedAtUtc;
+        var table = await db.VenueTables.FindAsync([assignment.TableId], ct);
+        if (table == null) return;
+
+        // Set table status back to 1 (Available)
+        table.OperationalStatus = 1; 
+
+        var durationMinutes = (int)Math.Ceiling((endedAtUtc - assignment.StartedAtUtc).TotalMinutes);
+        if (durationMinutes < 0) durationMinutes = 0;
+        assignment.DurationMinutes = durationMinutes;
+
+        var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct);
+        if (rule != null)
+        {
+            assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
+            assignment.HourlyRateSnapshot = rule.HourlyRate;
+
+            var billableMinutes = durationMinutes;
+            if (billableMinutes < rule.MinimumMinutes)
+            {
+                billableMinutes = rule.MinimumMinutes;
+            }
+            if (rule.BillingBlockMinutes > 0)
+            {
+                var remainder = billableMinutes % rule.BillingBlockMinutes;
+                if (remainder > 0)
+                {
+                    billableMinutes += (rule.BillingBlockMinutes - remainder);
+                }
+            }
+            assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+        }
+        else
+        {
+            decimal fallbackRate = 50000;
+            assignment.HourlyRateSnapshot = fallbackRate;
+            assignment.Amount = ((decimal)durationMinutes / 60m) * fallbackRate;
+        }
     }
 }

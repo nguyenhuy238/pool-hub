@@ -139,6 +139,128 @@ public static class DbSeeder
             new PoolHub.Core.Entities.Booking { CustomerId = customers[0].CustomerId, TableId = venueTables[3].TableId, TableTypeId = venueTables[3].TableTypeId, BookingCode = "BK1004", StartTimeUtc = now.AddDays(1).AddHours(3), EndTimeUtc = now.AddDays(1).AddHours(5), NumberOfGuests = 2, Status = 2 },
             new PoolHub.Core.Entities.Booking { CustomerId = customers[1].CustomerId, TableId = venueTables[15].TableId, TableTypeId = venueTables[15].TableTypeId, BookingCode = "BK1005", StartTimeUtc = now.AddHours(5), EndTimeUtc = now.AddHours(7), NumberOfGuests = 5, Status = 1 }
         );
+        await db.SaveChangesAsync(ct);
+
+        // Seed Discounts
+        var discounts = new[]
+        {
+            new Discount { DiscountCode = "DISCOUNT10", Name = "10% off Table Time", DiscountType = "PERCENTAGE", Value = 10, AppliesTo = "TIME", StartsAtUtc = now.AddDays(-10), EndsAtUtc = now.AddDays(10), IsActive = true },
+            new Discount { DiscountCode = "POOLVIP20", Name = "20% off Total Bill", DiscountType = "PERCENTAGE", Value = 20, AppliesTo = "ALL", StartsAtUtc = now.AddDays(-5), IsActive = true, MaxAmount = 50000 },
+            new Discount { DiscountCode = "FIXED50K", Name = "50K Fixed Discount", DiscountType = "FIXED", Value = 50000, AppliesTo = "ALL", StartsAtUtc = now.AddDays(-10), IsActive = true, MinTimeSubtotal = 100000 }
+        };
+        db.Discounts.AddRange(discounts);
+        await db.SaveChangesAsync(ct);
+
+        // Seed Completed Session (Table 1 - Index 0)
+        var closedSession = new Session
+        {
+            SessionCode = "SS202606080001",
+            CustomerId = customers[0].CustomerId,
+            Status = 2, // Closed
+            StartedAtUtc = now.AddHours(-3),
+            EndedAtUtc = now.AddHours(-1),
+            OpenedByUserId = userMap.Values.First(),
+            ClosedByUserId = userMap.Values.First()
+        };
+        db.Sessions.Add(closedSession);
+        await db.SaveChangesAsync(ct);
+
+        var assignment1 = new SessionTableAssignment
+        {
+            SessionId = closedSession.SessionId,
+            TableId = venueTables[0].TableId,
+            StartedAtUtc = closedSession.StartedAtUtc,
+            EndedAtUtc = closedSession.EndedAtUtc,
+            DurationMinutes = 120,
+            HourlyRateSnapshot = 50000,
+            Amount = 100000,
+            AssignedByUserId = userMap.Values.First()
+        };
+        db.SessionTableAssignments.Add(assignment1);
+
+        var product = await db.Products.FirstAsync(ct);
+        var order1 = new Order
+        {
+            SessionId = closedSession.SessionId,
+            OrderCode = "OD202606080001",
+            OrderedByUserId = userMap.Values.First(),
+            Status = 2, // Completed
+            SubtotalAmount = product.UnitPrice * 2
+        };
+        db.Orders.Add(order1);
+        await db.SaveChangesAsync(ct);
+
+        var orderItem1 = new OrderItem
+        {
+            OrderId = order1.OrderId,
+            ProductId = product.ProductId,
+            ProductNameSnapshot = product.Name,
+            UnitPriceSnapshot = product.UnitPrice,
+            Quantity = 2,
+            LineTotalAmount = product.UnitPrice * 2
+        };
+        db.OrderItems.Add(orderItem1);
+
+        var invoice1 = new Invoice
+        {
+            SessionId = closedSession.SessionId,
+            CustomerId = customers[0].CustomerId,
+            InvoiceCode = "INV202606080001",
+            TimeSubtotalAmount = 100000,
+            ProductSubtotalAmount = product.UnitPrice * 2,
+            SubtotalAmount = 100000 + (product.UnitPrice * 2),
+            DiscountAmount = 0,
+            TaxAmount = 0,
+            GrandTotalAmount = 100000 + (product.UnitPrice * 2),
+            PaidAmount = 100000 + (product.UnitPrice * 2),
+            PaymentStatus = 2, // Paid
+            Status = 2, // Completed
+            IssuedByUserId = userMap.Values.First(),
+            IssuedAtUtc = now.AddHours(-1)
+        };
+        db.Invoices.Add(invoice1);
+        await db.SaveChangesAsync(ct);
+
+        db.InvoiceLines.AddRange(
+            new InvoiceLine { InvoiceId = invoice1.InvoiceId, LineType = "TIME", ReferenceId = assignment1.SessionTableAssignmentId, Description = $"Time played on table {venueTables[0].TableName}", Quantity = 2m, UnitPrice = 50000, LineTotalAmount = 100000 },
+            new InvoiceLine { InvoiceId = invoice1.InvoiceId, LineType = "PRODUCT", ReferenceId = orderItem1.OrderItemId, Description = product.Name, Quantity = 2m, UnitPrice = product.UnitPrice, LineTotalAmount = product.UnitPrice * 2 }
+        );
+
+        var paymentMethods = await db.PaymentMethods.ToListAsync(ct);
+        db.Payments.Add(new Payment
+        {
+            InvoiceId = invoice1.InvoiceId,
+            PaymentMethodId = paymentMethods[0].PaymentMethodId, // Cash
+            Amount = invoice1.GrandTotalAmount,
+            PaymentStatus = 2, // Completed
+            PaidAtUtc = now.AddHours(-1),
+            ReceivedByUserId = userMap.Values.First()
+        });
+
+        // Seed Active Session (Table 2 - Index 1)
+        var activeSession = new Session
+        {
+            SessionCode = "SS202606080002",
+            CustomerId = customers[1].CustomerId,
+            Status = 1, // Active
+            StartedAtUtc = now.AddMinutes(-30),
+            OpenedByUserId = userMap.Values.First()
+        };
+        db.Sessions.Add(activeSession);
+        
+        // Mark Table 2 as Occupied
+        venueTables[1].OperationalStatus = 2; // Occupied
+
+        await db.SaveChangesAsync(ct);
+
+        db.SessionTableAssignments.Add(new SessionTableAssignment
+        {
+            SessionId = activeSession.SessionId,
+            TableId = venueTables[1].TableId,
+            StartedAtUtc = activeSession.StartedAtUtc,
+            HourlyRateSnapshot = 90000,
+            AssignedByUserId = userMap.Values.First()
+        });
 
         await db.SaveChangesAsync(ct);
     }
