@@ -50,4 +50,7 @@ public interface ICrudService
     Task<PagedResult<BookingDto>> GetBookingsCrudAsync(PaginationRequest request, CancellationToken ct);
     Task<BookingDto> GetBookingAsync(long id, CancellationToken ct);
     Task DeleteBookingAsync(long id, CancellationToken ct);
+
+    Task<object> UpdateProductCategoryAsync(int id, ProductCategoryDto dto, CancellationToken ct);
+
 }
