@@ -1,6 +1,9 @@
+using Microsoft.EntityFrameworkCore;
+using PoolHub.Core.DTOs.Product;
 using PoolHub.Core.Interfaces;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
+using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Common;
 
@@ -14,4 +17,27 @@ public partial class CrudService : ICrudService
     }
 
     private static PagedResult<T> Page<T>(IReadOnlyCollection<T> items, int page, int size, int total) => new() { Items = items, PageNumber = page, PageSize = size, TotalCount = total };
+
+    public async Task<object> UpdateProductCategoryAsync(
+        int id,
+        ProductCategoryDto dto,
+        CancellationToken ct)
+    {
+        var category = await db.ProductCategories
+            .FirstOrDefaultAsync(x => x.ProductCategoryId == id, ct);
+
+        if (category == null)
+            throw new NotFoundException("Product category not found.");
+
+        category.Name = dto.Name;
+
+        await db.SaveChangesAsync(ct);
+
+        return new ProductCategoryDto
+        {
+            ProductCategoryId = category.ProductCategoryId,
+            Name = category.Name
+        };
+    }
+
 }

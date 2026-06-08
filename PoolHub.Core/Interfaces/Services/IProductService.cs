@@ -10,4 +10,6 @@ public interface IProductService
     Task<PagedResult<ProductDto>> GetProductsAsync(PaginationRequest request, CancellationToken ct);
     Task<ProductDto> GetProductByIdAsync(long id, CancellationToken ct);
     Task<ProductDto> CreateProductAsync(CreateProductRequest request, CancellationToken ct);
+    Task<ProductDto> UpdateProductAsync(long id, UpdateProductRequest request, CancellationToken ct);
+    Task DeleteProductAsync(long id, CancellationToken ct);
 }
