@@ -11,6 +11,7 @@ using PoolHub.Infrastructure.Repositories;
 using PoolHub.Services.Audit;
 using PoolHub.Services.Auth;
 using PoolHub.Services.Booking;
+using PoolHub.Services.Dashboard;
 using PoolHub.Services.Common;
 using PoolHub.Services.Invoice;
 using PoolHub.Services.Notification;
@@ -24,6 +25,27 @@ namespace PoolHub.API.Extensions;
 
 public static class ServiceCollectionExtensions
 {
+    public const string FrontendCorsPolicy = "PoolHubFrontend";
+
+    public static IServiceCollection AddPoolHubCors(this IServiceCollection services, IConfiguration configuration)
+    {
+        var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            ?? ["http://localhost:3000", "http://127.0.0.1:3000"];
+
+        services.AddCors(options =>
+        {
+            options.AddPolicy(FrontendCorsPolicy, policy =>
+            {
+                policy.WithOrigins(origins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials();
+            });
+        });
+
+        return services;
+    }
+
     public static IServiceCollection AddPoolHubDatabase(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDbContext<PoolHubDbContext>(options =>
@@ -115,6 +137,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ICrudService, CrudService>();
 
         return services;

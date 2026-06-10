@@ -9,19 +9,11 @@ public static class DbSeeder
     public static async Task SeedAsync(PoolHubDbContext db, CancellationToken ct = default)
     {
         await db.Database.MigrateAsync(ct);
-        if (await db.Roles.AnyAsync(ct)) return;
+        await EnsureRolesAsync(db, ct);
+
+        if (await db.Users.AnyAsync(ct)) return;
 
         string Hash(string p) => BCrypt.Net.BCrypt.HashPassword(p, 12);
-
-        var roles = new[]
-        {
-            new Role { Name = RoleConstants.Admin, Description = "Full system admin", IsSystem = true },
-            new Role { Name = RoleConstants.Manager, Description = "Operations manager", IsSystem = true },
-            new Role { Name = RoleConstants.Staff, Description = "Floor staff", IsSystem = true },
-            new Role { Name = RoleConstants.Cashier, Description = "Cashier", IsSystem = true }
-        };
-        db.Roles.AddRange(roles);
-        await db.SaveChangesAsync(ct);
 
         var users = new[]
         {
@@ -262,6 +254,26 @@ public static class DbSeeder
             AssignedByUserId = userMap.Values.First()
         });
 
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureRolesAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var definitions = new[]
+        {
+            new Role { Name = RoleConstants.Admin, Description = "Full system admin", IsSystem = true },
+            new Role { Name = RoleConstants.Manager, Description = "Operations manager", IsSystem = true },
+            new Role { Name = RoleConstants.Staff, Description = "Floor staff", IsSystem = true },
+            new Role { Name = RoleConstants.Cashier, Description = "Cashier", IsSystem = true },
+            new Role { Name = RoleConstants.Customer, Description = "Registered customer", IsSystem = true },
+            new Role { Name = RoleConstants.Guest, Description = "Anonymous guest", IsSystem = true }
+        };
+
+        var existing = await db.Roles.Select(x => x.Name).ToListAsync(ct);
+        var missing = definitions.Where(x => !existing.Contains(x.Name)).ToList();
+        if (missing.Count == 0) return;
+
+        db.Roles.AddRange(missing);
         await db.SaveChangesAsync(ct);
     }
 }

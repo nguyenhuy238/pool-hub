@@ -1,6 +1,8 @@
+using PoolHub.Core.DTOs.Notification;
+
 namespace PoolHub.Core.Interfaces.Services;
 
 public interface INotificationService
 {
-    IEnumerable<object> GetDemoNotifications();
+    Task<List<NotificationDto>> GetNotificationsAsync(long userId, CancellationToken ct);
 }
