@@ -15,9 +15,17 @@ namespace PoolHub.API.Controllers;
 [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
 public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] InvoiceQueryRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await invoiceService.GetInvoicesAsync(request, ct)));
+
     [HttpGet("{id:long}")]
     public async Task<ActionResult<ApiResponse<InvoiceDetailDto>>> GetById(long id, CancellationToken ct) => 
         Ok(ApiResponse<InvoiceDetailDto>.Ok(await invoiceService.GetInvoiceDetailAsync(id, ct)));
+
+    [HttpGet("payment-methods")]
+    public async Task<ActionResult<ApiResponse<List<PaymentMethodDto>>>> GetPaymentMethods(CancellationToken ct) =>
+        Ok(ApiResponse<List<PaymentMethodDto>>.Ok(await invoiceService.GetPaymentMethodsAsync(ct)));
 
     [HttpPost("generate/{sessionId:long}")] 
     public async Task<ActionResult<ApiResponse<InvoiceDto>>> Generate(long sessionId, CancellationToken ct) => 

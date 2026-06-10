@@ -20,11 +20,31 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Node / Next.js frontend
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+dist/
+**/dist/
+coverage/
+**/coverage/
+*.tsbuildinfo
+next-env.d.ts.bak
+.vercel/
+**/.vercel/
+
 # Logs and temp files
 *.log
 *.tmp
 *.temp
 *.cache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Local environment files
 .env

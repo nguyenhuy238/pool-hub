@@ -3,6 +3,7 @@ using PoolHub.Core.DTOs.Invoice;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 using System;
 using System.Collections.Generic;
@@ -15,6 +16,53 @@ namespace PoolHub.Services.Invoice;
 
 public class InvoiceService(PoolHubDbContext db) : IInvoiceService
 {
+    public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
+    {
+        var query = db.Invoices.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            query = query.Where(x => x.InvoiceCode.Contains(request.Search));
+        }
+
+        if (request.PaymentStatus.HasValue)
+        {
+            query = query.Where(x => x.PaymentStatus == request.PaymentStatus.Value);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(x => x.Status == request.Status.Value);
+        }
+
+        if (request.Date.HasValue)
+        {
+            query = query.Where(x => x.IssuedAtUtc.HasValue && x.IssuedAtUtc.Value.Date == request.Date.Value.Date);
+        }
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(x => x.InvoiceId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new InvoiceDto
+            {
+                InvoiceId = x.InvoiceId,
+                SessionId = x.SessionId,
+                InvoiceCode = x.InvoiceCode,
+                GrandTotalAmount = x.GrandTotalAmount
+            })
+            .ToListAsync(ct);
+
+        return new PagedResult<InvoiceDto>
+        {
+            Items = items,
+            PageNumber = request.PageNumber,
+            PageSize = request.PageSize,
+            TotalCount = total
+        };
+    }
+
     public async Task<InvoiceDto> GenerateFromSessionAsync(long sessionId, long? issuedByUserId, CancellationToken ct)
     {
         var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId, ct);
@@ -130,6 +178,20 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
 
         await db.SaveChangesAsync(ct);
     }
+
+    public Task<List<PaymentMethodDto>> GetPaymentMethodsAsync(CancellationToken ct)
+        => db.PaymentMethods
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.PaymentMethodId)
+            .Select(x => new PaymentMethodDto
+            {
+                PaymentMethodId = x.PaymentMethodId,
+                Name = x.Name,
+                Code = x.Code,
+                Description = x.Description,
+                IsActive = x.IsActive
+            })
+            .ToListAsync(ct);
 
     public async Task<InvoiceDetailDto> GetInvoiceDetailAsync(long id, CancellationToken ct)
     {

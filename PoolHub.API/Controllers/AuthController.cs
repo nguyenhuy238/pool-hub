@@ -13,10 +13,11 @@ namespace PoolHub.API.Controllers;
 public class AuthController(IAuthService authService) : ControllerBase
 {
     [HttpPost("register")]
-    [Authorize(Roles = RoleConstants.Admin)]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] RegisterRequest request, CancellationToken ct)
     {
-        var result = await authService.RegisterAsync(request, User.GetUserId(), ct);
+        request.Role = RoleConstants.Customer;
+        var result = await authService.RegisterAsync(request, null, ct);
         return Ok(ApiResponse<AuthResponse>.Ok(result, "Register success"));
     }
 

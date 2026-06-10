@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPoolHubDatabase(builder.Configuration);
+builder.Services.AddPoolHubCors(builder.Configuration);
 builder.Services.AddPoolHubJwtAuthentication(builder.Configuration);
 builder.Services.AddPoolHubRepositories();
 builder.Services.AddPoolHubServices();
@@ -23,6 +24,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
     app.UseSwaggerUI();
 }
 
+app.UseCors(ServiceCollectionExtensions.FrontendCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
