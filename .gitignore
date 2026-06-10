@@ -30,3 +30,5 @@ artifacts/
 .env
 .env.*
 !.env.example
+**/appsettings.Development.json
+**/appsettings.Local.json
