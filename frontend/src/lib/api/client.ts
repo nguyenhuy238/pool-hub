@@ -98,7 +98,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return normalize<T>(payload).data;
 }
 
-export function toQuery(params: Record<string, string | number | undefined | null>) {
+export function toQuery(params: Record<string, string | number | boolean | undefined | null>) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") query.set(key, String(value));

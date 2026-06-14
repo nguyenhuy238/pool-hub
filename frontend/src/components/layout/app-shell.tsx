@@ -8,6 +8,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/floor-map", label: "Floor Map", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/bookings", label: "Booking", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
+  { href: "/management/customers", label: "Customers", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/sessions", label: "Session", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/orders", label: "Orders", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/invoices", label: "Invoices", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },

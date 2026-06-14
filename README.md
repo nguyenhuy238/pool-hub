@@ -35,6 +35,13 @@ Backend cho hệ thống quản lý trung tâm giải trí/bida PoolHub (checkpo
 3. `dotnet ef database update --project PoolHub.Infrastructure --startup-project PoolHub.API`
 4. `dotnet run --project PoolHub.API`
 
+## Frontend
+1. `cd frontend`
+2. `npm install`
+3. Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_API_BASE_URL`
+4. `npm run build`
+5. `npm run dev`
+
 ## Seed Accounts
 - `admin@poolhub.com / Admin@123` (Admin)
 - `manager@poolhub.com / Manager@123` (Manager)
@@ -54,14 +61,21 @@ Backend cho hệ thống quản lý trung tâm giải trí/bida PoolHub (checkpo
 
 ## Main Endpoints (Week 4)
 - Auth: `/api/auth/*`
-- Users/Roles: `/api/users*`, `/api/roles`
+- System: `GET /health`
+- Users/Roles/Customers: `/api/users*`, `/api/roles`, `/api/customers`
 - Venue: `/api/floors`, `/api/zones`, `/api/table-types`, `/api/venue-tables`, `/api/pricing-plans`
 - Booking: `/api/bookings`
-- Session: `/api/sessions/*`
+- Session: `/api/sessions/*`, including `POST /api/sessions/{id}/close`
 - Product: `/api/products*`
 - Order: `/api/orders*`
 - Invoice/Payment: `/api/invoices*`
 - Audit/Notification: `/api/audit-logs`, `/api/notifications`
+
+## Demo Notes
+- Customer management UI: `/management/customers`
+- Customer phone and email are unique at service and database level.
+- Pagination response exposes `items`, `pageNumber`, `pageSize`, `totalItems`, `totalPages`.
+- Remaining gaps for later phases: file upload, full reports, discount CRUD, payment-method CRUD, advanced booking availability, and full audit coverage for every mutation.
 
 ## Week 1-4 Checklist
 - Week 1: Domain alignment PoolHub + roles + nghiệp vụ chính

@@ -4,6 +4,7 @@ import type {
   AuthResponse,
   AuthUser,
   Booking,
+  Customer,
   DashboardSummary,
   Floor,
   Invoice,
@@ -109,6 +110,13 @@ export const adminApi = {
   updateStatus: (id: number, status: boolean) => apiFetch(`/api/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   roles: () => apiFetch<Role[]>("/api/roles"),
   auditLogs: (params: Record<string, string | number | undefined> = {}) => apiFetch<AuditLog[] | { items?: AuditLog[] }>(`/api/audit-logs${toQuery(params)}`)
+};
+
+export const customerApi = {
+  list: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<Customer[] | { items?: Customer[] }>(`/api/customers${toQuery(params)}`),
+  create: (body: Partial<Customer>) => apiFetch<Customer>("/api/customers", { method: "POST", body: JSON.stringify(body) }),
+  update: (id: number, body: Partial<Customer>) => apiFetch<Customer>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) })
 };
 
 export const miscApi = {

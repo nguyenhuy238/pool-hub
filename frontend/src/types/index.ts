@@ -12,6 +12,7 @@ export type PagedResult<T> = {
   items?: T[];
   data?: T[];
   totalCount?: number;
+  totalItems?: number;
   pageNumber?: number;
   pageSize?: number;
   totalPages?: number;
@@ -34,6 +35,16 @@ export type User = AuthUser & {
   publicId?: string;
   phoneNumber?: string;
   status?: boolean;
+};
+
+export type Customer = {
+  customerId: number;
+  publicId?: string;
+  fullName: string;
+  phoneNumber: string;
+  email?: string;
+  note?: string;
+  status: boolean;
 };
 
 export type Role = { roleId?: number; name?: string; roleName?: string; normalizedName?: string };

@@ -29,6 +29,16 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
     public async Task<ActionResult<ApiResponse<SessionDto>>> Close(long sessionId, CancellationToken ct) => 
         Ok(ApiResponse<SessionDto>.Ok(await sessionService.CloseAsync(sessionId, User.GetUserId(), ct)));
 
+    [HttpPost("{id:long}/close")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<CloseSessionResponse>>> CloseWithSummary(
+        long id,
+        [FromBody] CloseSessionRequest request,
+        CancellationToken ct) =>
+        Ok(ApiResponse<CloseSessionResponse>.Ok(
+            await sessionService.CloseWithSummaryAsync(id, User.GetUserId(), request, ct),
+            "Session closed"));
+
     [HttpPost("{sessionId:long}/switch")] 
     public async Task<ActionResult<ApiResponse<object>>> Transfer(long sessionId, [FromBody] TransferTableRequest request, CancellationToken ct) 
     { 

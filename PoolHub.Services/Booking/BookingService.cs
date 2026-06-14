@@ -7,6 +7,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 using EntityBooking = PoolHub.Core.Entities.Booking;
+using EntityCustomer = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Booking;
 
@@ -47,7 +48,7 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             }
             else
             {
-                var newCustomer = new Customer { PhoneNumber = request.PhoneNumber, FullName = request.CustomerName ?? "Anonymous" };
+                var newCustomer = new EntityCustomer { PhoneNumber = request.PhoneNumber, FullName = request.CustomerName ?? "Anonymous" };
                 db.Customers.Add(newCustomer);
                 await db.SaveChangesAsync(ct);
                 customerId = newCustomer.CustomerId;
