@@ -1,5 +1,62 @@
 "use client";
-import { CrudPage } from "@/components/crud-pages";
+import { useState } from "react";
 import { venueApi } from "@/lib/api/endpoints";
+import { DataTable, PageHeader, SmartForm, StateBlock, useList, useLoad, ListControls, Pagination } from "@/components/ui";
 import type { TableType } from "@/types";
-export default function TableTypesPage() { return <CrudPage<TableType> title="Table Types" idKey="tableTypeId" load={venueApi.tableTypes} create={venueApi.createTableType} remove={venueApi.deleteTableType} fields={[{ name: "name", label: "Tên", required: true }, { name: "code", label: "Code", required: true }, { name: "description", label: "Mô tả" }, { name: "defaultCapacity", label: "Sức chứa", type: "number" }]} columns={[{ key: "name", label: "Tên" }, { key: "code", label: "Code" }, { key: "defaultCapacity", label: "Sức chứa" }]} />; }
+
+export default function TableTypesPage() {
+  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20 });
+  const { data, loading, error, reload } = useLoad(() => 
+    venueApi.tableTypes({ Search: params.search || undefined, PageNumber: params.pageNumber, PageSize: params.pageSize }), 
+    [params]
+  );
+  
+  const tableTypes = useList<TableType>(data);
+
+  return (
+    <>
+      <PageHeader title="Quản lý Loại Bàn (Table Types)" description="Danh sách các loại bàn như Bida Lỗ, Bida Phăng, Bida Snooker." />
+      
+      <SmartForm<TableType> 
+        title="Tạo Loại bàn mới" 
+        initial={{}} 
+        fields={[
+          { name: "name", label: "Tên Loại", required: true }, 
+          { name: "code", label: "Mã Code" }, 
+          { name: "description", label: "Mô tả" }, 
+          { name: "defaultCapacity", label: "Sức chứa mặc định", type: "number" }
+        ]} 
+        onSubmit={async (value) => { 
+          await venueApi.createTableType(value); 
+          reload(); 
+        }} 
+      />
+      
+      <br />
+      <h2>Danh sách Loại bàn</h2>
+      <ListControls search={params.search} pageNumber={params.pageNumber} pageSize={params.pageSize} onChange={setParams} />
+      
+      <StateBlock loading={loading} error={error} empty={!loading && !tableTypes.length} />
+      
+      <DataTable 
+        rows={tableTypes.map(t => ({ ...t, id: t.tableTypeId })) as unknown as Record<string, unknown>[]} 
+        columns={[
+          { key: "tableTypeId", label: "ID" },
+          { key: "code", label: "Mã" },
+          { key: "name", label: "Tên Loại bàn" }, 
+          { key: "description", label: "Mô tả" }, 
+          { key: "defaultCapacity", label: "Sức chứa" }
+        ]} 
+        actions={(row) => (
+          <button className="danger-btn" onClick={() => venueApi.deleteTableType(Number(row.tableTypeId)).then(() => reload())}>Xóa</button>
+        )}
+      />
+      
+      <Pagination 
+        pageNumber={params.pageNumber} 
+        totalPages={(data as any)?.totalCount ? Math.ceil((data as any).totalCount / params.pageSize) : 102}
+        onChange={(page) => setParams(prev => ({ ...prev, pageNumber: page }))} 
+      />
+    </>
+  );
+}

@@ -58,6 +58,12 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             throw new Exception("Either CustomerId or PhoneNumber must be provided.");
         }
 
+        if (request.StartTimeUtc.Minute % 30 != 0 || request.StartTimeUtc.Second != 0 || request.StartTimeUtc.Millisecond != 0 ||
+            request.EndTimeUtc.Minute % 30 != 0 || request.EndTimeUtc.Second != 0 || request.EndTimeUtc.Millisecond != 0)
+        {
+            throw new BusinessRuleException("Thời gian đặt bàn phải là các mốc chẵn 30 phút (VD: 10:00, 10:30).");
+        }
+
         if (request.TableId.HasValue)
         {
             var isConflict = await db.Bookings.AnyAsync(b => 
