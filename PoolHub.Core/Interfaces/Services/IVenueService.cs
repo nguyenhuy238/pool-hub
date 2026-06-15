@@ -10,4 +10,10 @@ public interface IVenueService
     Task<IEnumerable<VenueTableDto>> GetTablesAsync(CancellationToken ct);
     Task<IEnumerable<PricingPlanDto>> GetPricingPlansAsync(CancellationToken ct);
     Task<IEnumerable<PricingPlanRuleDto>> GetPricingPlanRulesAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Lấy sơ đồ toàn bộ venue theo cấu trúc Floor → Zone → Table,
+    /// kèm trạng thái hoạt động realtime từ Session đang chạy.
+    /// </summary>
+    Task<VenueLayoutResponse> GetLayoutAsync(CancellationToken ct);
 }

@@ -38,9 +38,69 @@ export function ListControls({ search, pageNumber, pageSize, onChange, extra }: 
   return (
     <div className="card list-controls">
       <label><span>Tìm kiếm</span><input value={search} onChange={(event) => onChange({ search: event.target.value, pageNumber: 1, pageSize })} placeholder="Nhập từ khóa" /></label>
-      <label><span>Trang</span><input type="number" min={1} value={pageNumber} onChange={(event) => onChange({ search, pageNumber: Number(event.target.value), pageSize })} /></label>
       <label><span>Số dòng</span><select value={pageSize} onChange={(event) => onChange({ search, pageNumber: 1, pageSize: Number(event.target.value) })}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label>
       {extra}
+    </div>
+  );
+}
+
+export function Pagination({ pageNumber, totalPages = 102, onChange }: {
+  pageNumber: number;
+  totalPages?: number;
+  onChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (pageNumber <= 4) {
+        pages.push(1, 2, 3, 4, 5, '...', totalPages);
+      } else if (pageNumber >= totalPages - 3) {
+        pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+      } else {
+        pages.push(1, '...', pageNumber - 1, pageNumber, pageNumber + 1, '...', totalPages);
+      }
+    }
+    return pages;
+  };
+
+  return (
+    <div className="pagination" style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '16px', justifyContent: 'center' }}>
+      <button 
+        style={{ padding: '6px 12px', border: '1px solid #dce7e2', borderRadius: '4px', background: 'white', cursor: pageNumber === 1 ? 'not-allowed' : 'pointer', color: pageNumber === 1 ? '#aaa' : '#333' }}
+        disabled={pageNumber === 1} 
+        onClick={() => onChange(pageNumber - 1)}
+      >
+        &lt;
+      </button>
+      {getPageNumbers().map((p, i) => (
+        <button 
+          key={i} 
+          style={{ 
+            padding: '6px 12px', 
+            border: p === '...' ? 'none' : '1px solid #dce7e2', 
+            borderRadius: '4px', 
+            background: p === pageNumber ? '#0f5d4b' : 'white', 
+            color: p === pageNumber ? 'white' : '#333',
+            cursor: p === '...' ? 'default' : 'pointer',
+            fontWeight: p === pageNumber ? 'bold' : 'normal'
+          }}
+          disabled={p === '...'}
+          onClick={() => typeof p === 'number' && onChange(p)}
+        >
+          {p}
+        </button>
+      ))}
+      <button 
+        style={{ padding: '6px 12px', border: '1px solid #dce7e2', borderRadius: '4px', background: 'white', cursor: pageNumber === totalPages ? 'not-allowed' : 'pointer', color: pageNumber === totalPages ? '#aaa' : '#333' }}
+        disabled={pageNumber === totalPages} 
+        onClick={() => onChange(pageNumber + 1)}
+      >
+        &gt;
+      </button>
     </div>
   );
 }
@@ -94,7 +154,7 @@ export function useLoad<T>(loader: () => Promise<T>, deps: React.DependencyList 
 
 export function SmartForm<T extends Record<string, unknown>>({ title, fields, initial, submitLabel = "Lưu", onSubmit }: {
   title: string;
-  fields: { name: keyof T; label: string; type?: string; options?: SelectOption[]; required?: boolean }[];
+  fields: { name: keyof T; label: string; type?: string; options?: SelectOption[]; required?: boolean; step?: string | number }[];
   initial: Partial<T>;
   submitLabel?: string;
   onSubmit: (value: Partial<T>) => Promise<void>;
@@ -136,7 +196,7 @@ export function SmartForm<T extends Record<string, unknown>>({ title, fields, in
               {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           ) : (
-            <input type={field.type || "text"} required={field.required} value={String(value[field.name] ?? "")} onChange={(event) => {
+            <input type={field.type || "text"} step={field.step} required={field.required} value={String(value[field.name] ?? "")} onChange={(event) => {
               const raw = event.target.value;
               const next = field.type === "number" ? Number(raw) : field.type === "checkbox" ? event.currentTarget.checked : raw;
               setValue((current) => ({ ...current, [field.name]: next }));

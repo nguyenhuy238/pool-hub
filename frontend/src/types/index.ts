@@ -52,6 +52,26 @@ export type Booking = {
   status: number;
 };
 
+export type BookingCalendarItem = {
+  bookingId: number;
+  bookingCode: string;
+  customerId?: number;
+  customerName?: string;
+  customerPhone?: string;
+  tableId?: number;
+  tableCode?: string;
+  tableName?: string;
+  tableTypeId?: number;
+  tableTypeName?: string;
+  startTimeUtc: string;
+  endTimeUtc: string;
+  numberOfGuests?: number;
+  status: number;
+  note?: string;
+  confirmedAtUtc?: string;
+  cancelledAtUtc?: string;
+};
+
 export type Session = {
   sessionId: number;
   sessionCode?: string;
@@ -159,9 +179,56 @@ export type VenueTable = {
   isActive?: boolean;
 };
 
+export type VenueTableLayoutItem = {
+  tableId: number;
+  tableCode: string;
+  tableName: string;
+  tableTypeId: number;
+  tableTypeName: string;
+  capacity: number;
+  operationalStatus: number;
+  isActive: boolean;
+  activeSessionId?: number;
+};
+
+export type VenueZoneLayoutItem = {
+  zoneId: number;
+  zoneName: string;
+  description?: string;
+  displayOrder: number;
+  tables: VenueTableLayoutItem[];
+};
+
+export type VenueFloorLayoutItem = {
+  floorId: number;
+  floorName: string;
+  description?: string;
+  displayOrder: number;
+  zones: VenueZoneLayoutItem[];
+};
+
+export type VenueLayoutResponse = {
+  floors: VenueFloorLayoutItem[];
+  totalTables: number;
+  availableTables: number;
+  occupiedTables: number;
+  fetchedAtUtc: string;
+};
+
 export type PricingPlan = { pricingPlanId: number; name: string; isDefault?: boolean; isActive?: boolean };
 export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayOfWeek: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
 export type Notification = { notificationId: number; title?: string; message?: string; isRead?: boolean; createdAtUtc?: string };
 export type AuditLog = { auditLogId: number; actor?: string; action?: string; entity?: string; oldValues?: string; newValues?: string; ipAddress?: string; createdAtUtc?: string };
+
+export type CustomerDto = {
+  customerId: number;
+  fullName: string;
+  phoneNumber?: string;
+  email?: string;
+  note?: string;
+  status: boolean;
+  createdAtUtc: string;
+  totalBookings: number;
+};
 
 export type SelectOption = { value: string; label: string };

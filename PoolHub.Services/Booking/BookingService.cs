@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Common;
-using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 using EntityBooking = PoolHub.Core.Entities.Booking;
+using EntityCustomer = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Booking;
 
@@ -47,7 +47,7 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             }
             else
             {
-                var newCustomer = new Customer { PhoneNumber = request.PhoneNumber, FullName = request.CustomerName ?? "Anonymous" };
+                var newCustomer = new EntityCustomer { PhoneNumber = request.PhoneNumber, FullName = request.CustomerName ?? "Anonymous" };
                 db.Customers.Add(newCustomer);
                 await db.SaveChangesAsync(ct);
                 customerId = newCustomer.CustomerId;
@@ -56,6 +56,12 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         else
         {
             throw new Exception("Either CustomerId or PhoneNumber must be provided.");
+        }
+
+        if (request.StartTimeUtc.Minute % 30 != 0 || request.StartTimeUtc.Second != 0 || request.StartTimeUtc.Millisecond != 0 ||
+            request.EndTimeUtc.Minute % 30 != 0 || request.EndTimeUtc.Second != 0 || request.EndTimeUtc.Millisecond != 0)
+        {
+            throw new BusinessRuleException("Thời gian đặt bàn phải là các mốc chẵn 30 phút (VD: 10:00, 10:30).");
         }
 
         if (request.TableId.HasValue)
@@ -106,5 +112,83 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         booking.Status = 3; // Cancelled
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
+    }
+
+    /// <inheritdoc/>
+    public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)
+    {
+        // Validate khoảng thời gian
+        if (request.From > request.To)
+            throw new ValidationException("'from' must be earlier than 'to'.");
+
+        // Giới hạn pageSize tối đa 200
+        var pageSize = Math.Min(request.PageSize, 200);
+
+        var query = db.Bookings
+            .Where(b => b.StartTimeUtc < request.To && b.EndTimeUtc > request.From);
+
+        if (request.TableId.HasValue)
+            query = query.Where(b => b.TableId == request.TableId.Value);
+
+        if (request.Status.HasValue)
+            query = query.Where(b => b.Status == request.Status.Value);
+
+        var total = await query.CountAsync(ct);
+
+        // Join với Customer và VenueTable để lấy tên đầy đủ
+        var items = await query
+            .OrderBy(b => b.StartTimeUtc)
+            .Skip((request.PageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(b => new
+            {
+                Booking = b,
+                CustomerName = db.Customers
+                    .Where(c => c.CustomerId == b.CustomerId)
+                    .Select(c => c.FullName)
+                    .FirstOrDefault() ?? string.Empty,
+                CustomerPhone = db.Customers
+                    .Where(c => c.CustomerId == b.CustomerId)
+                    .Select(c => c.PhoneNumber)
+                    .FirstOrDefault() ?? string.Empty,
+                TableCode = b.TableId != null
+                    ? db.VenueTables.Where(t => t.TableId == b.TableId).Select(t => t.TableCode).FirstOrDefault()
+                    : null,
+                TableName = b.TableId != null
+                    ? db.VenueTables.Where(t => t.TableId == b.TableId).Select(t => t.TableName).FirstOrDefault()
+                    : null,
+                TableTypeName = b.TableTypeId != null
+                    ? db.TableTypes.Where(tt => tt.TableTypeId == b.TableTypeId).Select(tt => tt.Name).FirstOrDefault()
+                    : null
+            })
+            .Select(x => new BookingCalendarItem
+            {
+                BookingId = x.Booking.BookingId,
+                BookingCode = x.Booking.BookingCode,
+                CustomerId = x.Booking.CustomerId,
+                CustomerName = x.CustomerName,
+                CustomerPhone = x.CustomerPhone,
+                TableId = x.Booking.TableId,
+                TableCode = x.TableCode,
+                TableName = x.TableName,
+                TableTypeId = x.Booking.TableTypeId,
+                TableTypeName = x.TableTypeName,
+                StartTimeUtc = x.Booking.StartTimeUtc,
+                EndTimeUtc = x.Booking.EndTimeUtc,
+                NumberOfGuests = x.Booking.NumberOfGuests,
+                Status = x.Booking.Status,
+                Note = x.Booking.Note,
+                ConfirmedAtUtc = x.Booking.ConfirmedAtUtc,
+                CancelledAtUtc = x.Booking.CancelledAtUtc
+            })
+            .ToListAsync(ct);
+
+        return new PagedResult<BookingCalendarItem>
+        {
+            Items = items,
+            PageNumber = request.PageNumber,
+            PageSize = pageSize,
+            TotalCount = total
+        };
     }
 }

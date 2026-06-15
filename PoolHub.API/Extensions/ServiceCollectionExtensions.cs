@@ -10,7 +10,9 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Infrastructure.Repositories;
 using PoolHub.Services.Audit;
 using PoolHub.Services.Auth;
+using PoolHub.Services.BackgroundJobs;
 using PoolHub.Services.Booking;
+using PoolHub.Services.Customer;
 using PoolHub.Services.Dashboard;
 using PoolHub.Services.Common;
 using PoolHub.Services.Invoice;
@@ -131,6 +133,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IVenueService, VenueService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<ICustomerService, CustomerService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IOrderService, OrderService>();
@@ -139,6 +142,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ICrudService, CrudService>();
+
+        // Background Jobs
+        services.AddHostedService<BookingReminderService>();
 
         return services;
     }
