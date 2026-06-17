@@ -13,6 +13,7 @@ const nav = [
   { href: "/operation/sessions", label: "Session", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/orders", label: "Orders", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/invoices", label: "Invoices", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
+  { href: "/management/customers", label: "Customers", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/management/products", label: "Products", roles: ["Admin", "Owner", "Manager"] },
   { href: "/management/product-categories", label: "Categories", roles: ["Admin", "Owner", "Manager"] },
   { href: "/management/floors", label: "Floors", roles: ["Admin", "Owner", "Manager"] },

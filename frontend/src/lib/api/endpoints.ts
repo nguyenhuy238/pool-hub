@@ -23,8 +23,11 @@ import type {
   Session,
   TableType,
   User,
+  VenueLayoutResponse,
   VenueTable,
-  Zone
+  Zone,
+  BookingCalendarItem,
+  CustomerDto
 } from "@/types";
 
 export const authApi = {
@@ -35,6 +38,7 @@ export const authApi = {
 };
 
 export const venueApi = {
+  layout: () => apiFetch<VenueLayoutResponse>("/api/venue-tables/layout", { skipAuth: true }),
   floors: (params: Record<string, string | number | undefined> = {}) => apiFetch<Floor[] | { items?: Floor[] }>(`/api/floors${toQuery(params)}`),
   zones: (params: Record<string, string | number | undefined> = {}) => apiFetch<Zone[] | { items?: Zone[] }>(`/api/zones${toQuery(params)}`),
   tableTypes: (params: Record<string, string | number | undefined> = {}) => apiFetch<TableType[] | { items?: TableType[] }>(`/api/table-types${toQuery(params)}`),
@@ -55,10 +59,18 @@ export const venueApi = {
 
 export const bookingApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Booking[] | { items?: Booking[] }>(`/api/bookings${toQuery(params)}`),
+  calendar: (from: string, to: string, params: Record<string, string | number | undefined> = {}) => 
+    apiFetch<BookingCalendarItem[] | { items?: BookingCalendarItem[] }>(`/api/bookings/calendar${toQuery({ from, to, ...params })}`),
   create: (body: Partial<Booking>) => apiFetch<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
   confirm: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/confirm`, { method: "PUT" }),
   cancel: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/cancel`, { method: "PUT" }),
   delete: (id: number) => apiFetch(`/api/bookings/${id}`, { method: "DELETE" })
+};
+
+export const customerApi = {
+  list: (params: Record<string, string | number | boolean | null | undefined> = {}) => apiFetch<CustomerDto[] | { items?: CustomerDto[], totalCount?: number }>(`/api/customers${toQuery(params as Record<string, string | number | null | undefined>)}`),
+  detail: (id: number) => apiFetch<CustomerDto>(`/api/customers/${id}`),
+  update: (id: number, body: Partial<CustomerDto>) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) })
 };
 
 export const sessionApi = {

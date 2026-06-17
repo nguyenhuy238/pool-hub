@@ -28,16 +28,74 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Chi tiết lịch đặt bàn.</returns>
     [HttpGet("{id:int}")] [Authorize] public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await crud.GetBookingAsync(id, ct)));
-    
+
     /// <summary>
-    /// Tạo mới một lịch đặt bàn.
+    /// Lấy danh sách booking theo khoảng thời gian — dùng cho Calendar View.
     /// </summary>
     /// <remarks>
-    /// Request mẫu:
+    /// Endpoint này trả về toàn bộ booking có khoảng thời gian [startTimeUtc, endTimeUtc]
+    /// giao với khoảng [from, to] được chỉ định. Kết quả bao gồm:
+    /// - Thông tin đầy đủ khách hàng (tên, SĐT)
+    /// - Thông tin bàn và loại bàn
+    /// - Trạng thái booking kèm label (Pending/Confirmed/Cancelled/Completed)
+    ///
+    /// **Cách test trên Swagger:**
+    /// 1. Nhập token JWT vào "Authorize"
+    /// 2. Truyền `from` = ngày bắt đầu (UTC), `to` = ngày kết thúc (UTC)
+    /// 3. Optionally lọc theo `tableId` hoặc `status`
+    ///
+    /// **Ví dụ request:**
+    ///
+    ///     GET /api/bookings/calendar?from=2026-06-01T00:00:00Z&amp;to=2026-06-30T23:59:59Z&amp;status=2
+    ///
+    /// **Ví dụ response:**
+    ///
+    ///     {
+    ///       "data": {
+    ///         "items": [
+    ///           {
+    ///             "bookingId": 1,
+    ///             "bookingCode": "BK20260615100000",
+    ///             "customerName": "Nguyen Van A",
+    ///             "customerPhone": "0987654321",
+    ///             "tableCode": "T01",
+    ///             "tableName": "Ban so 1",
+    ///             "startTimeUtc": "2026-06-15T10:00:00Z",
+    ///             "endTimeUtc": "2026-06-15T12:00:00Z",
+    ///             "status": 2,
+    ///             "statusLabel": "Confirmed"
+    ///           }
+    ///         ],
+    ///         "totalCount": 1,
+    ///         "pageNumber": 1,
+    ///         "pageSize": 50
+    ///       }
+    ///     }
+    /// </remarks>
+    /// <param name="request">Query params: from (required), to (required), tableId, status, pageNumber, pageSize.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Danh sach booking trong khoang thoi gian chi dinh.</returns>
+    /// <response code="200">Tra ve danh sach booking thanh cong.</response>
+    /// <response code="400">from/to khong hop le (vi du: from > to).</response>
+    /// <response code="401">Chua xac thuc.</response>
+    [HttpGet("calendar")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<BookingCalendarItem>>), 200)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 400)]
+    public async Task<ActionResult<ApiResponse<object>>> GetCalendar(
+        [FromQuery] BookingCalendarRequest request,
+        CancellationToken ct)
+        => Ok(ApiResponse<object>.Ok(await bookingService.GetCalendarAsync(request, ct)));
+    
+    /// <summary>
+    /// Tao moi mot lich dat ban.
+    /// </summary>
+    /// <remarks>
+    /// Request mau:
     ///
     ///     POST /api/bookings
     ///     {
-    ///        "customerName": "Nguyễn Văn A",
+    ///        "customerName": "Nguyen Van A",
     ///        "phoneNumber": "0987654321",
     ///        "tableId": 1,
     ///        "tableTypeId": 1,
@@ -46,38 +104,38 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     ///        "numberOfGuests": 4
     ///     }
     ///
-    /// Hệ thống sẽ tự động sử dụng CustomerId nếu được cung cấp, hoặc tạo mới/cập nhật thông tin Khách hàng dựa trên số điện thoại (PhoneNumber).
+    /// He thong se tu dong su dung CustomerId neu duoc cung cap, hoac tao moi/cap nhat thong tin Khach hang dua tren so dien thoai (PhoneNumber).
     /// </remarks>
-    /// <param name="request">Thông tin lịch đặt bàn.</param>
+    /// <param name="request">Thong tin lich dat ban.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Lịch đặt bàn vừa được tạo.</returns>
+    /// <returns>Lich dat ban vua duoc tao.</returns>
     [HttpPost] [AllowAnonymous] public async Task<ActionResult<ApiResponse<object>>> Create([FromBody] CreateBookingRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.CreateAsync(request, ct)));
     
     /// <summary>
-    /// Xác nhận một lịch đặt bàn đang ở trạng thái Pending.
+    /// Xac nhan mot lich dat ban dang o trang thai Pending.
     /// </summary>
-    /// <param name="id">ID của lịch đặt bàn cần xác nhận.</param>
+    /// <param name="id">ID cua lich dat ban can xac nhan.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Lịch đặt bàn đã được cập nhật.</returns>
+    /// <returns>Lich dat ban da duoc cap nhat.</returns>
     [HttpPut("{id:int}/confirm")] 
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + ",Staff")] 
     public async Task<ActionResult<ApiResponse<object>>> Confirm(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.ConfirmAsync(id, ct)));
     
     /// <summary>
-    /// Hủy một lịch đặt bàn (Pending hoặc Confirmed).
+    /// Huy mot lich dat ban (Pending hoac Confirmed).
     /// </summary>
-    /// <param name="id">ID của lịch đặt bàn cần hủy.</param>
+    /// <param name="id">ID cua lich dat ban can huy.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Lịch đặt bàn đã được cập nhật.</returns>
+    /// <returns>Lich dat ban da duoc cap nhat.</returns>
     [HttpPut("{id:int}/cancel")] 
     [Authorize] 
     public async Task<ActionResult<ApiResponse<object>>> Cancel(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.CancelAsync(id, ct)));
     
     /// <summary>
-    /// Xóa vĩnh viễn một lịch đặt bàn khỏi database (Chỉ dành cho Admin/Manager).
+    /// Xoa vinh vien mot lich dat ban khoi database (Chi danh cho Admin/Manager).
     /// </summary>
-    /// <param name="id">ID của lịch đặt bàn.</param>
+    /// <param name="id">ID cua lich dat ban.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Thông báo thành công.</returns>
+    /// <returns>Thong bao thanh cong.</returns>
     [HttpDelete("{id:int}")] [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)] public async Task<ActionResult<ApiResponse<object>>> Delete(int id, CancellationToken ct) { await crud.DeleteBookingAsync(id, ct); return Ok(ApiResponse<object>.Ok(new { }, "Deleted")); }
 }

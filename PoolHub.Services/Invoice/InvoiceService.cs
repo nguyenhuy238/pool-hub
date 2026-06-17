@@ -50,7 +50,9 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
                 InvoiceId = x.InvoiceId,
                 SessionId = x.SessionId,
                 InvoiceCode = x.InvoiceCode,
-                GrandTotalAmount = x.GrandTotalAmount
+                GrandTotalAmount = x.GrandTotalAmount,
+                PaymentStatus = x.PaymentStatus,
+                Status = x.Status
             })
             .ToListAsync(ct);
 

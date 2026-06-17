@@ -104,6 +104,10 @@ button, input, select, textarea { font: inherit; }
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card:hover, .table-wrap:hover {
+  box-shadow: 0 16px 40px rgba(16, 32, 28, 0.12);
 }
 .card { padding: 18px; }
 .card h2 { margin: 0 0 12px; font-size: 18px; }
@@ -128,6 +132,12 @@ input, select, textarea {
   padding: 10px 12px;
   background: white;
   color: var(--ink);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(15, 93, 75, 0.1);
 }
 .primary-btn, .secondary-btn, .ghost-btn, .danger-btn, .icon-btn {
   border: 0;
@@ -139,6 +149,15 @@ input, select, textarea {
   align-items: center;
   justify-content: center;
   min-height: 40px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.primary-btn:hover, .secondary-btn:hover, .danger-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.primary-btn:active, .secondary-btn:active, .danger-btn:active {
+  transform: translateY(0);
 }
 .primary-btn { background: var(--brand); color: white; }
 .secondary-btn { background: var(--brand-2); color: white; }

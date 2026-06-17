@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.DTOs.Venue;
 using PoolHub.Core.Interfaces;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 
@@ -11,7 +12,7 @@ namespace PoolHub.API.Controllers;
 [ApiController]
 [Route("api/venue-tables")]
 [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
-public class VenueTablesController(ICrudService s) : ControllerBase
+public class VenueTablesController(ICrudService s, IVenueService venueService) : ControllerBase
 {
     /// <summary>
     /// Lấy danh sách các bàn chơi (Venue Tables) có phân trang.
@@ -28,6 +29,59 @@ public class VenueTablesController(ICrudService s) : ControllerBase
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Chi tiết bàn chơi.</returns>
     [HttpGet("{id:int}")] [AllowAnonymous] public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await s.GetVenueTableAsync(id, ct)));
+    
+    /// <summary>
+    /// Lấy sơ đồ toàn bộ venue theo cấu trúc phân cấp Floor → Zone → Table.
+    /// </summary>
+    /// <remarks>
+    /// Trả về cây cấu trúc đầy đủ của venue:
+    /// - Danh sách tầng (Floor), mỗi tầng gồm các khu vực (Zone)
+    /// - Mỗi khu vực gồm các bàn (VenueTable) với trạng thái hoạt động realtime
+    /// - Trạng thái bàn phản ánh session đang chạy: 1=Available, 2=Occupied, 3=Reserved, 4=Maintenance
+    /// - Trường `activeSessionId` cho biết session đang chạy trên bàn đó (null = không có)
+    /// - Thống kê nhanh: totalTables, availableTables, occupiedTables
+    ///
+    /// Ví dụ kết quả:
+    ///
+    ///     {
+    ///       "data": {
+    ///         "floors": [
+    ///           {
+    ///             "floorId": 1,
+    ///             "floorName": "Tầng 1",
+    ///             "zones": [
+    ///               {
+    ///                 "zoneId": 1,
+    ///                 "zoneName": "Khu VIP",
+    ///                 "tables": [
+    ///                   {
+    ///                     "tableId": 1,
+    ///                     "tableCode": "T01",
+    ///                     "tableName": "Bàn số 1",
+    ///                     "operationalStatus": 2,
+    ///                     "operationalStatusLabel": "Occupied",
+    ///                     "activeSessionId": 5
+    ///                   }
+    ///                 ]
+    ///               }
+    ///             ]
+    ///           }
+    ///         ],
+    ///         "totalTables": 20,
+    ///         "availableTables": 15,
+    ///         "occupiedTables": 5
+    ///       }
+    ///     }
+    /// </remarks>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Sơ đồ venue kèm trạng thái realtime.</returns>
+    /// <response code="200">Trả về sơ đồ venue thành công.</response>
+    /// <response code="401">Chưa xác thực.</response>
+    [HttpGet("layout")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<VenueLayoutResponse>), 200)]
+    public async Task<ActionResult<ApiResponse<object>>> GetLayout(CancellationToken ct)
+        => Ok(ApiResponse<object>.Ok(await venueService.GetLayoutAsync(ct)));
     
     /// <summary>
     /// Tạo mới một bàn chơi.
@@ -68,3 +122,4 @@ public class VenueTablesController(ICrudService s) : ControllerBase
     /// <returns>Thông báo thành công.</returns>
     [HttpDelete("{id:int}")] [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)] public async Task<ActionResult<ApiResponse<object>>> Delete(int id, CancellationToken ct) { await s.DeleteVenueTableAsync(id, ct); return Ok(ApiResponse<object>.Ok(new { }, "Deleted")); }
 }
+

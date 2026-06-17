@@ -56,13 +56,53 @@ public static class DbSeeder
         var zones = await db.Zones.OrderBy(x => x.ZoneId).ToListAsync(ct);
         var categories = await db.ProductCategories.OrderBy(x => x.ProductCategoryId).ToListAsync(ct);
 
-        db.PricingPlanRules.AddRange(
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = 0, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 70000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = 0, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 100000, MinimumMinutes = 30, BillingBlockMinutes = 15 }
-        );
+        var rules = new List<PricingPlanRule>();
+        
+        // Weekdays: 1 (Mon) to 5 (Fri)
+        for(int d = 1; d <= 5; d++)
+        {
+            // Ca Sáng (08:00 - 13:00)
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 40000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 70000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 80000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            
+            // Ca Chiều (13:00 - 18:00)
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            
+            // Ca Tối (18:00 - 24:00)
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 70000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 100000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 110000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+        }
+        
+        // Weekends: 6 (Sat), 0 (Sun)
+        int[] weekendDays = { 0, 6 };
+        foreach(var d in weekendDays)
+        {
+            // Ca Sáng
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 80000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(13), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            
+            // Ca Chiều
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 70000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 100000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(13), EndTime = TimeSpan.FromHours(18), HourlyRate = 100000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            
+            // Ca Tối
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 70000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 80000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 120000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+            rules.Add(new PricingPlanRule { PricingPlanId = weekendPlan.PricingPlanId, TableTypeId = tableTypes[3].TableTypeId, DayOfWeek = d, StartTime = TimeSpan.FromHours(18), EndTime = new TimeSpan(23, 59, 59), HourlyRate = 120000, MinimumMinutes = 30, BillingBlockMinutes = 15 });
+        }
+        db.PricingPlanRules.AddRange(rules);
 
         for (var i = 1; i <= 18; i++)
         {

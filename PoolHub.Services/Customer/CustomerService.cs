@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Customer;
-using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
@@ -8,41 +7,47 @@ using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Customer;
 
+/// <summary>
+/// Service quản lý thông tin khách hàng.
+/// </summary>
 public class CustomerService(PoolHubDbContext db) : ICustomerService
 {
+    /// <inheritdoc/>
     public async Task<PagedResult<CustomerDto>> GetCustomersAsync(CustomerQueryRequest request, CancellationToken ct)
     {
-        request.PageNumber = Math.Max(1, request.PageNumber);
-        request.PageSize = Math.Clamp(request.PageSize, 1, 100);
+        var query = db.Customers.AsQueryable();
 
-        var query = db.Customers.AsNoTracking().AsQueryable();
-
+        // Tìm kiếm theo tên hoặc số điện thoại
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
-            var keyword = request.Search.Trim();
-            query = query.Where(x =>
-                x.FullName.Contains(keyword) ||
-                x.PhoneNumber.Contains(keyword) ||
-                (x.Email != null && x.Email.Contains(keyword)));
+            var search = request.Search.Trim().ToLower();
+            query = query.Where(c =>
+                c.FullName.ToLower().Contains(search) ||
+                c.PhoneNumber.Contains(search));
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Phone))
-        {
-            var phone = NormalizePhone(request.Phone);
-            query = query.Where(x => x.PhoneNumber.Contains(phone));
-        }
-
+        // Lọc theo trạng thái
         if (request.Status.HasValue)
-        {
-            query = query.Where(x => x.Status == request.Status.Value);
-        }
+            query = query.Where(c => c.Status == request.Status.Value);
 
         var total = await query.CountAsync(ct);
+
+        // Đếm booking của từng customer bằng subquery
         var items = await query
-            .OrderByDescending(x => x.CustomerId)
+            .OrderBy(c => c.FullName)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(x => ToDto(x))
+            .Select(c => new CustomerDto
+            {
+                CustomerId = c.CustomerId,
+                FullName = c.FullName,
+                PhoneNumber = c.PhoneNumber,
+                Email = c.Email,
+                Note = c.Note,
+                Status = c.Status,
+                CreatedAtUtc = c.CreatedAtUtc,
+                TotalBookings = db.Bookings.Count(b => b.CustomerId == c.CustomerId)
+            })
             .ToListAsync(ct);
 
         return new PagedResult<CustomerDto>
@@ -50,133 +55,55 @@ public class CustomerService(PoolHubDbContext db) : ICustomerService
             Items = items,
             PageNumber = request.PageNumber,
             PageSize = request.PageSize,
-            TotalItems = total
+            TotalCount = total
         };
     }
 
-    public async Task<CustomerDto> GetByIdAsync(long id, CancellationToken ct)
+    /// <inheritdoc/>
+    public async Task<CustomerDto> GetCustomerAsync(long id, CancellationToken ct)
     {
         var customer = await db.Customers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.CustomerId == id, ct)
-            ?? throw new NotFoundException("Customer not found.");
+            .Where(c => c.CustomerId == id)
+            .Select(c => new CustomerDto
+            {
+                CustomerId = c.CustomerId,
+                FullName = c.FullName,
+                PhoneNumber = c.PhoneNumber,
+                Email = c.Email,
+                Note = c.Note,
+                Status = c.Status,
+                CreatedAtUtc = c.CreatedAtUtc,
+                TotalBookings = db.Bookings.Count(b => b.CustomerId == c.CustomerId)
+            })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException($"Customer with ID {id} not found.");
 
-        return ToDto(customer);
+        return customer;
     }
 
-    public async Task<CustomerDto> CreateAsync(CreateCustomerRequest request, long? actorUserId, CancellationToken ct)
+    /// <inheritdoc/>
+    public async Task<CustomerDto> UpdateCustomerAsync(long id, UpdateCustomerRequest request, CancellationToken ct)
     {
-        ValidateRequired(request.FullName, request.PhoneNumber);
-        var phone = NormalizePhone(request.PhoneNumber);
-        var email = NormalizeEmail(request.Email);
+        var customer = await db.Customers.FindAsync([id], ct)
+            ?? throw new NotFoundException($"Customer with ID {id} not found.");
 
-        if (await db.Customers.AnyAsync(x => x.PhoneNumber == phone, ct))
-        {
-            throw new ConflictException("Customer phone number already exists.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(email) && await db.Customers.AnyAsync(x => x.Email == email, ct))
-        {
-            throw new ConflictException("Customer email already exists.");
-        }
-
-        var customer = new PoolHub.Core.Entities.Customer
-        {
-            FullName = request.FullName.Trim(),
-            PhoneNumber = phone,
-            Email = email,
-            Note = request.Note,
-            Status = true
-        };
-
-        db.Customers.Add(customer);
-        await db.SaveChangesAsync(ct);
-
-        AddAudit(actorUserId, "CUSTOMER_CREATED", customer);
-        await db.SaveChangesAsync(ct);
-
-        return ToDto(customer);
-    }
-
-    public async Task<CustomerDto> UpdateAsync(long id, UpdateCustomerRequest request, long? actorUserId, CancellationToken ct)
-    {
-        ValidateRequired(request.FullName, request.PhoneNumber);
-        var customer = await db.Customers.FindAsync([id], ct) ?? throw new NotFoundException("Customer not found.");
-
-        var phone = NormalizePhone(request.PhoneNumber);
-        var email = NormalizeEmail(request.Email);
-
-        if (await db.Customers.AnyAsync(x => x.CustomerId != id && x.PhoneNumber == phone, ct))
-        {
-            throw new ConflictException("Customer phone number already exists.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(email) && await db.Customers.AnyAsync(x => x.CustomerId != id && x.Email == email, ct))
-        {
-            throw new ConflictException("Customer email already exists.");
-        }
-
-        customer.FullName = request.FullName.Trim();
-        customer.PhoneNumber = phone;
-        customer.Email = email;
+        customer.FullName = request.FullName;
+        customer.Email = request.Email;
         customer.Note = request.Note;
         customer.Status = request.Status;
-        customer.UpdatedAtUtc = DateTime.UtcNow;
 
-        AddAudit(actorUserId, "CUSTOMER_UPDATED", customer);
         await db.SaveChangesAsync(ct);
 
-        return ToDto(customer);
-    }
-
-    public async Task UpdateStatusAsync(long id, bool status, long? actorUserId, CancellationToken ct)
-    {
-        var customer = await db.Customers.FindAsync([id], ct) ?? throw new NotFoundException("Customer not found.");
-        customer.Status = status;
-        customer.UpdatedAtUtc = DateTime.UtcNow;
-
-        AddAudit(actorUserId, status ? "CUSTOMER_ACTIVATED" : "CUSTOMER_DEACTIVATED", customer);
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static CustomerDto ToDto(PoolHub.Core.Entities.Customer customer) => new()
-    {
-        CustomerId = customer.CustomerId,
-        PublicId = customer.PublicId,
-        FullName = customer.FullName,
-        PhoneNumber = customer.PhoneNumber,
-        Email = customer.Email,
-        Note = customer.Note,
-        Status = customer.Status
-    };
-
-    private static void ValidateRequired(string fullName, string phoneNumber)
-    {
-        if (string.IsNullOrWhiteSpace(fullName))
+        return new CustomerDto
         {
-            throw new ValidationException("Customer full name is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(phoneNumber))
-        {
-            throw new ValidationException("Customer phone number is required.");
-        }
-    }
-
-    private static string NormalizePhone(string? phoneNumber) => (phoneNumber ?? string.Empty).Trim();
-    private static string? NormalizeEmail(string? email) => string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
-
-    private void AddAudit(long? actorUserId, string action, PoolHub.Core.Entities.Customer customer)
-    {
-        db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = actorUserId,
-            Action = action,
-            EntityName = "Customer",
-            EntityId = customer.CustomerId,
-            EntityPublicId = customer.PublicId,
-            Description = $"{action} {customer.FullName}",
-            CreatedAtUtc = DateTime.UtcNow
-        });
+            CustomerId = customer.CustomerId,
+            FullName = customer.FullName,
+            PhoneNumber = customer.PhoneNumber,
+            Email = customer.Email,
+            Note = customer.Note,
+            Status = customer.Status,
+            CreatedAtUtc = customer.CreatedAtUtc,
+            TotalBookings = await db.Bookings.CountAsync(b => b.CustomerId == customer.CustomerId, ct)
+        };
     }
 }
