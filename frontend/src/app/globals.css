@@ -62,6 +62,8 @@ button, input, select, textarea { font: inherit; }
 .section { padding: 42px clamp(18px, 4vw, 70px); }
 .section h2, .page-header h1 { margin: 0; font-size: 30px; }
 .section-grid, .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 18px; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin-top: 18px; align-items: start; }
+@media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
 .sidebar {
   position: sticky;

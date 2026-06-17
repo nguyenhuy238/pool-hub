@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import { useToast } from "@/components/toast";
+import { ApiError } from "@/lib/api/client";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -19,7 +20,13 @@ export default function LoginPage() {
       await login(email, password);
       toast("Đăng nhập thành công.", "success");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Đăng nhập thất bại.", "error");
+      if (err instanceof ApiError && err.status === 401) {
+        toast("Sai email hoặc mật khẩu.", "error");
+      } else if (err instanceof ApiError && err.status === 423) {
+        toast("Tài khoản đang bị khóa.", "error");
+      } else {
+        toast(err instanceof Error ? err.message : "Đăng nhập thất bại.", "error");
+      }
     } finally {
       setLoading(false);
     }

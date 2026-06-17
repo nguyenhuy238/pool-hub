@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Entities;
@@ -20,9 +21,9 @@ public class AuthServiceTests
         await db.SaveChangesAsync();
 
         var jwt = Options.Create(new JwtSettings { SecretKey = "UNIT_TEST_SECRET_KEY_12345678901234567890", Issuer = "PoolHub.API", Audience = "PoolHub.Client", ExpirationHours = 8 });
-        var service = new AuthService(db, jwt);
+        var service = new AuthService(db, jwt, NullLogger<AuthService>.Instance);
 
-        var result = await service.LoginAsync(new LoginRequest { Email = "admin@poolhub.com", Password = "Admin@123" }, default);
+        var result = await service.LoginAsync(new LoginRequest { Email = " Admin@PoolHub.com ", Password = "Admin@123" }, default);
 
         Assert.False(string.IsNullOrWhiteSpace(result.AccessToken));
         Assert.Equal("admin@poolhub.com", result.Email);

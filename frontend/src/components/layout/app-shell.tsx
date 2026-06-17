@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 
 const nav = [
+  { href: "/admin/dashboard", label: "Admin Dashboard", roles: ["Admin", "Owner"] },
   { href: "/dashboard", label: "Dashboard", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/floor-map", label: "Floor Map", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },
   { href: "/operation/bookings", label: "Booking", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] },

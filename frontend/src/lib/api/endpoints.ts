@@ -1,5 +1,6 @@
 import { apiFetch, toQuery } from "@/lib/api/client";
 import type {
+  ActiveSessionDashboard,
   AuditLog,
   AuthResponse,
   AuthUser,
@@ -8,6 +9,7 @@ import type {
   DashboardSummary,
   Floor,
   Invoice,
+  LowStockProduct,
   Notification,
   Order,
   PaymentMethod,
@@ -15,6 +17,8 @@ import type {
   PricingPlanRule,
   Product,
   ProductCategory,
+  RecentAuditLog,
+  RevenuePoint,
   Role,
   Session,
   TableType,
@@ -117,6 +121,14 @@ export const customerApi = {
   create: (body: Partial<Customer>) => apiFetch<Customer>("/api/customers", { method: "POST", body: JSON.stringify(body) }),
   update: (id: number, body: Partial<Customer>) => apiFetch<Customer>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) })
+};
+
+export const adminDashboardApi = {
+  summary: () => apiFetch<DashboardSummary>("/api/admin/dashboard/summary"),
+  revenue: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<RevenuePoint[]>(`/api/admin/dashboard/revenue${toQuery(params)}`),
+  activeSessions: () => apiFetch<ActiveSessionDashboard[]>("/api/admin/dashboard/active-sessions"),
+  lowStockProducts: () => apiFetch<LowStockProduct[]>("/api/admin/dashboard/low-stock-products"),
+  recentAuditLogs: () => apiFetch<RecentAuditLog[]>("/api/admin/dashboard/recent-audit-logs")
 };
 
 export const miscApi = {

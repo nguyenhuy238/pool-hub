@@ -19,7 +19,8 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function getLandingPath(roles: RoleName[]) {
-  if (roles.some((role) => ["Admin", "Owner", "Manager"].includes(role))) return "/dashboard";
+  if (roles.some((role) => ["Admin", "Owner"].includes(role))) return "/admin/dashboard";
+  if (roles.some((role) => ["Manager"].includes(role))) return "/dashboard";
   if (roles.some((role) => ["Staff", "Cashier"].includes(role))) return "/operation/floor-map";
   return "/booking";
 }

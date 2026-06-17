@@ -10,32 +10,12 @@ public static class DbSeeder
     {
         await db.Database.MigrateAsync(ct);
         await EnsureRolesAsync(db, ct);
-
-        if (await db.Users.AnyAsync(ct)) return;
-
-        string Hash(string p) => BCrypt.Net.BCrypt.HashPassword(p, 12);
-
-        var users = new[]
-        {
-            new User { FullName = "Admin", Email = "admin@poolhub.com", PasswordHash = Hash("Admin@123"), EmailConfirmed = true, Status = true },
-            new User { FullName = "Manager", Email = "manager@poolhub.com", PasswordHash = Hash("Manager@123"), EmailConfirmed = true, Status = true },
-            new User { FullName = "Staff 1", Email = "staff1@poolhub.com", PasswordHash = Hash("Staff@123"), EmailConfirmed = true, Status = true },
-            new User { FullName = "Staff 2", Email = "staff2@poolhub.com", PasswordHash = Hash("Staff@123"), EmailConfirmed = true, Status = true },
-            new User { FullName = "Cashier", Email = "cashier@poolhub.com", PasswordHash = Hash("Cashier@123"), EmailConfirmed = true, Status = true }
-        };
-        db.Users.AddRange(users);
-        await db.SaveChangesAsync(ct);
+        await EnsureDemoUsersAsync(db, ct);
 
         var roleMap = await db.Roles.ToDictionaryAsync(x => x.Name, x => x.RoleId, ct);
         var userMap = await db.Users.ToDictionaryAsync(x => x.Email, x => x.UserId, ct);
 
-        db.UserRoles.AddRange([
-            new UserRole { UserId = userMap["admin@poolhub.com"], RoleId = roleMap[RoleConstants.Admin] },
-            new UserRole { UserId = userMap["manager@poolhub.com"], RoleId = roleMap[RoleConstants.Manager] },
-            new UserRole { UserId = userMap["staff1@poolhub.com"], RoleId = roleMap[RoleConstants.Staff] },
-            new UserRole { UserId = userMap["staff2@poolhub.com"], RoleId = roleMap[RoleConstants.Staff] },
-            new UserRole { UserId = userMap["cashier@poolhub.com"], RoleId = roleMap[RoleConstants.Cashier] }
-        ]);
+        if (await db.Floors.AnyAsync(ct)) return;
 
         var floor = new Floor { Name = "Floor 1", DisplayOrder = 1, IsActive = true };
         var floor2 = new Floor { Name = "Floor 2 - VIP", DisplayOrder = 2, IsActive = true };
@@ -275,5 +255,58 @@ public static class DbSeeder
 
         db.Roles.AddRange(missing);
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDemoUsersAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var roleMap = await db.Roles.ToDictionaryAsync(x => x.Name, x => x.RoleId, ct);
+        var demos = new[]
+        {
+            new { FullName = "Admin", Email = "admin@poolhub.com", Password = "Admin@123", Role = RoleConstants.Admin },
+            new { FullName = "Manager", Email = "manager@poolhub.com", Password = "Manager@123", Role = RoleConstants.Manager },
+            new { FullName = "Staff 1", Email = "staff1@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff },
+            new { FullName = "Staff 2", Email = "staff2@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff },
+            new { FullName = "Cashier", Email = "cashier@poolhub.com", Password = "Cashier@123", Role = RoleConstants.Cashier }
+        };
+
+        foreach (var demo in demos)
+        {
+            var email = demo.Email.Trim().ToLowerInvariant();
+            var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
+            if (user is null)
+            {
+                user = new User
+                {
+                    FullName = demo.FullName,
+                    Email = email,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(demo.Password, 12),
+                    EmailConfirmed = true,
+                    Status = true
+                };
+                db.Users.Add(user);
+                await db.SaveChangesAsync(ct);
+            }
+            else
+            {
+                user.Email = email;
+                user.FullName = string.IsNullOrWhiteSpace(user.FullName) ? demo.FullName : user.FullName;
+                user.EmailConfirmed = true;
+                user.Status = true;
+                if (string.IsNullOrWhiteSpace(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(demo.Password, user.PasswordHash))
+                {
+                    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demo.Password, 12);
+                }
+                user.UpdatedAtUtc = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+
+            var roleId = roleMap[demo.Role];
+            var hasRole = await db.UserRoles.AnyAsync(x => x.UserId == user.UserId && x.RoleId == roleId, ct);
+            if (!hasRole)
+            {
+                db.UserRoles.Add(new UserRole { UserId = user.UserId, RoleId = roleId });
+                await db.SaveChangesAsync(ct);
+            }
+        }
     }
 }

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using PoolHub.Core.DTOs.Auth;
@@ -15,20 +16,21 @@ using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Auth;
 
-public class AuthService(PoolHubDbContext db, IOptions<JwtSettings> jwtOptions) : IAuthService
+public class AuthService(PoolHubDbContext db, IOptions<JwtSettings> jwtOptions, ILogger<AuthService> logger) : IAuthService
 {
     private readonly JwtSettings _jwt = jwtOptions.Value;
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, long? currentUserId, CancellationToken cancellationToken)
     {
         if (!RoleConstants.All.Contains(request.Role)) throw new ValidationException("Invalid role.");
-        var exists = await db.Users.AnyAsync(x => x.Email == request.Email, cancellationToken);
+        var email = request.Email.Trim().ToLowerInvariant();
+        var exists = await db.Users.AnyAsync(x => x.Email == email, cancellationToken);
         if (exists) throw new ConflictException("Email already exists.");
 
         var user = new User
         {
             FullName = request.FullName,
-            Email = request.Email.Trim().ToLowerInvariant(),
+            Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
             EmailConfirmed = true,
             Status = true
@@ -46,9 +48,27 @@ public class AuthService(PoolHubDbContext db, IOptions<JwtSettings> jwtOptions) 
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
     {
-        var user = await db.Users.FirstOrDefaultAsync(x => x.Email == request.Email.ToLower(), cancellationToken) ?? throw new UnauthorizedException("Invalid email or password.");
-        if (!user.Status) throw new ForbiddenException("Account is locked.");
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash)) throw new UnauthorizedException("Invalid email or password.");
+        var email = request.Email.Trim().ToLowerInvariant();
+        logger.LogInformation("Login attempt for normalized email {Email}", email);
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+        if (user is null)
+        {
+            logger.LogWarning("Login failed for {Email}: user not found", email);
+            throw new UnauthorizedException("Invalid email or password.");
+        }
+
+        if (!user.Status)
+        {
+            logger.LogWarning("Login blocked for {Email}: account is locked", email);
+            throw new LockedException("Account is locked.");
+        }
+
+        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        {
+            logger.LogWarning("Login failed for {Email}: invalid password", email);
+            throw new UnauthorizedException("Invalid email or password.");
+        }
 
         user.LastLoginAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);

@@ -154,7 +154,17 @@ export type DashboardSummary = {
   todayRevenue: number;
   lowStockProducts: number;
   unreadNotifications: number;
+  activeTables?: number;
+  pendingBookings?: number;
+  confirmedBookings?: number;
+  unpaidInvoices?: number;
+  todayAuditLogs?: number;
 };
+
+export type RevenuePoint = { date: string; amount: number };
+export type ActiveSessionDashboard = { sessionId: number; sessionCode?: string; startedAtUtc: string; durationMinutes: number };
+export type LowStockProduct = { productId: number; name: string; sku: string; stockQuantity: number; lowStockThreshold?: number };
+export type RecentAuditLog = { auditLogId: number; actorUserId?: number; action: string; entityName: string; entityId?: number; createdAtUtc: string };
 
 export type Floor = { floorId: number; name: string; description?: string; displayOrder?: number; isActive?: boolean };
 export type Zone = { zoneId: number; floorId: number; name: string; description?: string; displayOrder?: number; isActive?: boolean };
