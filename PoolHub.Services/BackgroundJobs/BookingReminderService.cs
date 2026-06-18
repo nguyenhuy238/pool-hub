@@ -35,24 +35,37 @@ public class BookingReminderService : BackgroundService
     {
         _logger.LogInformation("[BookingReminderService] Started. Checking every {interval} minutes.", CheckInterval.TotalMinutes);
 
-        // Delay ban đầu 1 phút để app khởi động ổn định
-        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
-            {
-                await ProcessRemindersAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "[BookingReminderService] Error while processing reminders.");
-            }
+            // Delay ban đầu để app và database khởi động ổn định.
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
 
-            await Task.Delay(CheckInterval, stoppingToken);
+            using var timer = new PeriodicTimer(CheckInterval);
+            do
+            {
+                try
+                {
+                    await ProcessRemindersAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[BookingReminderService] Error while processing reminders.");
+                }
+            }
+            while (await timer.WaitForNextTickAsync(stoppingToken));
         }
-
-        _logger.LogInformation("[BookingReminderService] Stopped.");
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Normal host shutdown/restart. Do not surface TaskCanceledException to the debugger.
+        }
+        finally
+        {
+            _logger.LogInformation("[BookingReminderService] Stopped.");
+        }
     }
 
     private async Task ProcessRemindersAsync(CancellationToken ct)
@@ -80,18 +93,24 @@ public class BookingReminderService : BackgroundService
 
         // 2. Lấy danh sách BookingId đã được nhắc (tránh gửi 2 lần)
         var bookingIds = upcomingBookings.Select(b => b.BookingId).ToList();
-        var alreadyRemindedIds = await db.Notifications
-            .Where(n => n.NotificationType == "BOOKING_REMINDER" &&
-                        bookingIds.Contains(long.Parse(n.Message.Contains("BookingId:") 
-                            ? n.Message.Split("BookingId:")[1].Split(';')[0].Trim() 
-                            : "0")))
-            .Select(n => n.CustomerId)
+        var reminderMessages = await db.Notifications
+            .AsNoTracking()
+            .Where(n => n.NotificationType == "BOOKING_REMINDER" && n.Message.Contains("BookingId:"))
+            .Select(n => n.Message)
             .ToListAsync(ct);
+        var remindedBookingIds = reminderMessages
+            .Select(TryGetBookingId)
+            .Where(id => id.HasValue && bookingIds.Contains(id.Value))
+            .Select(id => id!.Value)
+            .ToHashSet();
 
         var newNotifications = new List<EntityNotification>();
 
         foreach (var booking in upcomingBookings)
         {
+            if (remindedBookingIds.Contains(booking.BookingId))
+                continue;
+
             // Lấy thông tin bàn (nếu có)
             string tableInfo = "chưa xác định bàn cụ thể";
             if (booking.TableId.HasValue)
@@ -133,5 +152,17 @@ public class BookingReminderService : BackgroundService
             await db.SaveChangesAsync(ct);
             _logger.LogInformation("[BookingReminderService] Saved {count} reminder notification(s).", newNotifications.Count);
         }
+    }
+
+    private static long? TryGetBookingId(string message)
+    {
+        const string marker = "BookingId:";
+        var markerIndex = message.IndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex < 0) return null;
+
+        var valueStart = markerIndex + marker.Length;
+        var valueEnd = message.IndexOf(';', valueStart);
+        var raw = valueEnd < 0 ? message[valueStart..] : message[valueStart..valueEnd];
+        return long.TryParse(raw.Trim(), out var id) ? id : null;
     }
 }

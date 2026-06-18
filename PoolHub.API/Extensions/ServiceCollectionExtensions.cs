@@ -9,6 +9,7 @@ using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Infrastructure.Repositories;
 using PoolHub.Services.Audit;
+using PoolHub.Services.Admin;
 using PoolHub.Services.Auth;
 using PoolHub.Services.BackgroundJobs;
 using PoolHub.Services.Booking;
@@ -170,6 +171,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IAdminManagementService, AdminManagementService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ILandingPageSettingsService, LandingPageSettingsService>();
         services.AddScoped<IMediaService, MediaService>();

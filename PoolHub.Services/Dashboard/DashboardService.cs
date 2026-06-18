@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Dashboard;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared.Constants;
 
 namespace PoolHub.Services.Dashboard;
 
@@ -22,7 +23,7 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
             TodayBookings = await db.Bookings.CountAsync(x => x.StartTimeUtc >= today && x.StartTimeUtc < tomorrow, ct),
             ActiveSessions = await db.Sessions.CountAsync(x => x.Status == 1, ct),
             TodayRevenue = await db.Payments
-                .Where(x => x.PaymentStatus == 2 && x.PaidAtUtc >= today && x.PaidAtUtc < tomorrow)
+                .Where(x => x.PaymentStatus == PaymentStatuses.Completed && x.PaidAtUtc >= today && x.PaidAtUtc < tomorrow)
                 .SumAsync(x => (decimal?)x.Amount, ct) ?? 0,
             LowStockProducts = await db.Products.CountAsync(x => x.StockQuantity <= 5, ct),
             UnreadNotifications = userId.HasValue
@@ -52,7 +53,7 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
             ActiveTables = await db.VenueTables.CountAsync(x => x.IsActive, ct),
             PendingBookings = await db.Bookings.CountAsync(x => x.Status == 1, ct),
             ConfirmedBookings = await db.Bookings.CountAsync(x => x.Status == 2, ct),
-            UnpaidInvoices = await db.Invoices.CountAsync(x => x.PaymentStatus != 2, ct),
+            UnpaidInvoices = await db.Invoices.CountAsync(x => x.PaymentStatus != InvoicePaymentStatuses.Paid, ct),
             TodayAuditLogs = await db.AuditLogs.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
         };
     }
@@ -64,7 +65,7 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
 
         var payments = await db.Payments
             .AsNoTracking()
-            .Where(x => x.PaymentStatus == 2 && x.PaidAtUtc >= from && x.PaidAtUtc < to)
+            .Where(x => x.PaymentStatus == PaymentStatuses.Completed && x.PaidAtUtc >= from && x.PaidAtUtc < to)
             .GroupBy(x => x.PaidAtUtc!.Value.Date)
             .Select(x => new RevenuePointDto { Date = x.Key, Amount = x.Sum(p => p.Amount) })
             .ToListAsync(ct);

@@ -10,6 +10,9 @@ public interface IBookingService
     Task<BookingDto> CreateAsync(CreateBookingRequest request, CancellationToken ct);
     Task<BookingDto> ConfirmAsync(long id, CancellationToken ct);
     Task<BookingDto> CancelAsync(long id, CancellationToken ct);
+    Task<BookingDto> MarkNoShowAsync(long id, CancellationToken ct);
+    Task<BookingDto> MarkCompletedAsync(long id, CancellationToken ct);
+    Task<List<AvailableTableDto>> GetAvailabilityAsync(BookingAvailabilityRequest request, CancellationToken ct);
 
     /// <summary>
     /// Lấy danh sách booking theo khoảng thời gian, dùng cho Calendar View.

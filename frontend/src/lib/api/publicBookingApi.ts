@@ -30,29 +30,9 @@ function toBookingPayload(request: PublicBookingRequest) {
 }
 
 export const publicBookingApi = {
-  async create(request: PublicBookingRequest) {
-    try {
-      return await apiFetch<Booking>("/api/bookings", {
-        method: "POST",
-        body: JSON.stringify(toBookingPayload(request)),
-        skipAuth: true
-      });
-    } catch (error) {
-      if (error instanceof TypeError) {
-        // TODO: Remove this fallback after the deployed backend is always reachable from the public website.
-        return {
-          bookingId: Date.now(),
-          customerName: request.customerName,
-          phoneNumber: request.phoneNumber,
-          tableTypeId: request.tableTypeId,
-          startTimeUtc: new Date(`${request.bookingDate}T${request.startTime}`).toISOString(),
-          endTimeUtc: new Date(new Date(`${request.bookingDate}T${request.startTime}`).getTime() + request.durationHours * 60 * 60 * 1000).toISOString(),
-          numberOfGuests: request.numberOfGuests,
-          status: 1
-        } satisfies Booking;
-      }
-
-      throw error;
-    }
-  }
+  create: (request: PublicBookingRequest) => apiFetch<Booking>("/api/bookings/public", {
+    method: "POST",
+    body: JSON.stringify(toBookingPayload(request)),
+    skipAuth: true
+  })
 };

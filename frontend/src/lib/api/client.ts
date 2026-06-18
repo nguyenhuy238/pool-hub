@@ -104,10 +104,25 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: { message?: string; errors?: string[] } | null = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+  }
 
   if (!response.ok) {
-    const message = payload?.message || (response.status === 403 ? "Bạn không có quyền truy cập." : "Có lỗi xảy ra.");
+    const fallback: Record<number, string> = {
+      400: "Dữ liệu gửi lên không hợp lệ.",
+      403: "Bạn không có quyền truy cập.",
+      404: "API không tồn tại hoặc backend chưa được cập nhật.",
+      409: "Dữ liệu bị xung đột.",
+      500: "Backend gặp lỗi khi xử lý dữ liệu.",
+      503: "Không thể kết nối dịch vụ hoặc cơ sở dữ liệu."
+    };
+    const message = payload?.message || fallback[response.status] || `Request thất bại (${response.status}).`;
     throw new ApiError(message, response.status, payload?.errors || []);
   }
 

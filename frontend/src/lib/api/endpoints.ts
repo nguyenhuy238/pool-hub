@@ -23,6 +23,7 @@ import type {
   Zone,
   BookingCalendarItem,
   CustomerDto
+  , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport
 } from "@/types";
 
 export const venueApi = {
@@ -119,4 +120,33 @@ export const adminDashboardApi = {
 export const miscApi = {
   notifications: () => apiFetch<Notification[] | { items?: Notification[] }>("/api/notifications"),
   dashboardSummary: () => apiFetch<DashboardSummary>("/api/dashboard/summary")
+};
+
+export const discountApi = {
+  list: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<Discount[] | { items?: Discount[] }>(`/api/discounts${toQuery(params)}`),
+  create: (body: Partial<Discount>) => apiFetch<Discount>("/api/discounts", { method: "POST", body: JSON.stringify(body) }),
+  update: (id: number, body: Partial<Discount>) => apiFetch<Discount>(`/api/discounts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  status: (id: number, isActive: boolean) => apiFetch(`/api/discounts/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) })
+};
+
+export const inventoryApi = {
+  list: (params: Record<string, string | number | undefined> = {}) => apiFetch<InventoryTransaction[] | { items?: InventoryTransaction[] }>(`/api/inventory-transactions${toQuery(params)}`),
+  lowStock: () => apiFetch<LowStockProduct[]>("/api/inventory-transactions/low-stock"),
+  adjust: (body: { productId: number; quantity: number; transactionType: number; unitCost?: number; note?: string }) =>
+    apiFetch<InventoryTransaction>("/api/inventory-transactions/stock-adjust", { method: "POST", body: JSON.stringify(body) })
+};
+
+export const paymentsApi = {
+  list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Payment[] | { items?: Payment[] }>(`/api/payments${toQuery(params)}`),
+  methods: () => apiFetch<PaymentMethod[]>("/api/payment-methods"),
+  createMethod: (body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>("/api/payment-methods", { method: "POST", body: JSON.stringify(body) }),
+  updateMethod: (id: number, body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>(`/api/payment-methods/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  methodStatus: (id: number, isActive: boolean) => apiFetch(`/api/payment-methods/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) })
+};
+
+export const reportsApi = {
+  revenue: (params: Record<string, string | undefined> = {}) => apiFetch<RevenueReport[]>(`/api/reports/revenue${toQuery(params)}`),
+  tableUsage: (params: Record<string, string | undefined> = {}) => apiFetch<TableUsageReport[]>(`/api/reports/table-usage${toQuery(params)}`),
+  products: (params: Record<string, string | undefined> = {}) => apiFetch<ProductSalesReport[]>(`/api/reports/products${toQuery(params)}`),
+  bookings: (params: Record<string, string | undefined> = {}) => apiFetch<BookingReport[]>(`/api/reports/bookings${toQuery(params)}`)
 };

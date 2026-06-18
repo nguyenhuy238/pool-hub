@@ -276,6 +276,22 @@ export type VenueLayoutResponse = {
 export type PricingPlan = { pricingPlanId: number; name: string; isDefault?: boolean; isActive?: boolean };
 export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayOfWeek: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
 export type Notification = { notificationId: number; title?: string; message?: string; isRead?: boolean; createdAtUtc?: string };
+export type Discount = {
+  discountId: number; discountCode: string; name: string; discountType: string; value: number;
+  maxAmount?: number; minTimeSubtotal?: number; appliesTo: "TIME"; startsAtUtc: string; endsAtUtc?: string; isActive: boolean;
+};
+export type InventoryTransaction = {
+  inventoryTransactionId: number; productId: number; productName: string; transactionType: number;
+  quantity: number; unitCost?: number; note?: string; createdAtUtc: string;
+};
+export type Payment = {
+  paymentId: number; invoiceId: number; paymentMethodId: number; amount: number;
+  paymentStatus: number; transactionCode?: string; paidAtUtc?: string;
+};
+export type RevenueReport = { date: string; revenue: number; invoiceCount: number };
+export type TableUsageReport = { tableId: number; tableName: string; sessionCount: number; totalMinutes: number };
+export type ProductSalesReport = { productId: number; productName: string; quantity: number; revenue: number };
+export type BookingReport = { status: number; count: number };
 export type AuditLog = {
   auditLogId: number;
   actorUserId?: number;

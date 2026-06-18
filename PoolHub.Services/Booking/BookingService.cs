@@ -97,9 +97,12 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> ConfirmAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status != 1) throw new Exception("Only Pending bookings can be confirmed.");
+        if (booking.Status != 1) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
+        if (booking.TableId.HasValue && await HasConflictAsync(booking, ct))
+            throw new ConflictException("Table is already booked for the selected time.");
 
         booking.Status = 2; // Confirmed
+        booking.ConfirmedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
     }
@@ -107,12 +110,57 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> CancelAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status == 3 || booking.Status == 4) throw new Exception("Booking cannot be cancelled.");
+        if (booking.Status == 3 || booking.Status == 4 || booking.Status == 5) throw new BusinessRuleException("Booking cannot be cancelled.");
 
         booking.Status = 3; // Cancelled
+        booking.CancelledAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
     }
+
+    public async Task<BookingDto> MarkNoShowAsync(long id, CancellationToken ct)
+    {
+        var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        if (booking.Status != 2) throw new BusinessRuleException("Only Confirmed bookings can be marked NoShow.");
+        booking.Status = 5;
+        await db.SaveChangesAsync(ct);
+        return Map(booking);
+    }
+
+    public async Task<BookingDto> MarkCompletedAsync(long id, CancellationToken ct)
+    {
+        var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        if (booking.Status != 2) throw new BusinessRuleException("Only Confirmed bookings can be completed.");
+        booking.Status = 4;
+        await db.SaveChangesAsync(ct);
+        return Map(booking);
+    }
+
+    public async Task<List<AvailableTableDto>> GetAvailabilityAsync(BookingAvailabilityRequest request, CancellationToken ct)
+    {
+        if (request.EndTimeUtc <= request.StartTimeUtc) throw new ValidationException("End time must be after start time.");
+        var query = from table in db.VenueTables.AsNoTracking()
+                    join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
+                    where table.OperationalStatus == 1
+                       && !db.SessionTableAssignments.Any(a => a.TableId == table.TableId && a.EndedAtUtc == null)
+                       && !db.Bookings.Any(b => b.TableId == table.TableId && b.Status == 2
+                            && b.StartTimeUtc < request.EndTimeUtc && b.EndTimeUtc > request.StartTimeUtc)
+                    select new AvailableTableDto {
+                        TableId = table.TableId, TableCode = table.TableCode, TableName = table.TableName,
+                        TableTypeId = table.TableTypeId, TableTypeName = type.Name, Capacity = table.Capacity
+                    };
+        if (request.TableTypeId.HasValue) query = query.Where(x => x.TableTypeId == request.TableTypeId);
+        return await query.OrderBy(x => x.TableCode).ToListAsync(ct);
+    }
+
+    private Task<bool> HasConflictAsync(EntityBooking booking, CancellationToken ct) =>
+        db.Bookings.AnyAsync(x => x.BookingId != booking.BookingId && x.TableId == booking.TableId && x.Status == 2
+            && x.StartTimeUtc < booking.EndTimeUtc && x.EndTimeUtc > booking.StartTimeUtc, ct);
+
+    private static BookingDto Map(EntityBooking booking) => new() {
+        BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId,
+        TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status
+    };
 
     /// <inheritdoc/>
     public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)

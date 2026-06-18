@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace PoolHub.IntegrationTests;
 
@@ -16,6 +17,27 @@ public class HealthTests
         var client = factory.CreateClient();
         var response = await client.GetAsync("/swagger/index.html");
         Assert.True((int)response.StatusCode is 200 or 301 or 302);
+    }
+
+    [Fact]
+    public async Task Admin_Module_Endpoints_AreRegistered()
+    {
+        using var factory = CreateFactory();
+        var client = factory.CreateClient();
+        using var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var paths = swagger.RootElement.GetProperty("paths");
+
+        foreach (var path in new[]
+        {
+            "/api/discounts",
+            "/api/inventory-transactions",
+            "/api/payment-methods",
+            "/api/payments",
+            "/api/reports/revenue"
+        })
+        {
+            Assert.True(paths.TryGetProperty(path, out _), $"Missing API route: {path}");
+        }
     }
 
     [Fact]

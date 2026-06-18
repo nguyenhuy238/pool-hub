@@ -60,7 +60,7 @@ export default function InvoicesPage() {
           { key: "invoiceCode", label: "Mã" },
           { key: "sessionId", label: "Session" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
-          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 2 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
+          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
         ]} 
         actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>} 
       />
@@ -69,7 +69,7 @@ export default function InvoicesPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <h2 style={{ margin: 0 }}>{invoice.invoiceCode || `Invoice #${invoice.invoiceId}`}</h2>
-              {Number(invoice.paymentStatus) === 2 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}
+              {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}
             </div>
             <button className="ghost-btn" style={{ fontSize: '20px', padding: '4px 8px' }} onClick={() => setInvoice(null)} title="Đóng chi tiết">&times;</button>
           </div>
@@ -85,7 +85,7 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          {Number(invoice.paymentStatus) !== 2 ? (
+          {Number(invoice.paymentStatus) !== 3 ? (
             <div className="actions" style={{ background: 'var(--soft)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
               <select value={paymentMethodId} onChange={(event) => setPaymentMethodId(Number(event.target.value))}>
                 <option value="">-- Chọn phương thức thanh toán --</option>
