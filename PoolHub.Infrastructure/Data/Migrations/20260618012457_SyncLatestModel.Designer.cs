@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PoolHub.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using PoolHub.Infrastructure.Data;
 namespace PoolHub.Infrastructure.Migrations
 {
     [DbContext(typeof(PoolHubDbContext))]
-    partial class PoolHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618012457_SyncLatestModel")]
+    partial class SyncLatestModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -616,92 +619,6 @@ namespace PoolHub.Infrastructure.Migrations
                     b.HasIndex("InvoiceId");
 
                     b.ToTable("invoice_lines", (string)null);
-                });
-
-            modelBuilder.Entity("PoolHub.Core.Entities.MediaAsset", b =>
-                {
-                    b.Property<long>("MediaAssetId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("media_asset_id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("MediaAssetId"));
-
-                    b.Property<string>("AltText")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("alt_text");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)")
-                        .HasColumnName("content_type");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<string>("Folder")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)")
-                        .HasColumnName("folder");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit")
-                        .HasColumnName("is_active");
-
-                    b.Property<string>("MediaType")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasColumnName("media_type");
-
-                    b.Property<string>("OriginalFileName")
-                        .IsRequired()
-                        .HasMaxLength(260)
-                        .HasColumnType("nvarchar(260)")
-                        .HasColumnName("original_file_name");
-
-                    b.Property<Guid>("PublicId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("public_id");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint")
-                        .HasColumnName("size_bytes");
-
-                    b.Property<string>("StoredFileName")
-                        .IsRequired()
-                        .HasMaxLength(260)
-                        .HasColumnType("nvarchar(260)")
-                        .HasColumnName("stored_file_name");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("updated_at_utc");
-
-                    b.Property<long>("UploadedByUserId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("uploaded_by_user_id");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("url");
-
-                    b.HasKey("MediaAssetId");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.HasIndex("UploadedByUserId");
-
-                    b.HasIndex("Url")
-                        .IsUnique();
-
-                    b.ToTable("media_assets", (string)null);
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.Notification", b =>
@@ -1877,15 +1794,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("InvoiceId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("PoolHub.Core.Entities.MediaAsset", b =>
-                {
-                    b.HasOne("PoolHub.Core.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UploadedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });
 

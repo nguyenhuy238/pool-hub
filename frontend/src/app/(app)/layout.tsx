@@ -7,6 +7,7 @@ import type { RoleName } from "@/types";
 
 function rolesForPath(pathname: string): RoleName[] {
   if (pathname.startsWith("/admin/audit-logs")) return ["Admin", "Owner", "Manager"];
+  if (pathname.startsWith("/admin/landing-settings")) return ["Admin"];
   if (pathname.startsWith("/admin")) return ["Admin", "Owner"];
   if (pathname.startsWith("/management")) return ["Admin", "Owner", "Manager"];
   if (pathname.startsWith("/operation")) return ["Admin", "Owner", "Manager", "Staff", "Cashier"];

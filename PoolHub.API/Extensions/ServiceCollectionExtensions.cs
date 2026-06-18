@@ -16,6 +16,8 @@ using PoolHub.Services.Customer;
 using PoolHub.Services.Dashboard;
 using PoolHub.Services.Common;
 using PoolHub.Services.Invoice;
+using PoolHub.Services.Landing;
+using PoolHub.Services.Media;
 using PoolHub.Services.Notification;
 using PoolHub.Services.Order;
 using PoolHub.Services.Product;
@@ -141,6 +143,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<ILandingPageSettingsService, LandingPageSettingsService>();
+        services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<ICrudService, CrudService>();
 
         // Background Jobs

@@ -1,6 +1,7 @@
-import { uspItems } from "@/lib/mock/landingData";
+import { activeSorted, type UspSettings } from "@/lib/api/landingSettingsApi";
 
-export function USPSection() {
+export function USPSection({ items }: { items: UspSettings[] }) {
+  const visibleItems = activeSorted(items);
   return (
     <section className="landing-section">
       <div className="section-heading">
@@ -8,11 +9,11 @@ export function USPSection() {
         <h2>Mọi chi tiết được tối ưu cho một buổi chơi trọn vẹn</h2>
       </div>
       <div className="landing-card-grid">
-        {uspItems.map((item) => (
+        {visibleItems.map((item) => (
           <article className="landing-card" key={item.title}>
-            <div className="card-icon" aria-hidden="true">+</div>
+            <div className="card-icon" aria-hidden="true">{item.icon || "+"}</div>
             <h3>{item.title}</h3>
-            <p>{item.text}</p>
+            <p>{item.description}</p>
           </article>
         ))}
       </div>

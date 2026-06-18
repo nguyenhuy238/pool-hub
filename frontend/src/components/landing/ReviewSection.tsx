@@ -1,6 +1,8 @@
-import { reviews } from "@/lib/mock/landingData";
+import { activeSorted, type ReviewSettings } from "@/lib/api/landingSettingsApi";
+import { SafeImage } from "@/components/landing/SafeImage";
 
-export function ReviewSection() {
+export function ReviewSection({ items }: { items: ReviewSettings[] }) {
+  const visibleItems = activeSorted(items).filter((item) => item.isFeatured);
   return (
     <section className="landing-section" id="reviews">
       <div className="section-heading">
@@ -8,13 +10,14 @@ export function ReviewSection() {
         <h2>Phản hồi từ những nhóm đã đặt bàn tại PoolHub</h2>
       </div>
       <div className="landing-card-grid">
-        {reviews.map((review) => (
-          <article className="review-card" key={review.name}>
+        {visibleItems.map((review) => (
+          <article className="review-card" key={review.customerName}>
             <div className="review-head">
-              <span className="avatar">{review.avatar}</span>
-              <div><strong>{review.name}</strong><p>{"*".repeat(review.rating)}</p></div>
+              {review.avatarUrl ? <SafeImage className="avatar-image" src={review.avatarUrl} alt={`Avatar ${review.customerName}`} /> : <span className="avatar">{review.customerName.slice(0, 2).toUpperCase()}</span>}
+              <div><strong>{review.customerName}</strong><p>{"*".repeat(review.rating)}</p></div>
             </div>
             <p>{review.content}</p>
+            {review.checkInImageUrl ? <SafeImage className="review-checkin" src={review.checkInImageUrl} alt={`Ảnh check-in của ${review.customerName}`} /> : null}
           </article>
         ))}
       </div>

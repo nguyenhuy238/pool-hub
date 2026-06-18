@@ -24,6 +24,7 @@ const nav = [
   { href: "/management/pricing-rules", label: "Pricing Rules", roles: ["Admin", "Owner", "Manager"] },
   { href: "/admin/users", label: "Users", roles: ["Admin", "Owner"] },
   { href: "/admin/roles", label: "Roles", roles: ["Admin", "Owner"] },
+  { href: "/admin/landing-settings", label: "Landing Page Settings", roles: ["Admin"] },
   { href: "/admin/audit-logs", label: "Audit Logs", roles: ["Admin", "Owner", "Manager"] },
   { href: "/operation/notifications", label: "Notifications", roles: ["Admin", "Owner", "Manager", "Staff", "Cashier"] }
 ];

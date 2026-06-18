@@ -1,20 +1,28 @@
-export function ContactSection() {
+import type { GeneralInfoSettings } from "@/lib/api/landingSettingsApi";
+
+export function ContactSection({ info }: { info: GeneralInfoSettings }) {
+  const directionUrl = info.googleMapsDirectionUrl || info.googleMapsShareUrl || info.googleMapsUrl || "https://www.google.com/maps";
   return (
     <section className="landing-section contact-section" id="contact">
       <div>
         <p className="eyebrow">Liên hệ & vị trí</p>
-        <h2>PoolHub Center</h2>
-        <p>Hotline: <a href="tel:0901234567">0901 234 567</a></p>
-        <p>Địa chỉ: 123 Nguyễn Trãi, Quận 1, TP. Hồ Chí Minh</p>
-        <p>Giờ mở cửa: 09:00 - 24:00 hằng ngày</p>
+        <h2>{info.centerName}</h2>
+        <p>Hotline: <a href={`tel:${info.hotline.replace(/\s/g, "")}`}>{info.hotline}</a></p>
+        <p>Email: <a href={`mailto:${info.email}`}>{info.email}</a></p>
+        <p>Địa chỉ: {info.address}</p>
+        <p>Giờ mở cửa: {info.openingHours}</p>
         <div className="hero-actions">
-          <a className="primary-btn" href="tel:0901234567">Gọi nhanh</a>
-          <a className="secondary-btn" href="https://www.google.com/maps" target="_blank" rel="noreferrer">Chỉ đường</a>
+          <a className="primary-btn" href={`tel:${info.hotline.replace(/\s/g, "")}`}>Gọi nhanh</a>
+          <a className="secondary-btn" href={directionUrl} target="_blank" rel="noreferrer">Chỉ đường</a>
         </div>
       </div>
-      <div className="map-placeholder" aria-label="Bản đồ PoolHub">
-        <span>Google Maps Embed</span>
-      </div>
+      {info.mapDisplayMode === "embed" && info.googleMapsEmbedUrl ? (
+        <div className="contact-map"><iframe title={`Bản đồ ${info.centerName}`} src={info.googleMapsEmbedUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" /></div>
+      ) : info.mapDisplayMode === "external" ? (
+        <a className="map-placeholder" href={directionUrl} target="_blank" rel="noreferrer"><span>Mở Google Maps</span></a>
+      ) : (
+        <div className="map-placeholder" aria-label="Bản đồ PoolHub"><span>{info.address}</span></div>
+      )}
     </section>
   );
 }

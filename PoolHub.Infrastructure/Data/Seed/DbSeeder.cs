@@ -12,7 +12,6 @@ public static class DbSeeder
         await EnsureRolesAsync(db, ct);
         await EnsureDemoUsersAsync(db, ct);
 
-        var roleMap = await db.Roles.ToDictionaryAsync(x => x.Name, x => x.RoleId, ct);
         var userMap = await db.Users.ToDictionaryAsync(x => x.Email, x => x.UserId, ct);
 
         if (await db.Floors.AnyAsync(ct)) return;
@@ -328,16 +327,42 @@ public static class DbSeeder
             }
             else
             {
-                user.Email = email;
-                user.FullName = string.IsNullOrWhiteSpace(user.FullName) ? demo.FullName : user.FullName;
-                user.EmailConfirmed = true;
-                user.Status = true;
+                var changed = false;
+                if (!string.Equals(user.Email, email, StringComparison.Ordinal))
+                {
+                    user.Email = email;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(user.FullName))
+                {
+                    user.FullName = demo.FullName;
+                    changed = true;
+                }
+
+                if (!user.EmailConfirmed)
+                {
+                    user.EmailConfirmed = true;
+                    changed = true;
+                }
+
+                if (!user.Status)
+                {
+                    user.Status = true;
+                    changed = true;
+                }
+
                 if (string.IsNullOrWhiteSpace(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(demo.Password, user.PasswordHash))
                 {
                     user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demo.Password, 12);
+                    changed = true;
                 }
-                user.UpdatedAtUtc = DateTime.UtcNow;
-                await db.SaveChangesAsync(ct);
+
+                if (changed)
+                {
+                    user.UpdatedAtUtc = DateTime.UtcNow;
+                    await db.SaveChangesAsync(ct);
+                }
             }
 
             var roleId = roleMap[demo.Role];
