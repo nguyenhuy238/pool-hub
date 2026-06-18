@@ -20,6 +20,7 @@ export type PagedResult<T> = {
 
 export type AuthUser = {
   userId: number;
+  publicId?: string;
   email: string;
   fullName: string;
   roles: RoleName[];
@@ -29,12 +30,39 @@ export type AuthResponse = AuthUser & {
   accessToken: string;
   refreshToken: string;
   expiresAtUtc: string;
+  user?: AuthUser;
+};
+
+export type LoginRequest = { email: string; password: string };
+export type RegisterRequest = {
+  fullName: string;
+  email: string;
+  phoneNumber?: string;
+  password: string;
+  confirmPassword: string;
+};
+export type ForgotPasswordRequest = { email: string };
+export type ResetPasswordRequest = {
+  email: string;
+  token: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+export type ChangePasswordRequest = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
 };
 
 export type User = AuthUser & {
   publicId?: string;
   phoneNumber?: string;
-  status?: boolean;
+  avatarUrl?: string;
+  emailConfirmed?: boolean;
+  status?: "Active" | "Locked" | "Deleted" | string;
+  lastLoginAtUtc?: string;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
 };
 
 export type Customer = {
@@ -47,7 +75,16 @@ export type Customer = {
   status: boolean;
 };
 
-export type Role = { roleId?: number; name?: string; roleName?: string; normalizedName?: string };
+export type Role = {
+  roleId?: number;
+  name?: string;
+  description?: string;
+  isSystem?: boolean;
+  isActive?: boolean;
+  userCount?: number;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
 
 export type Booking = {
   bookingId: number;
@@ -239,7 +276,21 @@ export type VenueLayoutResponse = {
 export type PricingPlan = { pricingPlanId: number; name: string; isDefault?: boolean; isActive?: boolean };
 export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayOfWeek: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
 export type Notification = { notificationId: number; title?: string; message?: string; isRead?: boolean; createdAtUtc?: string };
-export type AuditLog = { auditLogId: number; actor?: string; action?: string; entity?: string; oldValues?: string; newValues?: string; ipAddress?: string; createdAtUtc?: string };
+export type AuditLog = {
+  auditLogId: number;
+  actorUserId?: number;
+  actorName?: string;
+  action: string;
+  entityName: string;
+  entityId?: number;
+  entityPublicId?: string;
+  oldValues?: string;
+  newValues?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  description?: string;
+  createdAtUtc: string;
+};
 
 export type CustomerDto = {
   customerId: number;

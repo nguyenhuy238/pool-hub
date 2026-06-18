@@ -8,3 +8,4 @@ public sealed class LockedException(string message) : AppException(message);
 public sealed class NotFoundException(string message) : AppException(message);
 public sealed class ConflictException(string message) : AppException(message);
 public sealed class BusinessRuleException(string message) : AppException(message);
+public sealed class ServiceUnavailableException(string message) : AppException(message);

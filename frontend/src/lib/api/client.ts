@@ -17,6 +17,7 @@ type RequestOptions = RequestInit & { skipAuth?: boolean; retry?: boolean };
 
 const tokenKey = "poolhub.accessToken";
 const refreshKey = "poolhub.refreshToken";
+let refreshPromise: Promise<boolean> | null = null;
 
 export const tokenStore = {
   getAccess: () => (typeof window === "undefined" ? null : localStorage.getItem(tokenKey)),
@@ -43,7 +44,7 @@ function normalize<T>(payload: unknown): { data: T; message: string } {
   return { data: payload as T, message: "" };
 }
 
-async function refreshAccessToken() {
+async function executeRefresh() {
   const refreshToken = tokenStore.getRefresh();
   if (!refreshToken) return false;
 
@@ -59,6 +60,22 @@ async function refreshAccessToken() {
   if (!data?.accessToken || !data?.refreshToken) return false;
   tokenStore.set(data.accessToken, data.refreshToken);
   return true;
+}
+
+export async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = executeRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+function notifyAuthInvalid() {
+  tokenStore.clear();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("poolhub:auth-invalid"));
+  }
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -83,8 +100,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   if (response.status === 401 && options.retry !== false && !options.skipAuth) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return apiFetch<T>(path, { ...options, retry: false });
-    tokenStore.clear();
-    if (typeof window !== "undefined") window.location.href = "/login";
+    notifyAuthInvalid();
   }
 
   const text = await response.text();

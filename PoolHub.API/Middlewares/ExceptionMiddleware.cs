@@ -31,6 +31,7 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
             NotFoundException => (HttpStatusCode.NotFound, ex.Message),
             ConflictException => (HttpStatusCode.Conflict, ex.Message),
             BusinessRuleException => (HttpStatusCode.BadRequest, ex.Message),
+            ServiceUnavailableException => (HttpStatusCode.ServiceUnavailable, ex.Message),
             _ => (HttpStatusCode.InternalServerError, "Internal server error")
         };
 

@@ -19,3 +19,12 @@ export function ProtectedRoute({ children, roles = [] }: { children: React.React
   if (!isAuthenticated || !hasAnyRole(roles)) return null;
   return <>{children}</>;
 }
+
+export function RoleGuard({ children, roles, fallback = null }: {
+  children: React.ReactNode;
+  roles: RoleName[];
+  fallback?: React.ReactNode;
+}) {
+  const { hasAnyRole } = useAuth();
+  return hasAnyRole(roles) ? <>{children}</> : <>{fallback}</>;
+}

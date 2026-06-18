@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.Entities;
+using PoolHub.Core.Enums;
 using PoolHub.Shared.Constants;
 
 namespace PoolHub.Infrastructure.Data.Seed;
@@ -320,7 +321,7 @@ public static class DbSeeder
                     Email = email,
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword(demo.Password, 12),
                     EmailConfirmed = true,
-                    Status = true
+                    Status = UserStatus.Active
                 };
                 db.Users.Add(user);
                 await db.SaveChangesAsync(ct);
@@ -346,9 +347,9 @@ public static class DbSeeder
                     changed = true;
                 }
 
-                if (!user.Status)
+                if (user.Status != UserStatus.Active)
                 {
-                    user.Status = true;
+                    user.Status = UserStatus.Active;
                     changed = true;
                 }
 

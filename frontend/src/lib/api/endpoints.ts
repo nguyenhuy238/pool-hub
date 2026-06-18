@@ -1,9 +1,6 @@
 import { apiFetch, toQuery } from "@/lib/api/client";
 import type {
   ActiveSessionDashboard,
-  AuditLog,
-  AuthResponse,
-  AuthUser,
   Booking,
   Customer,
   DashboardSummary,
@@ -19,23 +16,14 @@ import type {
   ProductCategory,
   RecentAuditLog,
   RevenuePoint,
-  Role,
   Session,
   TableType,
-  User,
   VenueLayoutResponse,
   VenueTable,
   Zone,
   BookingCalendarItem,
   CustomerDto
 } from "@/types";
-
-export const authApi = {
-  login: (body: { email: string; password: string }) => apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
-  register: (body: { email: string; password: string; fullName: string; role: string }) => apiFetch<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify(body) }),
-  me: () => apiFetch<AuthUser>("/api/auth/me"),
-  logout: (refreshToken: string) => apiFetch("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) })
-};
 
 export const venueApi = {
   layout: () => apiFetch<VenueLayoutResponse>("/api/venue-tables/layout", { skipAuth: true }),
@@ -118,16 +106,6 @@ export const pricingApi = {
   deletePlan: (id: number) => apiFetch(`/api/pricing-plans/${id}`, { method: "DELETE" }),
   createRule: (planId: number, body: Partial<PricingPlanRule>) => apiFetch<PricingPlanRule>(`/api/pricing-plans/${planId}/rules`, { method: "POST", body: JSON.stringify(body) }),
   deleteRule: (planId: number, ruleId: number) => apiFetch(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "DELETE" })
-};
-
-export const adminApi = {
-  users: (params: Record<string, string | number | undefined> = {}) => apiFetch<User[] | { items?: User[] }>(`/api/users${toQuery(params)}`),
-  createUser: (body: { fullName?: string; email?: string; password?: string; role?: string }) => apiFetch<User>("/api/users", { method: "POST", body: JSON.stringify(body) }),
-  updateUser: (id: number, body: Partial<User>) => apiFetch<User>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  updateRoles: (id: number, roles: string[]) => apiFetch(`/api/users/${id}/roles`, { method: "PUT", body: JSON.stringify({ roles }) }),
-  updateStatus: (id: number, status: boolean) => apiFetch(`/api/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  roles: () => apiFetch<Role[]>("/api/roles"),
-  auditLogs: (params: Record<string, string | number | undefined> = {}) => apiFetch<AuditLog[] | { items?: AuditLog[] }>(`/api/audit-logs${toQuery(params)}`)
 };
 
 export const adminDashboardApi = {

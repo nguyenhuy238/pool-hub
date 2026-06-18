@@ -21,6 +21,7 @@ using PoolHub.Services.Media;
 using PoolHub.Services.Notification;
 using PoolHub.Services.Order;
 using PoolHub.Services.Product;
+using PoolHub.Services.Roles;
 using PoolHub.Services.Session;
 using PoolHub.Services.Users;
 using PoolHub.Services.Venue;
@@ -61,7 +62,10 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddPoolHubJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
-        var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
+        var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>()
+            ?? throw new InvalidOperationException("JwtSettings configuration is missing.");
+        if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) || jwtSettings.SecretKey.Length < 32)
+            throw new InvalidOperationException("JwtSettings:SecretKey must be at least 32 characters.");
         var key = Encoding.UTF8.GetBytes(jwtSettings.SecretKey);
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -77,6 +81,24 @@ public static class ServiceCollectionExtensions
                     ValidAudience = jwtSettings.Audience,
                     IssuerSigningKey = new SymmetricSecurityKey(key),
                     ClockSkew = TimeSpan.Zero
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(
+                            PoolHub.Shared.ApiResponse<object>.Fail("Unauthorized", ["A valid access token is required."]));
+                    },
+                    OnForbidden = context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json";
+                        return context.Response.WriteAsJsonAsync(
+                            PoolHub.Shared.ApiResponse<object>.Fail("Forbidden", ["You do not have permission to access this resource."]));
+                    }
                 };
             });
 
@@ -131,8 +153,14 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddPoolHubServices(this IServiceCollection services)
     {
+        services.AddOptions<EmailSettings>()
+            .BindConfiguration("EmailSettings");
+        services.AddHttpContextAccessor();
+        services.AddScoped<ITokenService, TokenService>();
+        services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<ICustomerService, CustomerService>();
         services.AddScoped<IVenueService, VenueService>();
         services.AddScoped<IBookingService, BookingService>();
