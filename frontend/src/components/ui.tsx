@@ -18,10 +18,61 @@ export function PageHeader({ title, description, action }: { title: string; desc
 }
 
 export function StateBlock({ loading, error, empty }: { loading?: boolean; error?: string | null; empty?: boolean }) {
-  if (loading) return <div className="state-card">Đang tải dữ liệu...</div>;
+  if (loading) return <div className="state-card loading-state"><span className="spinner" />Đang tải dữ liệu...</div>;
   if (error) return <div className="state-card error">{error}</div>;
   if (empty) return <div className="state-card">Chưa có dữ liệu phù hợp.</div>;
   return null;
+}
+
+export function Modal({ title, children, onClose, size = "medium" }: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  size?: "small" | "medium" | "large";
+}) {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className={`modal-card modal-${size}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-head"><h2>{title}</h2><button className="icon-btn" type="button" onClick={onClose} aria-label="Đóng">×</button></div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+export function ConfirmDialog({ title, message, confirmLabel = "Xác nhận", danger = false, busy = false, onConfirm, onCancel }: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onCancel} size="small">
+      <p className="modal-message">{message}</p>
+      <div className="modal-actions">
+        <button className="ghost-btn" type="button" onClick={onCancel} disabled={busy}>Hủy</button>
+        <button className={danger ? "danger-btn" : "primary-btn"} type="button" onClick={onConfirm} disabled={busy}>{busy ? "Đang xử lý..." : confirmLabel}</button>
+      </div>
+    </Modal>
+  );
+}
+
+export function JsonPreview({ value }: { value?: string }) {
+  if (!value) return <span className="muted-text">Không có dữ liệu</span>;
+  try {
+    return <pre className="json-preview">{JSON.stringify(JSON.parse(value), null, 2)}</pre>;
+  } catch {
+    return <pre className="json-preview">{value}</pre>;
+  }
 }
 
 export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "green" | "blue" | "yellow" | "red" | "purple" | "neutral" }) {

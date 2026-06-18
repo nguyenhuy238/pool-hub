@@ -6,6 +6,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 using EntitySession = PoolHub.Core.Entities.Session;
+using EntityInvoice = PoolHub.Core.Entities.Invoice;
 
 namespace PoolHub.Services.Session;
 
@@ -161,6 +162,156 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
 
+    public async Task<CloseSessionResponse> CloseWithSummaryAsync(long sessionId, long? closedByUserId, CloseSessionRequest request, CancellationToken ct)
+    {
+        request ??= new CloseSessionRequest();
+
+        var endedAtUtc = request.EndedAtUtc ?? DateTime.UtcNow;
+        if (endedAtUtc > DateTime.UtcNow.AddMinutes(1))
+        {
+            throw new ValidationException("EndedAtUtc cannot be in the future.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
+        if (session.Status == 2)
+        {
+            throw new ConflictException("Session is already closed.");
+        }
+
+        if (endedAtUtc <= session.StartedAtUtc)
+        {
+            throw new ValidationException("EndedAtUtc must be after session start time.");
+        }
+
+        var activeAssignments = await db.SessionTableAssignments
+            .Where(x => x.SessionId == sessionId && x.EndedAtUtc == null)
+            .ToListAsync(ct);
+
+        if (activeAssignments.Count == 0)
+        {
+            throw new ConflictException("Session has no active table assignment to close.");
+        }
+
+        var tableIds = activeAssignments.Select(x => x.TableId).Distinct().ToList();
+        var tables = await db.VenueTables
+            .Where(x => tableIds.Contains(x.TableId))
+            .ToDictionaryAsync(x => x.TableId, ct);
+
+        foreach (var assignment in activeAssignments)
+        {
+            if (!tables.TryGetValue(assignment.TableId, out var table))
+            {
+                throw new NotFoundException($"Table {assignment.TableId} not found.");
+            }
+
+            await CalculateAssignmentAmountStrictAsync(assignment, table, endedAtUtc, ct);
+            table.OperationalStatus = 1; // Available
+        }
+
+        session.Status = 2; // Closed
+        session.EndedAtUtc = endedAtUtc;
+        session.ClosedByUserId = closedByUserId;
+
+        var assignments = await db.SessionTableAssignments
+            .Where(x => x.SessionId == sessionId)
+            .ToListAsync(ct);
+
+        var totalDurationMinutes = assignments.Sum(x => x.DurationMinutes ?? 0);
+        var timeSubtotal = assignments.Sum(x => x.Amount ?? 0);
+        var productSubtotal = await db.Orders
+            .Where(x => x.SessionId == sessionId && x.Status != 3)
+            .SumAsync(x => x.SubtotalAmount, ct);
+
+        EntityInvoice? invoice = null;
+        if (request.GenerateInvoice)
+        {
+            var hasInvoice = await db.Invoices.AnyAsync(x => x.SessionId == sessionId, ct);
+            if (hasInvoice)
+            {
+                throw new ConflictException("Invoice already exists for this session.");
+            }
+
+            invoice = new EntityInvoice
+            {
+                SessionId = sessionId,
+                CustomerId = session.CustomerId,
+                InvoiceCode = $"INV{DateTime.UtcNow:yyyyMMddHHmmss}",
+                TimeSubtotalAmount = timeSubtotal,
+                ProductSubtotalAmount = productSubtotal,
+                SubtotalAmount = timeSubtotal + productSubtotal,
+                DiscountAmount = 0,
+                TaxAmount = 0,
+                GrandTotalAmount = timeSubtotal + productSubtotal,
+                PaidAmount = 0,
+                PaymentStatus = 1,
+                Status = 1,
+                IssuedByUserId = closedByUserId,
+                IssuedAtUtc = DateTime.UtcNow
+            };
+
+            db.Invoices.Add(invoice);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        if (invoice is not null)
+        {
+            foreach (var assignment in assignments)
+            {
+                db.InvoiceLines.Add(new InvoiceLine
+                {
+                    InvoiceId = invoice.InvoiceId,
+                    LineType = "TIME",
+                    ReferenceId = assignment.SessionTableAssignmentId,
+                    Description = $"Table time #{assignment.TableId}",
+                    Quantity = (decimal)(assignment.DurationMinutes ?? 0) / 60m,
+                    UnitPrice = assignment.HourlyRateSnapshot,
+                    LineTotalAmount = assignment.Amount ?? 0
+                });
+            }
+
+            var orderItems = await (from order in db.Orders
+                                    join item in db.OrderItems on order.OrderId equals item.OrderId
+                                    where order.SessionId == sessionId && order.Status != 3
+                                    select item)
+                .ToListAsync(ct);
+
+            foreach (var item in orderItems)
+            {
+                db.InvoiceLines.Add(new InvoiceLine
+                {
+                    InvoiceId = invoice.InvoiceId,
+                    LineType = "PRODUCT",
+                    ReferenceId = item.OrderItemId,
+                    Description = item.ProductNameSnapshot,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.UnitPriceSnapshot,
+                    LineTotalAmount = item.LineTotalAmount
+                });
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        await transaction.CommitAsync(ct);
+
+        return new CloseSessionResponse
+        {
+            SessionId = session.SessionId,
+            SessionCode = session.SessionCode,
+            Status = session.Status,
+            StartedAtUtc = session.StartedAtUtc,
+            EndedAtUtc = endedAtUtc,
+            TotalDurationMinutes = totalDurationMinutes,
+            TimeSubtotalAmount = timeSubtotal,
+            InvoiceId = invoice?.InvoiceId,
+            InvoiceCode = invoice?.InvoiceCode,
+            InvoiceGenerated = invoice is not null
+        };
+    }
+
     public async Task TransferTableAsync(long sessionId, long newTableId, long? assignedByUserId, CancellationToken ct)
     {
         // 1. Validate if the new table is already occupied / has an active session
@@ -285,5 +436,41 @@ public class SessionService(PoolHubDbContext db) : ISessionService
             assignment.HourlyRateSnapshot = fallbackRate;
             assignment.Amount = ((decimal)durationMinutes / 60m) * fallbackRate;
         }
+    }
+
+    private async Task CalculateAssignmentAmountStrictAsync(SessionTableAssignment assignment, VenueTable table, DateTime endedAtUtc, CancellationToken ct)
+    {
+        assignment.EndedAtUtc = endedAtUtc;
+
+        var durationMinutes = (int)Math.Ceiling((endedAtUtc - assignment.StartedAtUtc).TotalMinutes);
+        if (durationMinutes <= 0)
+        {
+            throw new ValidationException("Assignment duration must be greater than zero.");
+        }
+
+        assignment.DurationMinutes = durationMinutes;
+
+        var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct)
+            ?? throw new ConflictException($"No active pricing rule found for table {table.TableCode} at session start time.");
+
+        assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
+        assignment.HourlyRateSnapshot = rule.HourlyRate;
+
+        var billableMinutes = durationMinutes;
+        if (billableMinutes < rule.MinimumMinutes)
+        {
+            billableMinutes = rule.MinimumMinutes;
+        }
+
+        if (rule.BillingBlockMinutes > 0)
+        {
+            var remainder = billableMinutes % rule.BillingBlockMinutes;
+            if (remainder > 0)
+            {
+                billableMinutes += rule.BillingBlockMinutes - remainder;
+            }
+        }
+
+        assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
     }
 }

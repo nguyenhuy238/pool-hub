@@ -9,6 +9,7 @@ public class PoolHubDbContext(DbContextOptions<PoolHubDbContext> options) : DbCo
     public DbSet<User> Users => Set<User>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Floor> Floors => Set<Floor>();
     public DbSet<Zone> Zones => Set<Zone>();
@@ -32,6 +33,8 @@ public class PoolHubDbContext(DbContextOptions<PoolHubDbContext> options) : DbCo
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
+    public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

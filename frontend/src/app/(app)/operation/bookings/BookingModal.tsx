@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { bookingApi, pricingApi } from "@/lib/api/endpoints";
 import { useToast } from "@/components/toast";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
@@ -191,7 +191,7 @@ export function BookingModal({
   const selectedTable = useMemo(() => tables.find(t => t.tableId === Number(selectedTableId)), [tables, selectedTableId]);
 
   // Get price for a specific 30-minute slot
-  const getSlotPrice = (index: number) => {
+  const getSlotPrice = useCallback((index: number) => {
     if (!selectedTable) return 0;
     
     const activePlans = plans.filter(p => p.isActive);
@@ -206,17 +206,21 @@ export function BookingModal({
     const minsStr = (startHour % 1 * 60).toString().padStart(2, '0');
     const timeStr = `${hoursStr}:${minsStr}:00`;
     
-    const rule = rules.find(r => 
-      r.pricingPlanId === plan.pricingPlanId && 
-      r.tableTypeId === selectedTable.tableTypeId && 
-      r.dayOfWeek === dayOfWeek &&
-      r.startTime <= timeStr && 
-      r.endTime > timeStr // endTime should be strictly greater than timeStr to cover the block
-    );
+    const rule = rules.find(r => {
+      if (!r.startTime || !r.endTime) return false;
+
+      return (
+        r.pricingPlanId === plan.pricingPlanId &&
+        r.tableTypeId === selectedTable.tableTypeId &&
+        r.dayOfWeek === dayOfWeek &&
+        r.startTime <= timeStr &&
+        r.endTime > timeStr // endTime should be strictly greater than timeStr to cover the block
+      );
+    });
     
     const rate = rule ? rule.hourlyRate : 50000;
     return rate * 0.5; // 30 mins = 0.5 hours
-  };
+  }, [plans, rules, selectedDate, selectedTable]);
 
   // Calculate estimated price by summing all selected slots
   const estimatedPrice = useMemo(() => {
@@ -231,7 +235,7 @@ export function BookingModal({
     }
     
     return total;
-  }, [selectedSlotIndexes, selectedTable, plans, rules, selectedDate]);
+  }, [selectedSlotIndexes, selectedTable, getSlotPrice]);
 
   const handleSubmit = async () => {
     if (!customerName || !phoneNumber) {

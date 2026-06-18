@@ -110,6 +110,11 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Lich dat ban vua duoc tao.</returns>
     [HttpPost] [AllowAnonymous] public async Task<ActionResult<ApiResponse<object>>> Create([FromBody] CreateBookingRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.CreateAsync(request, ct)));
+
+    [HttpPost("public")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> CreatePublic([FromBody] CreateBookingRequest request, CancellationToken ct) =>
+        StatusCode(201, ApiResponse<object>.Ok(await bookingService.CreateAsync(request, ct)));
     
     /// <summary>
     /// Xac nhan mot lich dat ban dang o trang thai Pending.
@@ -130,6 +135,21 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     [HttpPut("{id:int}/cancel")] 
     [Authorize] 
     public async Task<ActionResult<ApiResponse<object>>> Cancel(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.CancelAsync(id, ct)));
+
+    [HttpPatch("{id:int}/no-show")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> NoShow(int id, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.MarkNoShowAsync(id, ct)));
+
+    [HttpPatch("{id:int}/completed")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> Completed(int id, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.MarkCompletedAsync(id, ct)));
+
+    [HttpGet("availability")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> Availability([FromQuery] BookingAvailabilityRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.GetAvailabilityAsync(request, ct)));
     
     /// <summary>
     /// Xoa vinh vien mot lich dat ban khoi database (Chi danh cho Admin/Manager).

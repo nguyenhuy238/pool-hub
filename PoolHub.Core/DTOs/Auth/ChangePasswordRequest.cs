@@ -11,5 +11,11 @@ public class ChangePasswordRequest
     public string NewPassword { get; set; } = string.Empty;
 
     [Required]
-    public string ConfirmNewPassword { get; set; } = string.Empty;
+    public string ConfirmPassword { get; set; } = string.Empty;
+
+    public string? ConfirmNewPassword
+    {
+        get => ConfirmPassword;
+        set => ConfirmPassword = value ?? string.Empty;
+    }
 }

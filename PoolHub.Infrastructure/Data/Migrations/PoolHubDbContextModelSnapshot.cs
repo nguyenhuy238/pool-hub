@@ -33,7 +33,8 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
                         .HasColumnName("action");
 
                     b.Property<long?>("ActorUserId")
@@ -45,7 +46,8 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("created_at_utc");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
                         .HasColumnName("description");
 
                     b.Property<long?>("EntityId")
@@ -54,7 +56,8 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("EntityName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
                         .HasColumnName("entity_name");
 
                     b.Property<Guid?>("EntityPublicId")
@@ -62,7 +65,8 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("entity_public_id");
 
                     b.Property<string>("IpAddress")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("ip_address");
 
                     b.Property<string>("NewValues")
@@ -78,12 +82,15 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("updated_at_utc");
 
                     b.Property<string>("UserAgent")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
                         .HasColumnName("user_agent");
 
                     b.HasKey("AuditLogId");
 
-                    b.HasIndex("ActorUserId");
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("ActorUserId", "CreatedAtUtc");
 
                     b.ToTable("audit_logs", (string)null);
                 });
@@ -191,7 +198,7 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("created_at_utc");
 
                     b.Property<string>("Email")
-                        .HasColumnType("nvarchar(max)")
+                        .HasColumnType("nvarchar(450)")
                         .HasColumnName("email");
 
                     b.Property<string>("FullName")
@@ -205,7 +212,7 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasColumnType("nvarchar(450)")
                         .HasColumnName("phone_number");
 
                     b.Property<Guid>("PublicId")
@@ -221,6 +228,13 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("updated_at_utc");
 
                     b.HasKey("CustomerId");
+
+                    b.HasIndex("Email")
+                        .IsUnique()
+                        .HasFilter("[email] IS NOT NULL");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique();
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -611,6 +625,92 @@ namespace PoolHub.Infrastructure.Migrations
                     b.ToTable("invoice_lines", (string)null);
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.MediaAsset", b =>
+                {
+                    b.Property<long>("MediaAssetId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("media_asset_id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("MediaAssetId"));
+
+                    b.Property<string>("AltText")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("alt_text");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Folder")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("folder");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("MediaType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("media_type");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("original_file_name");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StoredFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)")
+                        .HasColumnName("stored_file_name");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<long>("UploadedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("uploaded_by_user_id");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("url");
+
+                    b.HasKey("MediaAssetId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.HasIndex("Url")
+                        .IsUnique();
+
+                    b.ToTable("media_assets", (string)null);
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.Notification", b =>
                 {
                     b.Property<long>("NotificationId")
@@ -785,6 +885,56 @@ namespace PoolHub.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("order_items", (string)null);
+                });
+
+            modelBuilder.Entity("PoolHub.Core.Entities.PasswordResetToken", b =>
+                {
+                    b.Property<long>("PasswordResetTokenId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("password_reset_token_id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("PasswordResetTokenId"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<string>("RequestedByIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("requested_by_ip");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<DateTime?>("UsedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("used_at_utc");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PasswordResetTokenId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("password_reset_tokens", (string)null);
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.Payment", b =>
@@ -1146,7 +1296,8 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("created_at_utc");
 
                     b.Property<string>("CreatedByIp")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("created_by_ip");
 
                     b.Property<DateTime>("ExpiresAtUtc")
@@ -1162,12 +1313,14 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("revoked_at_utc");
 
                     b.Property<string>("RevokedByIp")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("revoked_by_ip");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("token_hash");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
@@ -1180,7 +1333,10 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.HasKey("RefreshTokenId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "IsRevoked", "ExpiresAtUtc");
 
                     b.ToTable("refresh_tokens", (string)null);
                 });
@@ -1199,8 +1355,13 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("created_at_utc");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
                         .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
 
                     b.Property<bool>("IsSystem")
                         .HasColumnType("bit")
@@ -1208,7 +1369,8 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
                         .HasColumnName("name");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
@@ -1374,6 +1536,56 @@ namespace PoolHub.Infrastructure.Migrations
                     b.ToTable("session_table_assignments", (string)null);
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.SiteSetting", b =>
+                {
+                    b.Property<long>("SiteSettingId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("site_setting_id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("SiteSettingId"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("SettingKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("setting_key");
+
+                    b.Property<string>("SettingValueJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("setting_value_json");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<long?>("UpdatedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by_user_id");
+
+                    b.HasKey("SiteSettingId");
+
+                    b.HasIndex("SettingKey")
+                        .IsUnique();
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.ToTable("site_settings", (string)null);
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.TableType", b =>
                 {
                     b.Property<long>("TableTypeId")
@@ -1431,7 +1643,8 @@ namespace PoolHub.Infrastructure.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("UserId"));
 
                     b.Property<string>("AvatarUrl")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)")
                         .HasColumnName("avatar_url");
 
                     b.Property<DateTime>("CreatedAtUtc")
@@ -1440,7 +1653,8 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)")
                         .HasColumnName("email");
 
                     b.Property<bool>("EmailConfirmed")
@@ -1449,7 +1663,8 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("FullName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
                         .HasColumnName("full_name");
 
                     b.Property<DateTime?>("LastLoginAtUtc")
@@ -1458,11 +1673,13 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
                         .HasColumnName("password_hash");
 
                     b.Property<string>("PhoneNumber")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
                         .HasColumnName("phone_number");
 
                     b.Property<Guid>("PublicId")
@@ -1476,8 +1693,8 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
 
-                    b.Property<bool>("Status")
-                        .HasColumnType("bit")
+                    b.Property<int>("Status")
+                        .HasColumnType("int")
                         .HasColumnName("status");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
@@ -1737,6 +1954,15 @@ namespace PoolHub.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.MediaAsset", b =>
+                {
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.Notification", b =>
                 {
                     b.HasOne("PoolHub.Core.Entities.Customer", null)
@@ -1776,6 +2002,15 @@ namespace PoolHub.Infrastructure.Migrations
                     b.HasOne("PoolHub.Core.Entities.Product", null)
                         .WithMany()
                         .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PoolHub.Core.Entities.PasswordResetToken", b =>
+                {
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1880,6 +2115,14 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PoolHub.Core.Entities.SiteSetting", b =>
+                {
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.UserRole", b =>

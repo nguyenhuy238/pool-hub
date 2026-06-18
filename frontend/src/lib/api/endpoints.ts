@@ -1,12 +1,12 @@
 import { apiFetch, toQuery } from "@/lib/api/client";
 import type {
-  AuditLog,
-  AuthResponse,
-  AuthUser,
+  ActiveSessionDashboard,
   Booking,
+  Customer,
   DashboardSummary,
   Floor,
   Invoice,
+  LowStockProduct,
   Notification,
   Order,
   PaymentMethod,
@@ -14,23 +14,17 @@ import type {
   PricingPlanRule,
   Product,
   ProductCategory,
-  Role,
+  RecentAuditLog,
+  RevenuePoint,
   Session,
   TableType,
-  User,
   VenueLayoutResponse,
   VenueTable,
   Zone,
   BookingCalendarItem,
   CustomerDto
+  , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport
 } from "@/types";
-
-export const authApi = {
-  login: (body: { email: string; password: string }) => apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
-  register: (body: { email: string; password: string; fullName: string; role: string }) => apiFetch<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify(body) }),
-  me: () => apiFetch<AuthUser>("/api/auth/me"),
-  logout: (refreshToken: string) => apiFetch("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) })
-};
 
 export const venueApi = {
   layout: () => apiFetch<VenueLayoutResponse>("/api/venue-tables/layout", { skipAuth: true }),
@@ -64,8 +58,10 @@ export const bookingApi = {
 
 export const customerApi = {
   list: (params: Record<string, string | number | boolean | null | undefined> = {}) => apiFetch<CustomerDto[] | { items?: CustomerDto[], totalCount?: number }>(`/api/customers${toQuery(params as Record<string, string | number | null | undefined>)}`),
+  create: (body: Partial<Customer>) => apiFetch<Customer>("/api/customers", { method: "POST", body: JSON.stringify(body) }),
   detail: (id: number) => apiFetch<CustomerDto>(`/api/customers/${id}`),
-  update: (id: number, body: Partial<CustomerDto>) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) })
+  update: (id: number, body: Partial<CustomerDto>) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) })
 };
 
 export const sessionApi = {
@@ -113,17 +109,44 @@ export const pricingApi = {
   deleteRule: (planId: number, ruleId: number) => apiFetch(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "DELETE" })
 };
 
-export const adminApi = {
-  users: (params: Record<string, string | number | undefined> = {}) => apiFetch<User[] | { items?: User[] }>(`/api/users${toQuery(params)}`),
-  createUser: (body: { fullName?: string; email?: string; password?: string; role?: string }) => apiFetch<User>("/api/users", { method: "POST", body: JSON.stringify(body) }),
-  updateUser: (id: number, body: Partial<User>) => apiFetch<User>(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  updateRoles: (id: number, roles: string[]) => apiFetch(`/api/users/${id}/roles`, { method: "PUT", body: JSON.stringify({ roles }) }),
-  updateStatus: (id: number, status: boolean) => apiFetch(`/api/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  roles: () => apiFetch<Role[]>("/api/roles"),
-  auditLogs: (params: Record<string, string | number | undefined> = {}) => apiFetch<AuditLog[] | { items?: AuditLog[] }>(`/api/audit-logs${toQuery(params)}`)
+export const adminDashboardApi = {
+  summary: () => apiFetch<DashboardSummary>("/api/admin/dashboard/summary"),
+  revenue: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<RevenuePoint[]>(`/api/admin/dashboard/revenue${toQuery(params)}`),
+  activeSessions: () => apiFetch<ActiveSessionDashboard[]>("/api/admin/dashboard/active-sessions"),
+  lowStockProducts: () => apiFetch<LowStockProduct[]>("/api/admin/dashboard/low-stock-products"),
+  recentAuditLogs: () => apiFetch<RecentAuditLog[]>("/api/admin/dashboard/recent-audit-logs")
 };
 
 export const miscApi = {
   notifications: () => apiFetch<Notification[] | { items?: Notification[] }>("/api/notifications"),
   dashboardSummary: () => apiFetch<DashboardSummary>("/api/dashboard/summary")
+};
+
+export const discountApi = {
+  list: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<Discount[] | { items?: Discount[] }>(`/api/discounts${toQuery(params)}`),
+  create: (body: Partial<Discount>) => apiFetch<Discount>("/api/discounts", { method: "POST", body: JSON.stringify(body) }),
+  update: (id: number, body: Partial<Discount>) => apiFetch<Discount>(`/api/discounts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  status: (id: number, isActive: boolean) => apiFetch(`/api/discounts/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) })
+};
+
+export const inventoryApi = {
+  list: (params: Record<string, string | number | undefined> = {}) => apiFetch<InventoryTransaction[] | { items?: InventoryTransaction[] }>(`/api/inventory-transactions${toQuery(params)}`),
+  lowStock: () => apiFetch<LowStockProduct[]>("/api/inventory-transactions/low-stock"),
+  adjust: (body: { productId: number; quantity: number; transactionType: number; unitCost?: number; note?: string }) =>
+    apiFetch<InventoryTransaction>("/api/inventory-transactions/stock-adjust", { method: "POST", body: JSON.stringify(body) })
+};
+
+export const paymentsApi = {
+  list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Payment[] | { items?: Payment[] }>(`/api/payments${toQuery(params)}`),
+  methods: () => apiFetch<PaymentMethod[]>("/api/payment-methods"),
+  createMethod: (body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>("/api/payment-methods", { method: "POST", body: JSON.stringify(body) }),
+  updateMethod: (id: number, body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>(`/api/payment-methods/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  methodStatus: (id: number, isActive: boolean) => apiFetch(`/api/payment-methods/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) })
+};
+
+export const reportsApi = {
+  revenue: (params: Record<string, string | undefined> = {}) => apiFetch<RevenueReport[]>(`/api/reports/revenue${toQuery(params)}`),
+  tableUsage: (params: Record<string, string | undefined> = {}) => apiFetch<TableUsageReport[]>(`/api/reports/table-usage${toQuery(params)}`),
+  products: (params: Record<string, string | undefined> = {}) => apiFetch<ProductSalesReport[]>(`/api/reports/products${toQuery(params)}`),
+  bookings: (params: Record<string, string | undefined> = {}) => apiFetch<BookingReport[]>(`/api/reports/bookings${toQuery(params)}`)
 };

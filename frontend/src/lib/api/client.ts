@@ -17,6 +17,7 @@ type RequestOptions = RequestInit & { skipAuth?: boolean; retry?: boolean };
 
 const tokenKey = "poolhub.accessToken";
 const refreshKey = "poolhub.refreshToken";
+let refreshPromise: Promise<boolean> | null = null;
 
 export const tokenStore = {
   getAccess: () => (typeof window === "undefined" ? null : localStorage.getItem(tokenKey)),
@@ -43,7 +44,7 @@ function normalize<T>(payload: unknown): { data: T; message: string } {
   return { data: payload as T, message: "" };
 }
 
-async function refreshAccessToken() {
+async function executeRefresh() {
   const refreshToken = tokenStore.getRefresh();
   if (!refreshToken) return false;
 
@@ -61,11 +62,27 @@ async function refreshAccessToken() {
   return true;
 }
 
+export async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = executeRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+function notifyAuthInvalid() {
+  tokenStore.clear();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("poolhub:auth-invalid"));
+  }
+}
+
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
 
-  if (options.body && !headers.has("Content-Type")) {
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -83,22 +100,36 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   if (response.status === 401 && options.retry !== false && !options.skipAuth) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return apiFetch<T>(path, { ...options, retry: false });
-    tokenStore.clear();
-    if (typeof window !== "undefined") window.location.href = "/login";
+    notifyAuthInvalid();
   }
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: { message?: string; errors?: string[] } | null = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+  }
 
   if (!response.ok) {
-    const message = payload?.message || (response.status === 403 ? "Bạn không có quyền truy cập." : "Có lỗi xảy ra.");
+    const fallback: Record<number, string> = {
+      400: "Dữ liệu gửi lên không hợp lệ.",
+      403: "Bạn không có quyền truy cập.",
+      404: "API không tồn tại hoặc backend chưa được cập nhật.",
+      409: "Dữ liệu bị xung đột.",
+      500: "Backend gặp lỗi khi xử lý dữ liệu.",
+      503: "Không thể kết nối dịch vụ hoặc cơ sở dữ liệu."
+    };
+    const message = payload?.message || fallback[response.status] || `Request thất bại (${response.status}).`;
     throw new ApiError(message, response.status, payload?.errors || []);
   }
 
   return normalize<T>(payload).data;
 }
 
-export function toQuery(params: Record<string, string | number | undefined | null>) {
+export function toQuery(params: Record<string, string | number | boolean | undefined | null>) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") query.set(key, String(value));

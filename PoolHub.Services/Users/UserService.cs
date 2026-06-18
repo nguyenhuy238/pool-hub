@@ -1,82 +1,244 @@
 using Microsoft.EntityFrameworkCore;
-using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.DTOs.Users;
 using PoolHub.Core.Entities;
+using PoolHub.Core.Enums;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Services.Auth;
 using PoolHub.Shared;
+using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Users;
 
-public class UserService(PoolHubDbContext db) : IUserService
+public class UserService(PoolHubDbContext db, IAuditService auditService) : IUserService
 {
-    public async Task<PagedResult<UserDto>> GetUsersAsync(PaginationRequest request, CancellationToken cancellationToken)
+    public async Task<PagedResult<UserDto>> GetUsersAsync(UserQueryRequest request, CancellationToken ct)
     {
-        var query = db.Users.AsQueryable();
-        if (!string.IsNullOrWhiteSpace(request.Search)) query = query.Where(x => x.FullName.Contains(request.Search) || x.Email.Contains(request.Search));
-        var total = await query.CountAsync(cancellationToken);
-        var users = await query.OrderBy(x => x.UserId).Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).ToListAsync(cancellationToken);
-        var roles = await (from ur in db.UserRoles join r in db.Roles on ur.RoleId equals r.RoleId select new { ur.UserId, r.Name }).ToListAsync(cancellationToken);
+        NormalizePagination(request);
+        var query = db.Users.AsNoTracking().AsQueryable();
+        var keyword = request.Keyword ?? request.Search;
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            keyword = keyword.Trim();
+            query = query.Where(x => x.FullName.Contains(keyword) || x.Email.Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            if (!Enum.TryParse<UserStatus>(request.Status, true, out var status))
+                throw new ValidationException("Invalid user status.");
+            query = query.Where(x => x.Status == status);
+        }
+
+        if (request.RoleId.HasValue)
+        {
+            var roleId = request.RoleId.Value;
+            query = query.Where(x => db.UserRoles.Any(ur => ur.UserId == x.UserId && ur.RoleId == roleId));
+        }
+
+        var total = await query.CountAsync(ct);
+        var users = await query.OrderBy(x => x.UserId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToListAsync(ct);
+        var userIds = users.Select(x => x.UserId).ToList();
+        var roleRows = await (from ur in db.UserRoles
+                              join role in db.Roles on ur.RoleId equals role.RoleId
+                              where userIds.Contains(ur.UserId) && role.IsActive
+                              select new { ur.UserId, role.Name }).ToListAsync(ct);
+
         return new PagedResult<UserDto>
         {
-            Items = users.Select(u => new UserDto { UserId = u.UserId, PublicId = u.PublicId, FullName = u.FullName, Email = u.Email, PhoneNumber = u.PhoneNumber, Status = u.Status, Roles = roles.Where(x => x.UserId == u.UserId).Select(x => x.Name).ToList() }).ToList(),
+            Items = users.Select(user => Map(user,
+                roleRows.Where(x => x.UserId == user.UserId).Select(x => x.Name).ToList())).ToList(),
             PageNumber = request.PageNumber,
             PageSize = request.PageSize,
-            TotalCount = total
+            TotalItems = total
         };
     }
 
-    public async Task<UserDto> GetByIdAsync(long id, CancellationToken cancellationToken)
+    public async Task<UserDto> GetByIdAsync(long id, CancellationToken ct)
     {
-        var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
-        var roles = await (from ur in db.UserRoles join r in db.Roles on ur.RoleId equals r.RoleId where ur.UserId == id select r.Name).ToListAsync(cancellationToken);
-        return new UserDto { UserId = user.UserId, PublicId = user.PublicId, FullName = user.FullName, Email = user.Email, PhoneNumber = user.PhoneNumber, Status = user.Status, Roles = roles };
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == id, ct)
+            ?? throw new NotFoundException("User not found.");
+        return Map(user, await GetRoleNamesAsync(id, ct));
     }
 
-    public async Task<UserDto> CreateAsync(CreateUserRequest request, CancellationToken cancellationToken)
+    public async Task<UserDto> CreateAsync(CreateUserRequest request, long actorUserId, CancellationToken ct)
     {
-        if (await db.Users.AnyAsync(x => x.Email == request.Email.ToLower(), cancellationToken)) throw new ConflictException("Email already exists.");
-        var role = await db.Roles.FirstOrDefaultAsync(x => x.Name == request.Role, cancellationToken) ?? throw new ValidationException("Role not found.");
-        var user = new User { FullName = request.FullName, Email = request.Email.ToLower(), PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12), Status = true, EmailConfirmed = true };
+        var confirmPassword = string.IsNullOrEmpty(request.ConfirmPassword) ? request.Password : request.ConfirmPassword;
+        if (!string.Equals(request.Password, confirmPassword, StringComparison.Ordinal))
+            throw new ValidationException("Confirm password mismatch.");
+        PasswordPolicy.Validate(request.Password);
+
+        var email = request.Email.Trim().ToLowerInvariant();
+        if (await db.Users.AnyAsync(x => x.Email == email, ct))
+            throw new ConflictException("Email already exists.");
+
+        var roleIds = request.RoleIds.Distinct().ToList();
+        if (roleIds.Count == 0 && !string.IsNullOrWhiteSpace(request.Role))
+        {
+            roleIds = await db.Roles.Where(x => x.Name == request.Role && x.IsActive)
+                .Select(x => x.RoleId).ToListAsync(ct);
+        }
+        await ValidateRolesAsync(roleIds, ct);
+
+        var user = new User
+        {
+            FullName = request.FullName.Trim(),
+            Email = email,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
+            PhoneNumber = request.PhoneNumber?.Trim(),
+            EmailConfirmed = true,
+            Status = UserStatus.Active
+        };
         db.Users.Add(user);
-        await db.SaveChangesAsync(cancellationToken);
-        db.UserRoles.Add(new UserRole { UserId = user.UserId, RoleId = role.RoleId });
-        await db.SaveChangesAsync(cancellationToken);
-        return await GetByIdAsync(user.UserId, cancellationToken);
+        await db.SaveChangesAsync(ct);
+        db.UserRoles.AddRange(roleIds.Select(roleId => new UserRole
+        {
+            UserId = user.UserId,
+            RoleId = roleId,
+            AssignedByUserId = actorUserId
+        }));
+        await db.SaveChangesAsync(ct);
+        await auditService.LogAsync(actorUserId, AuditActions.UserCreated, "User",
+            user.UserId, user.PublicId, newValues: new { user.FullName, user.Email, RoleIds = roleIds },
+            description: "Internal user created.", ct: ct);
+        return await GetByIdAsync(user.UserId, ct);
     }
 
-    public async Task<UserDto> UpdateAsync(long id, UpdateUserRequest request, CancellationToken cancellationToken)
+    public async Task<UserDto> UpdateAsync(long id, UpdateUserRequest request, long actorUserId, CancellationToken ct)
     {
-        var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
-        user.FullName = request.FullName;
-        user.PhoneNumber = request.PhoneNumber;
-        user.AvatarUrl = request.AvatarUrl;
-        user.Status = request.Status;
+        var user = await db.Users.FindAsync([id], ct) ?? throw new NotFoundException("User not found.");
+        var oldValues = new { user.FullName, user.PhoneNumber, user.AvatarUrl, user.EmailConfirmed };
+        user.FullName = request.FullName.Trim();
+        user.PhoneNumber = request.PhoneNumber?.Trim();
+        user.AvatarUrl = request.AvatarUrl?.Trim();
+        user.EmailConfirmed = request.EmailConfirmed;
         user.UpdatedAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        return await GetByIdAsync(id, cancellationToken);
+        await db.SaveChangesAsync(ct);
+        await auditService.LogAsync(actorUserId, AuditActions.UserUpdated, "User",
+            user.UserId, user.PublicId, oldValues,
+            new { user.FullName, user.PhoneNumber, user.AvatarUrl, user.EmailConfirmed },
+            "User profile updated.", ct);
+        return await GetByIdAsync(id, ct);
     }
 
-    public async Task UpdateRolesAsync(long id, UpdateUserRoleRequest request, CancellationToken cancellationToken)
+    public async Task AssignRolesAsync(long id, UpdateUserRoleRequest request, long actorUserId, CancellationToken ct)
     {
-        var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
-        var roleIds = await db.Roles.Where(x => request.Roles.Contains(x.Name)).Select(x => x.RoleId).ToListAsync(cancellationToken);
-        if (roleIds.Count != request.Roles.Count) throw new ValidationException("One or more roles are invalid.");
+        var user = await db.Users.FindAsync([id], ct) ?? throw new NotFoundException("User not found.");
+        var roleIds = request.RoleIds.Distinct().ToList();
+        if (roleIds.Count == 0 && request.Roles.Count > 0)
+        {
+            roleIds = await db.Roles.Where(x => request.Roles.Contains(x.Name) && x.IsActive)
+                .Select(x => x.RoleId).ToListAsync(ct);
+        }
+        await ValidateRolesAsync(roleIds, ct);
 
-        var olds = db.UserRoles.Where(x => x.UserId == id);
-        db.UserRoles.RemoveRange(olds);
-        foreach (var roleId in roleIds) db.UserRoles.Add(new UserRole { UserId = user.UserId, RoleId = roleId });
-        await db.SaveChangesAsync(cancellationToken);
+        var existing = await db.UserRoles.Where(x => x.UserId == id && roleIds.Contains(x.RoleId))
+            .Select(x => x.RoleId).ToListAsync(ct);
+        var additions = roleIds.Except(existing).ToList();
+        db.UserRoles.AddRange(additions.Select(roleId => new UserRole
+        {
+            UserId = id,
+            RoleId = roleId,
+            AssignedByUserId = actorUserId
+        }));
+        await db.SaveChangesAsync(ct);
+        if (additions.Count > 0)
+        {
+            await auditService.LogAsync(actorUserId, AuditActions.UserRoleAssigned, "User",
+                user.UserId, user.PublicId, newValues: new { RoleIds = additions },
+                description: "Roles assigned to user.", ct: ct);
+        }
     }
 
-    public async Task UpdateStatusAsync(long id, bool status, CancellationToken cancellationToken)
+    public async Task RemoveRoleAsync(long id, long roleId, long actorUserId, CancellationToken ct)
     {
-        var user = await db.Users.FindAsync([id], cancellationToken) ?? throw new NotFoundException("User not found.");
-        user.Status = status;
+        var user = await db.Users.FindAsync([id], ct) ?? throw new NotFoundException("User not found.");
+        var assignment = await db.UserRoles.FirstOrDefaultAsync(
+            x => x.UserId == id && x.RoleId == roleId, ct)
+            ?? throw new NotFoundException("User role assignment not found.");
+        if (await db.UserRoles.CountAsync(x => x.UserId == id, ct) <= 1)
+            throw new BusinessRuleException("A user must have at least one role.");
+
+        var role = await db.Roles.FindAsync([roleId], ct) ?? throw new NotFoundException("Role not found.");
+        if (id == actorUserId && role.Name == RoleConstants.Admin)
+        {
+            var adminRoleId = role.RoleId;
+            var activeAdminCount = await db.UserRoles.CountAsync(ur =>
+                ur.RoleId == adminRoleId &&
+                db.Users.Any(u => u.UserId == ur.UserId && u.Status == UserStatus.Active), ct);
+            if (activeAdminCount <= 1)
+                throw new BusinessRuleException("The last active administrator cannot remove their own Admin role.");
+        }
+
+        db.UserRoles.Remove(assignment);
+        await db.SaveChangesAsync(ct);
+        await auditService.LogAsync(actorUserId, AuditActions.UserRoleRemoved, "User",
+            user.UserId, user.PublicId, oldValues: new { RoleId = roleId, role.Name },
+            description: "Role removed from user.", ct: ct);
+    }
+
+    public async Task UpdateStatusAsync(long id, string status, long actorUserId, CancellationToken ct)
+    {
+        var user = await db.Users.FindAsync([id], ct) ?? throw new NotFoundException("User not found.");
+        if (!Enum.TryParse<UserStatus>(status, true, out var parsed))
+            throw new ValidationException("Status must be Active, Locked, or Deleted.");
+        if (id == actorUserId && parsed != UserStatus.Active)
+            throw new BusinessRuleException("An administrator cannot lock or delete their own account.");
+
+        var oldStatus = user.Status;
+        user.Status = parsed;
         user.UpdatedAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
+        if (parsed != UserStatus.Active)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var token in db.RefreshTokens.Where(x => x.UserId == id && !x.IsRevoked))
+            {
+                token.IsRevoked = true;
+                token.RevokedAtUtc = now;
+            }
+        }
+        await db.SaveChangesAsync(ct);
+        await auditService.LogAsync(actorUserId, AuditActions.UserStatusChanged, "User",
+            user.UserId, user.PublicId, new { Status = oldStatus.ToString() },
+            new { Status = parsed.ToString() }, "User status changed.", ct);
     }
 
-    public Task<List<string>> GetRolesAsync(CancellationToken cancellationToken) => db.Roles.OrderBy(x => x.RoleId).Select(x => x.Name).ToListAsync(cancellationToken);
+    private async Task ValidateRolesAsync(List<long> roleIds, CancellationToken ct)
+    {
+        if (roleIds.Count == 0) throw new ValidationException("At least one role is required.");
+        var count = await db.Roles.CountAsync(x => roleIds.Contains(x.RoleId) && x.IsActive, ct);
+        if (count != roleIds.Count) throw new ValidationException("One or more roles are invalid.");
+    }
+
+    private Task<List<string>> GetRoleNamesAsync(long userId, CancellationToken ct) =>
+        (from ur in db.UserRoles
+         join role in db.Roles on ur.RoleId equals role.RoleId
+         where ur.UserId == userId && role.IsActive
+         select role.Name).ToListAsync(ct);
+
+    private static UserDto Map(User user, List<string> roles) => new()
+    {
+        UserId = user.UserId,
+        PublicId = user.PublicId,
+        FullName = user.FullName,
+        Email = user.Email,
+        PhoneNumber = user.PhoneNumber,
+        AvatarUrl = user.AvatarUrl,
+        EmailConfirmed = user.EmailConfirmed,
+        Status = user.Status.ToString(),
+        LastLoginAtUtc = user.LastLoginAtUtc,
+        CreatedAtUtc = user.CreatedAtUtc,
+        UpdatedAtUtc = user.UpdatedAtUtc,
+        Roles = roles
+    };
+
+    private static void NormalizePagination(UserQueryRequest request)
+    {
+        request.PageNumber = Math.Max(1, request.PageNumber);
+        request.PageSize = Math.Clamp(request.PageSize, 1, 100);
+    }
 }

@@ -9,4 +9,14 @@ public class AuthResponse
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = [];
+    public AuthUserSummary User { get; set; } = new();
+}
+
+public class AuthUserSummary
+{
+    public long UserId { get; set; }
+    public Guid PublicId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public List<string> Roles { get; set; } = [];
 }

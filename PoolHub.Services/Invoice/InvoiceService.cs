@@ -4,6 +4,7 @@ using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
+using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using System;
 using System.Collections.Generic;
@@ -150,7 +151,7 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
     public async Task CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([request.InvoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
-        if (invoice.PaymentStatus == 2 || invoice.PaidAmount >= invoice.GrandTotalAmount)
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid || invoice.PaidAmount >= invoice.GrandTotalAmount)
         {
             throw new BusinessRuleException("Invoice is already fully paid.");
         }
@@ -165,7 +166,7 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             InvoiceId = request.InvoiceId, 
             PaymentMethodId = request.PaymentMethodId, 
             Amount = request.Amount, 
-            PaymentStatus = 2, // Completed
+            PaymentStatus = PaymentStatuses.Completed,
             ReceivedByUserId = receivedByUserId, 
             PaidAtUtc = DateTime.UtcNow 
         };
@@ -174,7 +175,7 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
         invoice.PaidAmount += request.Amount;
         if (invoice.PaidAmount >= invoice.GrandTotalAmount)
         {
-            invoice.PaymentStatus = 2; // Paid
+            invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
             invoice.Status = 2; // Completed
         }
 
@@ -270,7 +271,7 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
     public async Task ApplyDiscountAsync(long invoiceId, ApplyDiscountRequest request, long userId, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
-        if (invoice.PaymentStatus == 2)
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
         {
             throw new BusinessRuleException("Cannot apply discounts to a fully paid invoice.");
         }
@@ -291,20 +292,19 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             throw new BusinessRuleException($"Minimum time subtotal of {discount.MinTimeSubtotal.Value:N0} VND is required to apply this discount.");
         }
 
-        decimal baseAmount = discount.AppliesTo switch
+        if (!discount.AppliesTo.Equals("TIME", StringComparison.OrdinalIgnoreCase))
         {
-            "TIME" => invoice.TimeSubtotalAmount,
-            "PRODUCT" => invoice.ProductSubtotalAmount,
-            "ALL" => invoice.SubtotalAmount,
-            _ => invoice.SubtotalAmount
-        };
+            throw new BusinessRuleException("PoolHub discounts can only apply to time charges.");
+        }
+        decimal baseAmount = invoice.TimeSubtotalAmount;
 
         decimal discountAmt = 0;
-        if (discount.DiscountType.Equals("PERCENTAGE", StringComparison.OrdinalIgnoreCase))
+        if (discount.DiscountType.Equals(DiscountTypes.Percentage, StringComparison.OrdinalIgnoreCase))
         {
             discountAmt = baseAmount * (discount.Value / 100m);
         }
-        else if (discount.DiscountType.Equals("FIXED", StringComparison.OrdinalIgnoreCase))
+        else if (discount.DiscountType.Equals(DiscountTypes.FixedAmount, StringComparison.OrdinalIgnoreCase)
+                 || discount.DiscountType.Equals("FIXED", StringComparison.OrdinalIgnoreCase))
         {
             discountAmt = discount.Value;
         }
@@ -314,9 +314,9 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             discountAmt = discount.MaxAmount.Value;
         }
 
-        if (discountAmt > invoice.SubtotalAmount)
+        if (discountAmt > invoice.TimeSubtotalAmount)
         {
-            discountAmt = invoice.SubtotalAmount;
+            discountAmt = invoice.TimeSubtotalAmount;
         }
 
         var invoiceDiscount = new InvoiceDiscount
@@ -334,7 +334,7 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
 
         if (invoice.PaidAmount >= invoice.GrandTotalAmount)
         {
-            invoice.PaymentStatus = 2; // Paid
+            invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
             invoice.Status = 2; // Completed
         }
 

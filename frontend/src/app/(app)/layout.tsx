@@ -4,13 +4,18 @@ import { usePathname } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { ProtectedRoute } from "@/components/guards";
 import type { RoleName } from "@/types";
+import { MANAGEMENT_READ_ROLES, OPERATION_ROLES, ROLES } from "@/lib/auth/constants";
 
 function rolesForPath(pathname: string): RoleName[] {
   if (pathname.startsWith("/admin/audit-logs")) return ["Admin", "Owner", "Manager"];
-  if (pathname.startsWith("/admin")) return ["Admin", "Owner"];
-  if (pathname.startsWith("/management")) return ["Admin", "Owner", "Manager"];
-  if (pathname.startsWith("/operation")) return ["Admin", "Owner", "Manager", "Staff", "Cashier"];
-  if (pathname.startsWith("/dashboard")) return ["Admin", "Owner", "Manager", "Staff", "Cashier"];
+  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/roles")) return MANAGEMENT_READ_ROLES;
+  if (pathname.startsWith("/admin/landing-settings")) return [ROLES.ADMIN];
+  if (pathname.startsWith("/admin")) return [ROLES.ADMIN];
+  if (pathname.startsWith("/management/customers")) return OPERATION_ROLES;
+  if (pathname.startsWith("/management")) return MANAGEMENT_READ_ROLES;
+  if (pathname.startsWith("/operation")) return OPERATION_ROLES;
+  if (pathname.startsWith("/profile") || pathname.startsWith("/change-password")) return [];
+  if (pathname.startsWith("/dashboard")) return OPERATION_ROLES;
   return [];
 }
 

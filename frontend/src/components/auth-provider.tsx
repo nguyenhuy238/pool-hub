@@ -2,75 +2,118 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { authApi } from "@/lib/api/endpoints";
 import { tokenStore } from "@/lib/api/client";
-import type { AuthUser, RoleName } from "@/types";
+import { landingPathFor } from "@/lib/auth/constants";
+import { authService } from "@/services/auth-service";
+import type { AuthUser, RegisterRequest, RoleName } from "@/types";
 
 type AuthContextValue = {
   user: AuthUser | null;
+  roles: RoleName[];
+  accessToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
+  register: (payload: RegisterRequest) => Promise<AuthUser>;
   logout: () => Promise<void>;
-  fetchMe: () => Promise<void>;
+  refreshToken: () => Promise<boolean>;
+  fetchMe: () => Promise<AuthUser | null>;
+  hasRole: (role: RoleName) => boolean;
   hasAnyRole: (roles: RoleName[]) => boolean;
+  clearAuth: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function getLandingPath(roles: RoleName[]) {
-  if (roles.some((role) => ["Admin", "Owner", "Manager"].includes(role))) return "/dashboard";
-  if (roles.some((role) => ["Staff", "Cashier"].includes(role))) return "/operation/floor-map";
-  return "/booking";
-}
+export const getLandingPath = landingPathFor;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const clearAuth = useCallback(() => {
+    tokenStore.clear();
+    setAccessToken(null);
+    setUser(null);
+  }, []);
+
   const fetchMe = useCallback(async () => {
-    if (!tokenStore.getAccess()) {
+    const token = tokenStore.getAccess();
+    setAccessToken(token);
+    if (!token) {
+      setUser(null);
       setIsLoading(false);
-      return;
+      return null;
     }
     try {
-      setUser(await authApi.me());
+      const currentUser = await authService.getMe();
+      setUser(currentUser);
+      return currentUser;
+    } catch {
+      clearAuth();
+      return null;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [clearAuth]);
 
   useEffect(() => {
-    fetchMe().catch(() => {
-      tokenStore.clear();
-      setUser(null);
-      setIsLoading(false);
-    });
+    void fetchMe();
   }, [fetchMe]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await authApi.login({ email, password });
+  useEffect(() => {
+    const handleInvalidAuth = () => {
+      clearAuth();
+      router.replace("/login");
+    };
+    window.addEventListener("poolhub:auth-invalid", handleInvalidAuth);
+    return () => window.removeEventListener("poolhub:auth-invalid", handleInvalidAuth);
+  }, [clearAuth, router]);
+
+  const establishSession = useCallback(async (response: Awaited<ReturnType<typeof authService.login>>) => {
     tokenStore.set(response.accessToken, response.refreshToken);
-    const currentUser = await authApi.me().catch(() => ({
+    setAccessToken(response.accessToken);
+    const fallback = response.user ?? {
       userId: response.userId,
+      publicId: response.publicId,
       email: response.email,
       fullName: response.fullName,
       roles: response.roles
-    }));
+    };
+    const currentUser = await authService.getMe().catch(() => fallback);
     setUser(currentUser);
-    router.push(getLandingPath(currentUser.roles));
     return currentUser;
-  }, [router]);
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const currentUser = await establishSession(await authService.login({ email, password }));
+    router.replace(landingPathFor(currentUser.roles));
+    return currentUser;
+  }, [establishSession, router]);
+
+  const register = useCallback(async (payload: RegisterRequest) => {
+    const currentUser = await establishSession(await authService.register(payload));
+    router.replace(landingPathFor(currentUser.roles));
+    return currentUser;
+  }, [establishSession, router]);
 
   const logout = useCallback(async () => {
     const refreshToken = tokenStore.getRefresh();
-    if (refreshToken) await authApi.logout(refreshToken).catch(() => undefined);
-    tokenStore.clear();
-    setUser(null);
-    router.push("/login");
-  }, [router]);
+    if (refreshToken) await authService.logout(refreshToken).catch(() => undefined);
+    clearAuth();
+    router.replace("/login");
+  }, [clearAuth, router]);
 
+  const refreshToken = useCallback(async () => {
+    const refreshed = await authService.refreshToken();
+    setAccessToken(tokenStore.getAccess());
+    if (!refreshed) clearAuth();
+    return refreshed;
+  }, [clearAuth]);
+
+  const hasRole = useCallback((role: RoleName) => Boolean(user?.roles.includes(role)), [user]);
   const hasAnyRole = useCallback((roles: RoleName[]) => {
     if (!roles.length) return true;
     return Boolean(user?.roles.some((role) => roles.includes(role)));
@@ -78,13 +121,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
+    roles: user?.roles ?? [],
+    accessToken,
     isLoading,
     isAuthenticated: Boolean(user),
     login,
+    register,
     logout,
+    refreshToken,
     fetchMe,
-    hasAnyRole
-  }), [fetchMe, hasAnyRole, isLoading, login, logout, user]);
+    hasRole,
+    hasAnyRole,
+    clearAuth
+  }), [accessToken, clearAuth, fetchMe, hasAnyRole, hasRole, isLoading, login, logout, refreshToken, register, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

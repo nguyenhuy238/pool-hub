@@ -2,5 +2,5 @@ namespace PoolHub.Core.DTOs.Users;
 
 public class UpdateUserStatusRequest
 {
-    public bool Status { get; set; }
+    public string Status { get; set; } = string.Empty;
 }

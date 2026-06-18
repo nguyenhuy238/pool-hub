@@ -4,8 +4,8 @@ import { ToastProvider } from "@/components/toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PoolHub",
-  description: "Entertainment Center Management System"
+  title: "PoolHub - Đặt bàn bi-a online nhanh chóng",
+  description: "Trung tâm bi-a và giải trí với bàn chuẩn, không gian hiện đại, đồ uống đa dạng và đặt bàn online."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

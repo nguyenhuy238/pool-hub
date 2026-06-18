@@ -11,5 +11,7 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.ToTable("customers");
         builder.HasKey(x => x.CustomerId);
         builder.HasIndex(x => x.PublicId).IsUnique();
+        builder.HasIndex(x => x.PhoneNumber).IsUnique();
+        builder.HasIndex(x => x.Email).IsUnique().HasFilter("[email] IS NOT NULL");
     }
 }

@@ -33,7 +33,7 @@ export default function BookingCalendarPage() {
     const fromDate = new Date(`${selectedDate}T00:00:00Z`);
     const toDate = new Date(`${selectedDate}T23:59:59Z`);
     
-    const params: any = {};
+    const params: Record<string, string> = {};
     if (statusFilter) params.status = statusFilter;
     
     const [bookingsRes, tablesRes] = await Promise.all([
@@ -47,8 +47,8 @@ export default function BookingCalendarPage() {
     return { items: items || [], tables: tables || [] };
   }, [selectedDate, statusFilter]);
 
-  const items = data?.items as BookingCalendarItem[] || [];
-  const venueTables = data?.tables || [];
+  const items = useMemo(() => (data?.items as BookingCalendarItem[] | undefined) ?? [], [data?.items]);
+  const venueTables = useMemo(() => data?.tables ?? [], [data?.tables]);
 
   // Group bookings by table
   const tableGroups = useMemo(() => {

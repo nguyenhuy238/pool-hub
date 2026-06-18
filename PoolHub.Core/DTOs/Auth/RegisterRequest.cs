@@ -4,15 +4,23 @@ namespace PoolHub.Core.DTOs.Auth;
 
 public class RegisterRequest
 {
-    [Required]
+    [Required, MaxLength(200)]
     public string FullName { get; set; } = string.Empty;
 
-    [Required, EmailAddress]
+    [Required, EmailAddress, MaxLength(320)]
     public string Email { get; set; } = string.Empty;
 
-    [Required]
+    [Required, MinLength(8)]
     public string Password { get; set; } = string.Empty;
 
     [Required]
-    public string Role { get; set; } = string.Empty;
+    public string ConfirmPassword { get; set; } = string.Empty;
+
+    [MaxLength(30)]
+    public string? PhoneNumber { get; set; }
+
+    public List<long> RoleIds { get; set; } = [];
+
+    // Kept for compatibility with the existing frontend. Public registration ignores it.
+    public string? Role { get; set; }
 }
