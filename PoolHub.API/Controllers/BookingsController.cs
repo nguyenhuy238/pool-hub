@@ -150,6 +150,23 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object>>> Availability([FromQuery] BookingAvailabilityRequest request, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await bookingService.GetAvailabilityAsync(request, ct)));
+
+    /// <summary>
+    /// Lấy danh sách khoảng thời gian đã bị đặt của một bàn cụ thể trong ngày. Không tiết lộ thông tin khách hàng.
+    /// </summary>
+    /// <param name="tableId">ID của bàn.</param>
+    /// <param name="date">Ngày cần xem (format YYYY-MM-DD).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Danh sách các khoảng thời gian đã bị đặt.</returns>
+    [HttpGet("public/calendar")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<PublicBookingSlotDto>>), 200)]
+    public async Task<ActionResult<ApiResponse<IEnumerable<PublicBookingSlotDto>>>> GetPublicCalendar(
+        [FromQuery] long tableId, 
+        [FromQuery] DateTime date, 
+        CancellationToken ct) =>
+        Ok(ApiResponse<IEnumerable<PublicBookingSlotDto>>.Ok(await bookingService.GetPublicCalendarAsync(tableId, date, ct)));
+
     
     /// <summary>
     /// Xoa vinh vien mot lich dat ban khoi database (Chi danh cho Admin/Manager).

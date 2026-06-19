@@ -19,4 +19,9 @@ public interface IBookingService
     /// Kết quả bao gồm thông tin khách hàng và bàn đầy đủ.
     /// </summary>
     Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct);
+
+    /// <summary>
+    /// Lấy danh sách các khung giờ đã bị đặt của một bàn trong một ngày (Public API).
+    /// </summary>
+    Task<IEnumerable<PublicBookingSlotDto>> GetPublicCalendarAsync(long tableId, DateTime date, CancellationToken ct);
 }

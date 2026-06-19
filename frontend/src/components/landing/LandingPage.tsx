@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AvailabilitySection } from "@/components/landing/AvailabilitySection";
-import { BookingForm } from "@/components/landing/BookingForm";
+import { BookingWizard } from "@/components/landing/BookingWizard";
 import { ContactSection } from "@/components/landing/ContactSection";
 import { GallerySection } from "@/components/landing/GallerySection";
 import { HeroSection } from "@/components/landing/HeroSection";
@@ -28,9 +27,8 @@ export function LandingPage() {
       <HeroSection hero={settings.hero} />
       <USPSection items={settings.uspItems} />
       <ServicesSection items={settings.services} />
-      <PricingSection items={settings.pricingHighlights} />
-      <AvailabilitySection />
-      <BookingForm policy={settings.bookingPolicy} />
+      <PricingSection />
+      <BookingWizard policy={settings.bookingPolicy} />
       <ReviewSection items={settings.reviews} />
       <GallerySection items={settings.gallery} />
       <ContactSection info={settings.generalInfo} />

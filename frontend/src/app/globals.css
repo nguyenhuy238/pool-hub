@@ -278,7 +278,7 @@ button, input, select, textarea { font: inherit; }
   background: #112d28;
   color: white;
 }
-.booking-copy { position: sticky; top: 96px; }
+.booking-copy { position: relative; }
 .booking-copy p { color: rgba(255,255,255,.78); }
 .booking-form {
   display: grid;
