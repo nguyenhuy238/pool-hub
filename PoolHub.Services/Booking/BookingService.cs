@@ -87,7 +87,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             StartTimeUtc = request.StartTimeUtc,
             EndTimeUtc = request.EndTimeUtc,
             NumberOfGuests = request.NumberOfGuests,
-            Status = 1 // Pending
+            Status = 2, // Confirmed (Auto-confirm)
+            ConfirmedAtUtc = DateTime.UtcNow
         };
         db.Bookings.Add(entity);
         await db.SaveChangesAsync(ct);
@@ -238,5 +239,30 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             PageSize = pageSize,
             TotalCount = total
         };
+    }
+
+    /// <inheritdoc/>
+    public async Task<IEnumerable<PublicBookingSlotDto>> GetPublicCalendarAsync(long tableId, DateTime date, CancellationToken ct)
+    {
+        // Khoảng thời gian trong ngày (từ 00:00 đến 23:59 của ngày đó - theo UTC hoặc local tùy thuộc logic lưu trữ của DB, 
+        // ở đây ta so sánh StartTimeUtc/EndTimeUtc có giao với ngày được chỉ định).
+        var startOfDay = date.Date;
+        var endOfDay = startOfDay.AddDays(1);
+
+        // Lấy các Booking của TableId này trong ngày, với Status = 1 (Pending) hoặc 2 (Confirmed)
+        var slots = await db.Bookings
+            .Where(b => b.TableId == tableId && 
+                        (b.Status == 1 || b.Status == 2) && 
+                        b.StartTimeUtc < endOfDay && 
+                        b.EndTimeUtc > startOfDay)
+            .OrderBy(b => b.StartTimeUtc)
+            .Select(b => new PublicBookingSlotDto
+            {
+                StartTimeUtc = b.StartTimeUtc,
+                EndTimeUtc = b.EndTimeUtc
+            })
+            .ToListAsync(ct);
+
+        return slots;
     }
 }

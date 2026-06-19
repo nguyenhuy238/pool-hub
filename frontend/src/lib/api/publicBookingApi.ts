@@ -29,10 +29,16 @@ function toBookingPayload(request: PublicBookingRequest) {
   };
 }
 
+export interface PublicBookingSlot {
+  startTimeUtc: string;
+  endTimeUtc: string;
+}
+
 export const publicBookingApi = {
   create: (request: PublicBookingRequest) => apiFetch<Booking>("/api/bookings/public", {
     method: "POST",
     body: JSON.stringify(toBookingPayload(request)),
     skipAuth: true
-  })
+  }),
+  getPublicCalendar: (tableId: number, date: string) => apiFetch<PublicBookingSlot[]>(`/api/bookings/public/calendar?tableId=${tableId}&date=${date}`, { skipAuth: true })
 };
