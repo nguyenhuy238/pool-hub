@@ -45,6 +45,7 @@ public class PaymentsController(IAdminManagementService admin, IInvoiceService i
 {
     [HttpGet] public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] PaymentQueryRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await admin.GetPaymentsAsync(request, ct)));
     [HttpPost] public async Task<IActionResult> Create(CreatePaymentRequest request, CancellationToken ct) { await invoices.CreatePaymentAsync(request, User.GetUserId(), ct); return StatusCode(201, ApiResponse<object>.Ok(new { }, "Payment recorded.")); }
+    [HttpPost("{id:long}/refund")] public async Task<IActionResult> Refund(long id, [FromBody] RefundPaymentRequest request, CancellationToken ct) { await invoices.RefundPaymentAsync(id, request.Reason, User.GetUserId(), ct); return Ok(ApiResponse<object>.Ok(new { }, "Payment refunded.")); }
 }
 
 [ApiController, Route("api/reports")]

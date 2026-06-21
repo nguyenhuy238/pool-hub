@@ -24,9 +24,24 @@ export default function PaymentsPage() {
     ]} actions={row => <button className="ghost-btn" onClick={async () => { await paymentsApi.methodStatus(row.paymentMethodId, !row.isActive); methods.reload(); }}>{row.isActive ? "Tắt" : "Bật"}</button>} />
     <h2>Lịch sử thanh toán</h2>
     <StateBlock loading={payments.loading} error={payments.error} empty={!payments.loading && !rows.length} />
-    <DataTable rows={rows} columns={[
+    <DataTable rows={rows as Record<string, unknown>[]} columns={[
       { key: "paymentId", label: "ID" }, { key: "invoiceId", label: "Invoice" }, { key: "paymentMethodId", label: "Method" },
-      { key: "amount", label: "Số tiền" }, { key: "paymentStatus", label: "Trạng thái" }, { key: "paidAtUtc", label: "Thanh toán lúc" }
-    ]} />
+      { key: "amount", label: "Số tiền", render: row => <strong>{Number(row.amount || 0).toLocaleString()}</strong> }, 
+      { key: "paymentStatus", label: "Trạng thái", render: row => Number(row.paymentStatus) === 4 ? <Badge tone="red">Refunded</Badge> : Number(row.paymentStatus) === 2 ? <Badge tone="green">Completed</Badge> : <Badge tone="yellow">Pending</Badge> }, 
+      { key: "paidAtUtc", label: "Thanh toán lúc" }
+    ]} actions={row => Number(row.paymentStatus) === 2 ? (
+      <button className="danger-btn ghost-btn" onClick={async () => {
+        const reason = window.prompt("Lý do hoàn tiền:");
+        if (reason) {
+          try {
+            await paymentsApi.refund(Number(row.paymentId), reason);
+            payments.reload();
+            alert("Đã hoàn tiền thành công.");
+          } catch (err: any) {
+            alert(err.message);
+          }
+        }
+      }}>Hoàn tiền</button>
+    ) : null} />
   </>;
 }

@@ -1,17 +1,50 @@
 "use client";
 
-import { adminDashboardApi } from "@/lib/api/endpoints";
+import { useState } from "react";
+import { adminDashboardApi, reportsApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
 import { DataTable, PageHeader, StateBlock, useLoad } from "@/components/ui";
-
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area } from 'recharts';
 export default function AdminDashboardPage() {
+  const [range, setRange] = useState({ FromDate: "", ToDate: "" });
+
+  const applyPreset = (preset: string) => {
+    const now = new Date();
+    const toYMD = (d: Date) => {
+      const offset = d.getTimezoneOffset() * 60000;
+      return new Date(d.getTime() - offset).toISOString().split("T")[0];
+    };
+    
+    if (preset === "today") {
+      const d = toYMD(now);
+      setRange({ FromDate: d, ToDate: d });
+    } else if (preset === "this_month") {
+      setRange({ FromDate: toYMD(new Date(now.getFullYear(), now.getMonth(), 1)), ToDate: toYMD(new Date(now.getFullYear(), now.getMonth() + 1, 0)) });
+    } else {
+      setRange({ FromDate: "", ToDate: "" });
+    }
+  };
+
+  const yAxisFormatter = (value: number) => {
+    if (value >= 1000000) return (value / 1000000).toFixed(1).replace('.0', '') + 'M';
+    if (value >= 1000) return (value / 1000) + 'k';
+    return String(value);
+  };
+
+  const xAxisFormatter = (v: any) => {
+    if (!v) return "";
+    const datePart = String(v).split('T')[0];
+    const parts = datePart.split('-');
+    return parts.length >= 3 ? `${parts[2]}/${parts[1]}` : datePart;
+  };
+
   const summary = useLoad(() => adminDashboardApi.summary(), []);
-  const revenue = useLoad(() => adminDashboardApi.revenue(), []);
+  const revenue = useLoad(() => adminDashboardApi.revenue(range), [range]);
   const activeSessions = useLoad(() => adminDashboardApi.activeSessions(), []);
-  const lowStock = useLoad(() => adminDashboardApi.lowStockProducts(), []);
-  const audits = useLoad(() => adminDashboardApi.recentAuditLogs(), []);
-  const loading = summary.loading || revenue.loading || activeSessions.loading || lowStock.loading || audits.loading;
-  const error = summary.error || revenue.error || activeSessions.error || lowStock.error || audits.error;
+  const topProducts = useLoad(() => reportsApi.products(range), [range]);
+  const tableUsage = useLoad(() => reportsApi.tableUsage(range), [range]);
+  const loading = summary.loading || revenue.loading || activeSessions.loading || topProducts.loading || tableUsage.loading;
+  const error = summary.error || revenue.error || activeSessions.error || topProducts.error || tableUsage.error;
 
   const cards = summary.data ? [
     ["Tổng số bàn", summary.data.totalTables],
@@ -31,24 +64,116 @@ export default function AdminDashboardPage() {
   return (
     <>
       <PageHeader title="Admin Dashboard" description="Tổng quan quản trị lấy từ dữ liệu hiện có trong database." />
+      <div className="card list-controls" style={{ marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span>Tùy chọn:</span>
+          <select onChange={e => applyPreset(e.target.value)} defaultValue="">
+            <option value="">Tất cả thời gian</option>
+            <option value="today">Hôm nay</option>
+            <option value="this_month">Tháng này</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: '16px' }}>
+          <span>Từ ngày:</span>
+          <input type="date" value={range.FromDate} onChange={e => setRange({ ...range, FromDate: e.target.value })} />
+        </label>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span>Đến ngày:</span>
+          <input type="date" value={range.ToDate} onChange={e => setRange({ ...range, ToDate: e.target.value })} />
+        </label>
+        <button className="primary-btn" onClick={() => setRange({ FromDate: "", ToDate: "" })}>Xóa bộ lọc</button>
+      </div>
       <StateBlock loading={loading} error={error} empty={!loading && !summary.data} />
       {summary.data ? <div className="kpi-grid">{cards.map(([label, value]) => <div className="card metric" key={String(label)}><span>{label}</span><strong>{value}</strong></div>)}</div> : null}
-      <section className="grid-2">
-        <div className="card">
-          <h3>Doanh thu 7 ngày</h3>
-          <DataTable rows={(revenue.data || []) as unknown as Record<string, unknown>[]} columns={[{ key: "date", label: "Ngày", render: (row) => String(row.date).slice(0, 10) }, { key: "amount", label: "Doanh thu", render: (row) => money(Number(row.amount)) }]} />
+      <section style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '32px' }}>
+        <div style={{ display: 'flex', gap: '24px', width: '100%' }}>
+          <div className="card" style={{ flex: 6, height: 350, display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ marginBottom: '16px', flexShrink: 0 }}>Biểu đồ Doanh Thu</h3>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={(revenue.data || []) as any}>
+              <defs>
+                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={xAxisFormatter} />
+              <YAxis tickFormatter={yAxisFormatter} />
+              <RechartsTooltip formatter={(value) => money(Number(value))} labelFormatter={xAxisFormatter} />
+              <Legend />
+              <Area type="monotone" dataKey="amount" name="Doanh thu" stroke="#8884d8" fillOpacity={1} fill="url(#colorRevenue)" activeDot={{ r: 8 }} />
+            </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="card">
-          <h3>Session đang chạy</h3>
-          <DataTable rows={(activeSessions.data || []) as unknown as Record<string, unknown>[]} columns={[{ key: "sessionCode", label: "Mã" }, { key: "startedAtUtc", label: "Bắt đầu", render: (row) => String(row.startedAtUtc).replace("T", " ").slice(0, 16) }, { key: "durationMinutes", label: "Phút" }]} />
+        <div className="card" style={{ flex: 4, height: 350, display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ marginBottom: '16px', flexShrink: 0 }}>Phương thức thanh toán</h3>
+          {/* Mock data vì backend hiện chưa có API /reports/payment-methods */}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie 
+                data={[{ name: "Tiền mặt", value: 60 }, { name: "Chuyển khoản", value: 40 }]} 
+                cx="50%" cy="50%" 
+                innerRadius={60}
+                outerRadius={90} 
+                paddingAngle={5}
+                dataKey="value" 
+                labelLine={false}
+                label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+                  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                  const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+                  const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+                  return (
+                    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" style={{ fontSize: '13px', fontWeight: 'bold' }}>
+                      {`${(percent * 100).toFixed(0)}%`}
+                    </text>
+                  );
+                }}
+              >
+                <Cell fill="#6366f1" />
+                <Cell fill="#10b981" />
+              </Pie>
+              <RechartsTooltip />
+              <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ paddingTop: '10px' }} />
+            </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="card">
-          <h3>Sản phẩm sắp hết</h3>
-          <DataTable rows={(lowStock.data || []) as unknown as Record<string, unknown>[]} columns={[{ key: "name", label: "Tên" }, { key: "sku", label: "SKU" }, { key: "stockQuantity", label: "Kho" }]} />
         </div>
-        <div className="card">
-          <h3>Audit gần đây</h3>
-          <DataTable rows={(audits.data || []) as unknown as Record<string, unknown>[]} columns={[{ key: "action", label: "Action" }, { key: "entityName", label: "Entity" }, { key: "createdAtUtc", label: "Thời gian", render: (row) => String(row.createdAtUtc).replace("T", " ").slice(0, 16) }]} />
+        <div style={{ display: 'flex', gap: '24px', width: '100%' }}>
+        <div className="card" style={{ flex: 1, height: 350, display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ marginBottom: '16px', flexShrink: 0 }}>Top Sản Phẩm Bán Chạy</h3>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={((topProducts.data as any) || []).slice(0, 5)} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" />
+              <YAxis dataKey="productName" type="category" width={100} />
+              <RechartsTooltip />
+              <Legend />
+              <Bar dataKey="quantity" name="Số lượng bán" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+            </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="card" style={{ flex: 1, height: 350, display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ marginBottom: '16px', flexShrink: 0 }}>Hiệu suất sử dụng Bàn</h3>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={((tableUsage.data as any) || []).slice(0, 5)}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="tableName" />
+              <YAxis />
+              <RechartsTooltip />
+              <Legend />
+              <Bar dataKey="totalMinutes" name="Tổng phút sử dụng" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
         </div>
       </section>
     </>

@@ -87,7 +87,9 @@ export const invoiceApi = {
   paymentMethods: () => apiFetch<PaymentMethod[]>("/api/invoices/payment-methods"),
   generate: (sessionId: number) => apiFetch<Invoice>(`/api/invoices/generate/${sessionId}`, { method: "POST" }),
   pay: (body: { invoiceId: number; paymentMethodId: number; amount: number }) => apiFetch("/api/invoices/payments", { method: "POST", body: JSON.stringify(body) }),
-  discount: (id: number, discountCode: string) => apiFetch(`/api/invoices/${id}/discounts`, { method: "POST", body: JSON.stringify({ discountCode }) })
+  discount: (id: number, discountCode: string) => apiFetch(`/api/invoices/${id}/discounts`, { method: "POST", body: JSON.stringify({ discountCode }) }),
+  cancel: (id: number, reason: string) => apiFetch(`/api/invoices/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  exportPdf: (id: number) => apiFetch<{ url: string }>(`/api/invoices/${id}/export-pdf`)
 };
 
 export const productApi = {
@@ -119,6 +121,10 @@ export const adminDashboardApi = {
 
 export const miscApi = {
   notifications: () => apiFetch<Notification[] | { items?: Notification[] }>("/api/notifications"),
+  notificationUnreadCount: () => apiFetch<{ count: number }>("/api/notifications/unread-count"),
+  notificationRead: (id: number) => apiFetch(`/api/notifications/${id}/read`, { method: "PATCH" }),
+  notificationReadAll: () => apiFetch("/api/notifications/read-all", { method: "PATCH" }),
+  notificationDelete: (id: number) => apiFetch(`/api/notifications/${id}`, { method: "DELETE" }),
   dashboardSummary: () => apiFetch<DashboardSummary>("/api/dashboard/summary")
 };
 
@@ -141,7 +147,8 @@ export const paymentsApi = {
   methods: () => apiFetch<PaymentMethod[]>("/api/payment-methods"),
   createMethod: (body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>("/api/payment-methods", { method: "POST", body: JSON.stringify(body) }),
   updateMethod: (id: number, body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>(`/api/payment-methods/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  methodStatus: (id: number, isActive: boolean) => apiFetch(`/api/payment-methods/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) })
+  methodStatus: (id: number, isActive: boolean) => apiFetch(`/api/payment-methods/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+  refund: (id: number, reason: string) => apiFetch(`/api/payments/${id}/refund`, { method: "POST", body: JSON.stringify({ reason }) })
 };
 
 export const reportsApi = {

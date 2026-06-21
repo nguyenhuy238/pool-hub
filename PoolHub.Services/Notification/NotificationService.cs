@@ -86,4 +86,17 @@ public class NotificationService(PoolHubDbContext db) : INotificationService
             Message = x.Message, NotificationType = x.NotificationType, IsRead = x.IsRead,
             ReadAtUtc = x.ReadAtUtc, CreatedAtUtc = x.CreatedAtUtc
         });
+
+    public async Task DeleteAsync(long id, long userId, bool isAdmin, CancellationToken ct)
+    {
+        var entity = await db.Notifications.FindAsync([id], ct) ?? throw new NotFoundException("Notification not found.");
+        if (!isAdmin && entity.UserId.HasValue && entity.UserId != userId) throw new ForbiddenException("Cannot delete another user's notification.");
+        db.Notifications.Remove(entity);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public Task<int> GetUnreadCountAsync(long userId, CancellationToken ct)
+    {
+        return db.Notifications.CountAsync(x => !x.IsRead && (x.UserId == userId || x.UserId == null), ct);
+    }
 }

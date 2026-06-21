@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { invoiceApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
-import { DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad } from "@/components/ui";
+import { DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Invoice, PaymentMethod } from "@/types";
 
@@ -65,13 +65,31 @@ export default function InvoicesPage() {
         actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>} 
       />
       {invoice ? (
-        <div className="card" style={{ marginTop: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <Modal title={invoice.invoiceCode || `Invoice #${invoice.invoiceId}`} onClose={() => setInvoice(null)} size="large">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h2 style={{ margin: 0 }}>{invoice.invoiceCode || `Invoice #${invoice.invoiceId}`}</h2>
-              {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}
+              {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : Number(invoice.status) === 3 ? <span className="badge red" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ HỦY</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}
             </div>
-            <button className="ghost-btn" style={{ fontSize: '20px', padding: '4px 8px' }} onClick={() => setInvoice(null)} title="Đóng chi tiết">&times;</button>
+            <button className="ghost-btn" onClick={() => {
+              invoiceApi.exportPdf(invoice.invoiceId).then(res => { 
+                const printWindow = window.open("", "_blank");
+                if (printWindow) {
+                  printWindow.document.write(`<html><head><title>Invoice ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
+                    <h1 style="text-align:center;">HÓA ĐƠN THANH TOÁN</h1>
+                    <h3 style="text-align:center; color: #555;">Mã: ${invoice.invoiceCode || invoice.invoiceId}</h3>
+                    <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;"><span>Tiền giờ chơi:</span> <span>${money(invoice.timeSubtotalAmount)}</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;"><span>Dịch vụ/Sản phẩm:</span> <span>${money(invoice.productSubtotalAmount)}</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;"><span>Giảm giá:</span> <span>-${money(invoice.discountAmount)}</span></div>
+                    <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
+                    <div style="display:flex; justify-content:space-between; font-size: 20px; font-weight: bold;"><span>TỔNG CỘNG:</span> <span>${money(invoice.grandTotalAmount)}</span></div>
+                    <p style="text-align:center; margin-top: 40px; font-style: italic;">Cảm ơn quý khách và hẹn gặp lại!</p>
+                    <script>setTimeout(() => window.print(), 500);</script>
+                  </body></html>`);
+                  printWindow.document.close();
+                }
+              }).catch(err => toast(err.message, "error"));
+            }}>In PDF / Xuất Bill</button>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
@@ -85,7 +103,11 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          {Number(invoice.paymentStatus) !== 3 ? (
+          {Number(invoice.status) === 3 ? (
+            <div className="state-card" style={{ background: '#fdeded', color: '#5f2120', border: '1px solid #f4c3c2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              Hóa đơn này đã bị hủy.
+            </div>
+          ) : Number(invoice.paymentStatus) !== 3 ? (
             <div className="actions" style={{ background: 'var(--soft)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
               <select value={paymentMethodId} onChange={(event) => setPaymentMethodId(Number(event.target.value))}>
                 <option value="">-- Chọn phương thức thanh toán --</option>
@@ -96,13 +118,23 @@ export default function InvoicesPage() {
                 const code = window.prompt("Nhập mã giảm giá");
                 if (code) invoiceApi.discount(invoice.invoiceId, code).then(async () => { toast("Đã áp dụng discount.", "success"); await loadDetail(invoice.invoiceId); reload(); }).catch((err) => toast(err.message, "error"));
               }}>Áp dụng mã giảm giá</button>
+              <button className="danger-btn" style={{ marginLeft: "auto" }} onClick={() => {
+                const reason = window.prompt("Nhập lý do hủy hóa đơn:");
+                if (reason) {
+                  invoiceApi.cancel(invoice.invoiceId, reason).then(async () => {
+                    toast("Hóa đơn đã bị hủy.", "success");
+                    await loadDetail(invoice.invoiceId);
+                    reload();
+                  }).catch(err => toast(err.message, "error"));
+                }
+              }}>Hủy hóa đơn</button>
             </div>
           ) : (
             <div className="state-card" style={{ background: '#e4f7ec', color: '#187344', border: '1px solid #c2ebd5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               Hóa đơn này đã được thanh toán hoàn tất. Không thể sửa đổi hay thanh toán thêm.
             </div>
           )}
-        </div>
+        </Modal>
       ) : null}
     </>
   );

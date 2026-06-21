@@ -42,4 +42,18 @@ public class NotificationsController(INotificationService notificationService) :
         await notificationService.MarkAllReadAsync(User.GetUserId(), User.IsInRole(RoleConstants.Admin), ct);
         return NoContent();
     }
+
+    [HttpGet("unread-count")]
+    public async Task<ActionResult<ApiResponse<object>>> GetUnreadCount(CancellationToken ct)
+    {
+        var count = await notificationService.GetUnreadCountAsync(User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(new { count }));
+    }
+
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> Delete(long id, CancellationToken ct)
+    {
+        await notificationService.DeleteAsync(id, User.GetUserId(), User.IsInRole(RoleConstants.Admin), ct);
+        return NoContent();
+    }
 }

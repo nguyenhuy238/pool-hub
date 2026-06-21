@@ -44,4 +44,18 @@ public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
         await invoiceService.ApplyDiscountAsync(id, request, User.GetUserId(), ct);
         return Ok(ApiResponse<object>.Ok(new { }, "Discount applied"));
     }
+
+    [HttpPost("{id:long}/cancel")]
+    public async Task<ActionResult<ApiResponse<object>>> Cancel(long id, [FromBody] CancelInvoiceRequest request, CancellationToken ct)
+    {
+        await invoiceService.CancelInvoiceAsync(id, request.Reason, User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(new { }, "Invoice cancelled"));
+    }
+
+    [HttpGet("{id:long}/export-pdf")]
+    public async Task<ActionResult<ApiResponse<object>>> ExportPdf(long id, CancellationToken ct)
+    {
+        var url = await invoiceService.ExportPdfAsync(id, ct);
+        return Ok(ApiResponse<object>.Ok(new { url }, "Exported successfully"));
+    }
 }

@@ -75,14 +75,14 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
         var discount = await db.Discounts.AsNoTracking().FirstOrDefaultAsync(x =>
             x.DiscountCode == code && x.IsActive && x.StartsAtUtc <= now && (x.EndsAtUtc == null || x.EndsAtUtc >= now), ct);
         if (discount is null) return new() { IsValid = false, Message = "Discount is inactive, expired, or not found." };
-        if (!string.Equals(discount.AppliesTo, "TIME", StringComparison.OrdinalIgnoreCase))
-            return new() { IsValid = false, Message = "PoolHub discounts can only apply to time charges." };
         if (discount.MinTimeSubtotal.HasValue && request.TimeSubtotal < discount.MinTimeSubtotal)
             return new() { IsValid = false, Message = "Minimum time subtotal is not met." };
+            
+        var baseAmount = request.TimeSubtotal; // Preview only with time subtotal
         var amount = discount.DiscountType.Equals(DiscountTypes.Percentage, StringComparison.OrdinalIgnoreCase)
-            ? request.TimeSubtotal * discount.Value / 100m : discount.Value;
+            ? baseAmount * discount.Value / 100m : discount.Value;
         if (discount.MaxAmount.HasValue) amount = Math.Min(amount, discount.MaxAmount.Value);
-        amount = Math.Min(amount, request.TimeSubtotal);
+        amount = Math.Min(amount, baseAmount);
         return new() { IsValid = true, DiscountAmount = amount, Message = "Discount is valid for time charges." };
     }
 

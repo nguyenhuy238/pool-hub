@@ -292,11 +292,9 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             throw new BusinessRuleException($"Minimum time subtotal of {discount.MinTimeSubtotal.Value:N0} VND is required to apply this discount.");
         }
 
-        if (!discount.AppliesTo.Equals("TIME", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new BusinessRuleException("PoolHub discounts can only apply to time charges.");
-        }
-        decimal baseAmount = invoice.TimeSubtotalAmount;
+        decimal baseAmount = discount.AppliesTo.Equals("ALL", StringComparison.OrdinalIgnoreCase) 
+            ? invoice.SubtotalAmount 
+            : invoice.TimeSubtotalAmount;
 
         decimal discountAmt = 0;
         if (discount.DiscountType.Equals(DiscountTypes.Percentage, StringComparison.OrdinalIgnoreCase))
@@ -433,5 +431,49 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
         }
 
         return null;
+    }
+
+    public async Task CancelInvoiceAsync(long invoiceId, string reason, long userId, CancellationToken ct)
+    {
+        var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
+        {
+            throw new BusinessRuleException("Cannot cancel a paid invoice.");
+        }
+        if (invoice.Status == 3) // 3 is usually Cancelled
+        {
+            throw new BusinessRuleException("Invoice is already cancelled.");
+        }
+        
+        invoice.Status = 3; // Cancelled
+        invoice.Note = string.IsNullOrWhiteSpace(invoice.Note) ? $"Cancelled: {reason}" : $"{invoice.Note} | Cancelled: {reason}";
+        
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<string> ExportPdfAsync(long invoiceId, CancellationToken ct)
+    {
+        var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        // For now, return a mock URL. In a real scenario, we generate a PDF and return the URL.
+        return $"/exports/invoices/{invoice.InvoiceCode ?? invoice.InvoiceId.ToString()}.pdf";
+    }
+
+    public async Task RefundPaymentAsync(long paymentId, string reason, long userId, CancellationToken ct)
+    {
+        var payment = await db.Payments.FindAsync([paymentId], ct) ?? throw new NotFoundException("Payment not found.");
+        if (payment.PaymentStatus == PaymentStatuses.Refunded) throw new BusinessRuleException("Payment is already refunded.");
+        payment.PaymentStatus = PaymentStatuses.Refunded;
+        payment.Note = string.IsNullOrWhiteSpace(payment.Note) ? $"Refunded: {reason}" : $"{payment.Note} | Refunded: {reason}";
+        
+        var invoice = await db.Invoices.FindAsync([payment.InvoiceId], ct);
+        if (invoice != null)
+        {
+            invoice.PaidAmount -= payment.Amount;
+            if (invoice.PaidAmount < invoice.GrandTotalAmount)
+            {
+                invoice.PaymentStatus = invoice.PaidAmount <= 0 ? InvoicePaymentStatuses.Unpaid : InvoicePaymentStatuses.PartiallyPaid;
+            }
+        }
+        await db.SaveChangesAsync(ct);
     }
 }

@@ -13,4 +13,7 @@ public interface IInvoiceService
     Task<InvoiceDetailDto> GetInvoiceDetailAsync(long id, CancellationToken ct);
     Task<List<PaymentMethodDto>> GetPaymentMethodsAsync(CancellationToken ct);
     Task ApplyDiscountAsync(long invoiceId, ApplyDiscountRequest request, long userId, CancellationToken ct);
+    Task CancelInvoiceAsync(long invoiceId, string reason, long userId, CancellationToken ct);
+    Task<string> ExportPdfAsync(long invoiceId, CancellationToken ct);
+    Task RefundPaymentAsync(long paymentId, string reason, long userId, CancellationToken ct);
 }

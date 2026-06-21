@@ -11,4 +11,6 @@ public interface INotificationService
     Task<NotificationDto> CreateAsync(CreateNotificationRequest request, CancellationToken ct);
     Task MarkReadAsync(long id, long userId, bool isAdmin, CancellationToken ct);
     Task MarkAllReadAsync(long userId, bool isAdmin, CancellationToken ct);
+    Task DeleteAsync(long id, long userId, bool isAdmin, CancellationToken ct);
+    Task<int> GetUnreadCountAsync(long userId, CancellationToken ct);
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { MANAGEMENT_READ_ROLES, OPERATION_ROLES, ROLES } from "@/lib/auth/constants";
+import { NotificationDropdown } from "./notification-dropdown";
 
 const nav = [
   { href: "/admin/dashboard", label: "Admin Dashboard", roles: [ROLES.ADMIN] },
@@ -56,8 +57,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="breadcrumb">PoolHub / {pathname.split("/").filter(Boolean).join(" / ") || "home"}</div>
             <Link href="/profile"><strong>{user?.fullName || "PoolHub"}</strong></Link>
           </div>
-          <div className="topbar-actions">
-            <Link className="icon-btn" href="/operation/notifications" title="Thông báo">🔔</Link>
+          <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <NotificationDropdown />
             <span className="role-badge">{roles.join(", ") || "Guest"}</span>
             <button className="ghost-btn" onClick={logout}>Logout</button>
           </div>
