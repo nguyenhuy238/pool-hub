@@ -56,7 +56,7 @@ export default function FloorMapPage() {
 
   return (
     <div className="layout-container">
-      <PageHeader title="Sơ Đồ Quán" description="Quản lý bàn và phiên chơi theo thời gian thực." />
+      <PageHeader title="Sơ đồ cơ sở" description="Theo dõi trạng thái bàn và phiên chơi theo thời gian thực." />
       
       <StateBlock loading={loading} error={error} empty={!loading && floors.length === 0} />
 

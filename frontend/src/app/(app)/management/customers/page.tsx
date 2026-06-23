@@ -25,7 +25,7 @@ export default function CustomersPage() {
   return (
     <>
       <PageHeader 
-        title="Quản Lý Khách Hàng" 
+        title="Quản lý khách hàng"
         description="Quản lý thông tin và lịch sử đặt bàn của khách hàng." 
         action={
           <select value={params.status} onChange={(e) => setParams(p => ({ ...p, status: e.target.value, pageNumber: 1 }))}>
@@ -52,7 +52,7 @@ export default function CustomersPage() {
           { key: "email", label: "Email", render: (row) => (row.email as string) || <span style={{color: 'var(--muted)'}}>N/A</span> },
           { key: "totalBookings", label: "Số lần đặt bàn", render: (row) => <strong>{row.totalBookings as number}</strong> },
           { key: "status", label: "Trạng thái", render: (row) => 
-            <Badge tone={row.status ? "green" : "red"}>{row.status ? "Active" : "Inactive"}</Badge> 
+            <Badge tone={row.status ? "green" : "red"}>{row.status ? "Đang hoạt động" : "Ngừng hoạt động"}</Badge>
           },
           { key: "createdAtUtc", label: "Ngày tham gia", render: (row) => dateTime(String(row.createdAtUtc)) }
         ]} 

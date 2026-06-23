@@ -51,23 +51,23 @@ export default function AdminDashboardPage() {
     ["Tổng số bàn", summary.data.totalTables],
     ["Bàn hoạt động", summary.data.activeTables ?? 0],
     ["Bàn bảo trì", summary.data.maintenanceTables],
-    ["Session active", summary.data.activeSessions],
-    ["Booking hôm nay", summary.data.todayBookings],
-    ["Booking pending", summary.data.pendingBookings ?? 0],
-    ["Booking confirmed", summary.data.confirmedBookings ?? 0],
+    ["Phiên chơi đang hoạt động", summary.data.activeSessions],
+    ["Lượt đặt bàn hôm nay", summary.data.todayBookings],
+    ["Đặt bàn chờ xác nhận", summary.data.pendingBookings ?? 0],
+    ["Đặt bàn đã xác nhận", summary.data.confirmedBookings ?? 0],
     ["Doanh thu hôm nay", money(summary.data.todayRevenue)],
     ["Hóa đơn chưa thanh toán", summary.data.unpaidInvoices ?? 0],
     ["Sản phẩm sắp hết", summary.data.lowStockProducts],
     ["Thông báo chưa đọc", summary.data.unreadNotifications],
     ["Audit hôm nay", summary.data.todayAuditLogs ?? 0]
-    ,["Orders hôm nay", summary.data.ordersToday ?? 0]
+    ,["Đơn hàng hôm nay", summary.data.ordersToday ?? 0]
     ,["Khách hàng", summary.data.totalCustomers ?? 0]
     ,["Hóa đơn hôm nay", summary.data.invoicesToday ?? 0]
   ] : [];
 
   return (
     <>
-      <PageHeader title="Admin Dashboard" description="Tổng quan quản trị lấy từ dữ liệu hiện có trong database." />
+      <PageHeader title="Tổng quan quản trị" description="Tổng hợp các chỉ số vận hành và kinh doanh từ dữ liệu hệ thống." />
       <div className="card list-controls" style={{ marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'center' }}>
         <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span>Tùy chọn:</span>

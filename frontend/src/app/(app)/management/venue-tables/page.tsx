@@ -38,10 +38,10 @@ export default function VenueTablesPage() {
 
   return (
     <>
-      <PageHeader title="Quản lý Bàn (Venue Tables)" description="Danh sách các bàn chơi bida trong quán." />
+      <PageHeader title="Quản lý bàn chơi" description="Danh sách các bàn chơi trong cơ sở." />
       
       <SmartForm<VenueTable> 
-        title="Tạo Bàn mới" 
+        title="Tạo bàn mới"
         initial={{ operationalStatus: 1 } as any} 
         fields={[
           { name: "zoneId", label: "Khu vực", options: zoneOptions, required: true },

@@ -7,7 +7,7 @@ import { useToast } from "@/components/toast";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, StateBlock } from "@/components/ui";
 import { FileUploadButton } from "@/components/admin/settings/FileUploadButton";
 import { ROLES } from "@/lib/auth/constants";
-import { dateTime } from "@/lib/status";
+import { dateTime, userStatus } from "@/lib/status";
 import { validateEmail, validatePassword } from "@/lib/validation";
 import { roleService } from "@/services/role-service";
 import { userService } from "@/services/user-service";
@@ -66,7 +66,7 @@ export default function UsersPage() {
     if (!statusAction) return;
     try {
       await userService.updateUserStatus(statusAction.user.userId, statusAction.status);
-      toast(`Đã chuyển trạng thái sang ${statusAction.status}.`, "success");
+      toast(`Đã chuyển trạng thái sang ${userStatus[statusAction.status]}.`, "success");
       setStatusAction(null);
       await load();
     } catch (err) {
@@ -81,8 +81,8 @@ export default function UsersPage() {
         action={<RoleGuard roles={[ROLES.ADMIN]}><button className="primary-btn" onClick={() => setCreateOpen(true)}>+ Tạo người dùng</button></RoleGuard>} />
       <div className="card filter-grid">
         <label><span>Tìm kiếm</span><input placeholder="Tên hoặc email" value={query.keyword} onChange={(e) => setQuery({ ...query, keyword: e.target.value, pageNumber: 1 })} /></label>
-        <label><span>Trạng thái</span><select value={query.status} onChange={(e) => setQuery({ ...query, status: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option><option>Active</option><option>Locked</option><option>Deleted</option></select></label>
-        <label><span>Role</span><select value={query.roleId} onChange={(e) => setQuery({ ...query, roleId: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{roles.map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select></label>
+        <label><span>Trạng thái</span><select value={query.status} onChange={(e) => setQuery({ ...query, status: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option><option value="Active">Đang hoạt động</option><option value="Locked">Đã khóa</option><option value="Deleted">Đã xóa</option></select></label>
+        <label><span>Vai trò</span><select value={query.roleId} onChange={(e) => setQuery({ ...query, roleId: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{roles.map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select></label>
         <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => setQuery({ ...query, pageSize: Number(e.target.value), pageNumber: 1 })}><option>10</option><option>20</option><option>50</option></select></label>
       </div>
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
@@ -91,8 +91,8 @@ export default function UsersPage() {
           <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
             { key: "fullName", label: "Người dùng", render: (row) => <div><strong>{String(row.fullName)}</strong><div className="table-subtext">{String(row.email)}</div></div> },
             { key: "phoneNumber", label: "Điện thoại" },
-            { key: "roles", label: "Roles", render: (row) => <div className="badge-list">{(row.roles as string[]).map((role) => <Badge key={role} tone="blue">{role}</Badge>)}</div> },
-            { key: "status", label: "Trạng thái", render: (row) => <Badge tone={row.status === "Active" ? "green" : row.status === "Locked" ? "yellow" : "red"}>{String(row.status)}</Badge> },
+            { key: "roles", label: "Vai trò", render: (row) => <div className="badge-list">{(row.roles as string[]).map((role) => <Badge key={role} tone="blue">{role}</Badge>)}</div> },
+            { key: "status", label: "Trạng thái", render: (row) => <Badge tone={row.status === "Active" ? "green" : row.status === "Locked" ? "yellow" : "red"}>{userStatus[String(row.status)] ?? String(row.status)}</Badge> },
             { key: "emailConfirmed", label: "Email", render: (row) => <Badge tone={row.emailConfirmed ? "green" : "neutral"}>{row.emailConfirmed ? "Đã xác nhận" : "Chưa xác nhận"}</Badge> },
             { key: "lastLoginAtUtc", label: "Đăng nhập cuối", render: (row) => dateTime(String(row.lastLoginAtUtc ?? "")) },
             { key: "createdAtUtc", label: "Ngày tạo", render: (row) => dateTime(String(row.createdAtUtc ?? "")) }
@@ -100,7 +100,7 @@ export default function UsersPage() {
             const item = row as unknown as User;
             return <div className="action-group">
               <button className="ghost-btn compact" onClick={() => setSelected(item)}>Chi tiết</button>
-              {isAdmin ? <button className="ghost-btn compact" onClick={() => setManageRoles(item)}>Roles</button> : null}
+              {isAdmin ? <button className="ghost-btn compact" onClick={() => setManageRoles(item)}>Phân vai trò</button> : null}
               {isAdmin && item.userId !== currentUser?.userId ? <button className="ghost-btn compact" onClick={() => setStatusAction({ user: item, status: item.status === "Active" ? "Locked" : "Active" })}>{item.status === "Active" ? "Khóa" : "Mở khóa"}</button> : null}
               {isAdmin && item.status !== "Deleted" && item.userId !== currentUser?.userId ? <button className="danger-btn compact" onClick={() => setStatusAction({ user: item, status: "Deleted" })}>Xóa</button> : null}
             </div>;
@@ -111,7 +111,7 @@ export default function UsersPage() {
       {createOpen ? <CreateUserModal roles={roles} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); await load(); }} /> : null}
       {selected ? <UserDetailModal userId={selected.userId} editable={isAdmin || hasRole(ROLES.MANAGER)} onClose={() => setSelected(null)} onSaved={async () => { setSelected(null); await load(); }} /> : null}
       {manageRoles ? <ManageRolesModal user={manageRoles} roles={roles} roleByName={roleByName} onClose={() => setManageRoles(null)} onSaved={load} /> : null}
-      {statusAction ? <ConfirmDialog title="Xác nhận thay đổi trạng thái" message={`Chuyển ${statusAction.user.fullName} sang trạng thái ${statusAction.status}?`} confirmLabel="Xác nhận" danger={statusAction.status !== "Active"} onCancel={() => setStatusAction(null)} onConfirm={changeStatus} /> : null}
+      {statusAction ? <ConfirmDialog title="Xác nhận thay đổi trạng thái" message={`Chuyển ${statusAction.user.fullName} sang trạng thái “${userStatus[statusAction.status]}”?`} confirmLabel="Xác nhận" danger={statusAction.status !== "Active"} onCancel={() => setStatusAction(null)} onConfirm={changeStatus} /> : null}
     </>
   );
 }
@@ -125,7 +125,7 @@ function CreateUserModal({ roles, onClose, onSaved }: { roles: Role[]; onClose: 
     event.preventDefault();
     const validation = !form.fullName.trim() ? "Vui lòng nhập họ tên." : validateEmail(form.email)
       || validatePassword(form.password) || (form.password !== form.confirmPassword ? "Xác nhận mật khẩu không khớp." : "")
-      || (!form.roleIds.length ? "Vui lòng chọn ít nhất một role." : "");
+      || (!form.roleIds.length ? "Vui lòng chọn ít nhất một vai trò." : "");
     if (validation) return setError(validation);
     setSaving(true);
     try {
@@ -143,7 +143,7 @@ function CreateUserModal({ roles, onClose, onSaved }: { roles: Role[]; onClose: 
     <label><span>Số điện thoại</span><input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} /></label>
     <label><span>Mật khẩu</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
     <label><span>Xác nhận mật khẩu</span><input type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} /></label>
-    <fieldset className="role-options full-field"><legend>Roles</legend>{roles.map((role) => <label className="check-option" key={role.roleId}><input type="checkbox" checked={form.roleIds.includes(role.roleId!)} onChange={(e) => setForm({ ...form, roleIds: e.target.checked ? [...form.roleIds, role.roleId!] : form.roleIds.filter((id) => id !== role.roleId) })} />{role.name}</label>)}</fieldset>
+    <fieldset className="role-options full-field"><legend>Vai trò</legend>{roles.map((role) => <label className="check-option" key={role.roleId}><input type="checkbox" checked={form.roleIds.includes(role.roleId!)} onChange={(e) => setForm({ ...form, roleIds: e.target.checked ? [...form.roleIds, role.roleId!] : form.roleIds.filter((id) => id !== role.roleId) })} />{role.name}</label>)}</fieldset>
     <div className="modal-actions full-field"><button type="button" className="ghost-btn" onClick={onClose}>Hủy</button><button className="primary-btn" disabled={saving}>{saving ? "Đang tạo..." : "Tạo người dùng"}</button></div>
   </form></Modal>;
 }
@@ -164,12 +164,12 @@ function UserDetailModal({ userId, editable, onClose, onSaved }: { userId: numbe
   }
   return <Modal title="Chi tiết người dùng" onClose={onClose} size="large">{!user ? <StateBlock loading /> : <form className="form-grid modal-form" onSubmit={submit}>
     <label><span>Email</span><input value={user.email} disabled /></label>
-    <label><span>Trạng thái</span><input value={user.status} disabled /></label>
+    <label><span>Trạng thái</span><input value={userStatus[user.status ?? ""] ?? user.status} disabled /></label>
     <label><span>Ngày tạo</span><input value={dateTime(user.createdAtUtc)} disabled /></label>
     <label><span>Đăng nhập cuối</span><input value={dateTime(user.lastLoginAtUtc)} disabled /></label>
     <label><span>Họ tên</span><input value={form.fullName} disabled={!editable} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label>
     <label><span>Số điện thoại</span><input value={form.phoneNumber} disabled={!editable} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} /></label>
-    <label className="full-field"><span>Avatar URL</span><input value={form.avatarUrl} disabled={!editable} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} /></label>
+    <label className="full-field"><span>Đường dẫn ảnh đại diện</span><input value={form.avatarUrl} disabled={!editable} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} /></label>
     {editable ? <div className="full-field"><FileUploadButton mediaType="image" folder="avatars" altText={form.fullName} onUploaded={(asset) => setForm({ ...form, avatarUrl: asset.url })} /></div> : null}
     <label className="check-option full-field"><input type="checkbox" checked={form.emailConfirmed} disabled={!editable} onChange={(e) => setForm({ ...form, emailConfirmed: e.target.checked })} />Email đã xác nhận</label>
     <div className="modal-actions full-field"><button type="button" className="ghost-btn" onClick={onClose}>Đóng</button>{editable ? <button className="primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu thay đổi"}</button> : null}</div>
@@ -185,20 +185,20 @@ function ManageRolesModal({ user, roles, roleByName, onClose, onSaved }: { user:
   async function assign() {
     if (!selected.length) return;
     setBusy(true);
-    try { await userService.assignRoles(user.userId, selected); toast("Đã gán role.", "success"); onClose(); await onSaved(); }
-    catch (err) { toast(err instanceof Error ? err.message : "Không thể gán role.", "error"); }
+    try { await userService.assignRoles(user.userId, selected); toast("Đã gán vai trò.", "success"); onClose(); await onSaved(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Không thể gán vai trò.", "error"); }
     finally { setBusy(false); }
   }
   async function remove(roleId: number) {
     setBusy(true);
-    try { await userService.removeRole(user.userId, roleId); toast("Đã gỡ role.", "success"); onClose(); await onSaved(); }
-    catch (err) { toast(err instanceof Error ? err.message : "Không thể gỡ role.", "error"); }
+    try { await userService.removeRole(user.userId, roleId); toast("Đã gỡ vai trò.", "success"); onClose(); await onSaved(); }
+    catch (err) { toast(err instanceof Error ? err.message : "Không thể gỡ vai trò.", "error"); }
     finally { setBusy(false); }
   }
-  return <Modal title={`Quản lý role — ${user.fullName}`} onClose={onClose}>
-    <div className="role-manager"><h3>Role hiện tại</h3>{user.roles.map((name) => <div className="role-row" key={name}><Badge tone="blue">{name}</Badge><button className="danger-btn compact" disabled={busy || user.roles.length <= 1} onClick={() => remove(roleByName.get(name)?.roleId ?? 0)}>Gỡ</button></div>)}
-      <h3>Thêm role</h3><div className="role-options">{available.map((role) => <label className="check-option" key={role.roleId}><input type="checkbox" checked={selected.includes(role.roleId!)} onChange={(e) => setSelected(e.target.checked ? [...selected, role.roleId!] : selected.filter((id) => id !== role.roleId))} />{role.name}</label>)}</div>
-      <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Đóng</button><button className="primary-btn" disabled={busy || !selected.length} onClick={assign}>Gán role</button></div>
+  return <Modal title={`Quản lý vai trò — ${user.fullName}`} onClose={onClose}>
+    <div className="role-manager"><h3>Vai trò hiện tại</h3>{user.roles.map((name) => <div className="role-row" key={name}><Badge tone="blue">{name}</Badge><button className="danger-btn compact" disabled={busy || user.roles.length <= 1} onClick={() => remove(roleByName.get(name)?.roleId ?? 0)}>Gỡ</button></div>)}
+      <h3>Thêm vai trò</h3><div className="role-options">{available.map((role) => <label className="check-option" key={role.roleId}><input type="checkbox" checked={selected.includes(role.roleId!)} onChange={(e) => setSelected(e.target.checked ? [...selected, role.roleId!] : selected.filter((id) => id !== role.roleId))} />{role.name}</label>)}</div>
+      <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Đóng</button><button className="primary-btn" disabled={busy || !selected.length} onClick={assign}>Gán vai trò</button></div>
     </div>
   </Modal>;
 }

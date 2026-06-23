@@ -15,7 +15,7 @@ export default function InventoryPage() {
   const rows = useList(data);
   const productRows = useList(products.data);
   return <>
-    <PageHeader title="Inventory" description="Nhập, xuất và điều chỉnh kho có lưu lịch sử." />
+    <PageHeader title="Quản lý tồn kho" description="Theo dõi và thực hiện nhập, xuất, điều chỉnh số lượng hàng hóa." />
     <ListControls {...query} onChange={setQuery} />
     <SmartForm<Adjustment> title="Điều chỉnh tồn kho" initial={{ transactionType: 1 }}
       fields={[

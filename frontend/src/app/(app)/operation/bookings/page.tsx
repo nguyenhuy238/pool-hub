@@ -44,7 +44,7 @@ export default function BookingsPage() {
   return (
     <>
       <PageHeader 
-        title="Quản lý Đặt bàn (Bookings)" 
+        title="Quản lý đặt bàn"
         description="Theo dõi và tạo lịch đặt bàn mới cho khách hàng." 
         action={
           <div style={{display: 'flex', gap: '12px'}}>

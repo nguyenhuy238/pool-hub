@@ -14,9 +14,9 @@ export default function SessionsPage() {
   const rows = useList<Session>(data);
   return (
     <>
-      <PageHeader title="Session Management" description="Mở, đóng và theo dõi phiên chơi." />
+      <PageHeader title="Quản lý phiên chơi" description="Mở, kết thúc và theo dõi các phiên chơi." />
       <ListControls search={params.search} pageNumber={params.pageNumber} pageSize={params.pageSize} onChange={setParams} />
-      <SmartForm<Session> title="Mở session" initial={{}} fields={[{ name: "tableId", label: "Table ID", type: "number", required: true }, { name: "bookingId", label: "Booking ID", type: "number" }, { name: "customerId", label: "Customer ID", type: "number" }]} onSubmit={async (value) => { await sessionApi.start({ tableId: Number(value.tableId), bookingId: value.bookingId ? Number(value.bookingId) : undefined, customerId: value.customerId ? Number(value.customerId) : undefined }); reload(); }} />
+      <SmartForm<Session> title="Mở phiên chơi" initial={{}} fields={[{ name: "tableId", label: "Mã bàn", type: "number", required: true }, { name: "bookingId", label: "Mã đặt bàn", type: "number" }, { name: "customerId", label: "Mã khách hàng", type: "number" }]} onSubmit={async (value) => { await sessionApi.start({ tableId: Number(value.tableId), bookingId: value.bookingId ? Number(value.bookingId) : undefined, customerId: value.customerId ? Number(value.customerId) : undefined }); reload(); }} />
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
       <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
         { key: "sessionCode", label: "Mã" },

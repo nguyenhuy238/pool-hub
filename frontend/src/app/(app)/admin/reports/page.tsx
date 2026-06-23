@@ -34,7 +34,7 @@ export default function ReportsPage() {
 
   return (
     <>
-      <PageHeader title="Chi tiết Báo cáo" description="Dữ liệu phân tích chuyên sâu về Doanh thu, Bàn, Sản phẩm và Booking." />
+      <PageHeader title="Báo cáo chi tiết" description="Phân tích doanh thu, hiệu suất bàn, sản phẩm, đặt bàn, khách hàng và tồn kho." />
       
       <div className="card list-controls" style={{ marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -80,7 +80,7 @@ export default function ReportsPage() {
               rows={tables.data} 
               columns={[
                 { key: "tableName", label: "Tên Bàn", render: (row: any) => <strong>{row.tableName}</strong> }, 
-                { key: "sessionCount", label: "Lượt chơi (Sessions)" }, 
+                { key: "sessionCount", label: "Số phiên chơi" },
                 { key: "totalMinutes", label: "Tổng thời gian (phút)" }
               ]} 
             />
@@ -103,13 +103,13 @@ export default function ReportsPage() {
         </div>
 
         <div className="card">
-          <h3 style={{ marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Tỷ lệ chuyển đổi Booking</h3>
+          <h3 style={{ marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Thống kê trạng thái đặt bàn</h3>
           <StateBlock loading={bookings.loading} error={bookings.error} empty={!bookings.loading && !bookings.data?.length} />
           {bookings.data && bookings.data.length > 0 && (
             <DataTable 
               rows={bookings.data} 
               columns={[
-                { key: "status", label: "Trạng thái Booking", render: (row: any) => {
+                { key: "status", label: "Trạng thái đặt bàn", render: (row: any) => {
                   const statusMap: any = { 1: "Chờ xác nhận", 2: "Đã xác nhận", 3: "Đã hoàn thành", 4: "Đã hủy" };
                   const badgeMap: any = { 1: "warning", 2: "success", 3: "primary", 4: "danger" };
                   return <span className={`badge badge-${badgeMap[row.status] || 'neutral'}`}>{statusMap[row.status] || row.status}</span>;
@@ -125,8 +125,8 @@ export default function ReportsPage() {
           <StateBlock loading={customers.loading} error={customers.error} empty={!customers.loading && !customers.data?.length} />
           {customers.data?.length ? <DataTable rows={customers.data} columns={[
             { key: "customerName", label: "Khách hàng" },
-            { key: "bookingCount", label: "Booking" },
-            { key: "sessionCount", label: "Session" },
+            { key: "bookingCount", label: "Lượt đặt bàn" },
+            { key: "sessionCount", label: "Phiên chơi" },
             { key: "revenue", label: "Doanh thu", render: (row: any) => money(row.revenue) }
           ]} /> : null}
         </div>

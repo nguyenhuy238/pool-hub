@@ -18,10 +18,10 @@ export default function ZonesPage() {
 
   return (
     <>
-      <PageHeader title="Quản lý Khu vực (Zones)" description="Danh sách các khu vực trực thuộc các tầng." />
+      <PageHeader title="Quản lý khu vực" description="Danh sách các khu vực trực thuộc từng tầng." />
       
       <SmartForm<Zone> 
-        title="Tạo Khu vực mới" 
+        title="Tạo khu vực mới"
         initial={{}} 
         fields={[
           { name: "floorId", label: "Tầng", options: floorOptions, required: true },

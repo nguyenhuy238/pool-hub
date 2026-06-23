@@ -15,10 +15,10 @@ export default function FloorsPage() {
 
   return (
     <>
-      <PageHeader title="Quản lý Tầng (Floors)" description="Danh sách các tầng trong quán." />
+      <PageHeader title="Quản lý tầng" description="Danh sách các tầng trong cơ sở." />
       
       <SmartForm<Floor> 
-        title="Tạo Tầng mới" 
+        title="Tạo tầng mới"
         initial={{}} 
         fields={[
           { name: "name", label: "Tên Tầng", required: true }, 

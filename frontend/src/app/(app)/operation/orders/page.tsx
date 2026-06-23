@@ -29,7 +29,7 @@ export default function OrdersPage() {
 
   return (
     <>
-      <PageHeader title="Order POS" description="Tạo order theo session và thêm sản phẩm." action={<select value={sessionId || ""} onChange={(e) => setSessionId(Number(e.target.value))}><option value="">Chọn session</option>{sessions.map((item) => <option key={item.sessionId} value={item.sessionId}>{item.sessionCode || item.sessionId}</option>)}</select>} />
+      <PageHeader title="Quản lý đơn hàng" description="Tạo đơn hàng theo phiên chơi và thêm sản phẩm." action={<select value={sessionId || ""} onChange={(e) => setSessionId(Number(e.target.value))}><option value="">Chọn phiên chơi</option>{sessions.map((item) => <option key={item.sessionId} value={item.sessionId}>{item.sessionCode || item.sessionId}</option>)}</select>} />
       <StateBlock loading={loading} error={error} />
       <div className="section-grid">
         <div className="card"><h2>Sản phẩm</h2><div className="floor-grid">{products.map((product) => <button className="card" key={product.productId} onClick={async () => { await orderApi.addItem(await ensureOrder(), { productId: product.productId, quantity: 1 }).then(() => toast("Đã thêm item.", "success")).catch((err) => toast(err.message, "error")); reload(); }}><strong>{product.name}</strong><p>{money(product.unitPrice)} · Kho {product.stockQuantity}</p></button>)}</div></div>

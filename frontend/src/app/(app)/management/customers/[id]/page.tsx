@@ -71,7 +71,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   return (
     <>
       <PageHeader
-        title="Chi Tiết Khách Hàng"
+        title="Chi tiết khách hàng"
         description="Xem và cập nhật thông tin khách hàng."
         action={
           <button className="ghost-btn" onClick={() => router.back()}>Trở lại</button>
