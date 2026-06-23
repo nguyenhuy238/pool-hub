@@ -167,11 +167,13 @@ export type Order = {
 
 export type OrderItem = {
   orderItemId: number;
+  orderId: number;
   productId: number;
-  productName?: string;
+  productNameSnapshot?: string;
+  unitPriceSnapshot?: number;
   quantity: number;
-  unitPrice?: number;
-  lineTotal?: number;
+  lineTotalAmount?: number;
+  note?: string;
 };
 
 export type Invoice = {
