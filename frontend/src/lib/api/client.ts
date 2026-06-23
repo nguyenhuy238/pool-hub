@@ -13,7 +13,11 @@ export class ApiError extends Error {
   }
 }
 
-type RequestOptions = RequestInit & { skipAuth?: boolean; retry?: boolean };
+type RequestOptions = RequestInit & {
+  skipAuth?: boolean;
+  retry?: boolean;
+  timeoutMs?: number;
+};
 
 const tokenKey = "poolhub.accessToken";
 const refreshKey = "poolhub.refreshToken";
@@ -80,6 +84,17 @@ function notifyAuthInvalid() {
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
+  const timeoutController = options.timeoutMs ? new AbortController() : null;
+  const timeoutId = timeoutController
+    ? window.setTimeout(() => timeoutController.abort(), options.timeoutMs)
+    : null;
+  const abortFromCaller = () => timeoutController?.abort();
+
+  if (options.signal) {
+    if (options.signal.aborted) abortFromCaller();
+    else options.signal.addEventListener("abort", abortFromCaller, { once: true });
+  }
+
   headers.set("Accept", "application/json");
 
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -91,11 +106,23 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: "include"
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      signal: timeoutController?.signal ?? options.signal,
+      credentials: "include"
+    });
+  } catch (error) {
+    if (timeoutController?.signal.aborted && !options.signal?.aborted) {
+      throw new ApiError("Backend phản hồi quá lâu. Vui lòng thử lại.", 408);
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+    options.signal?.removeEventListener("abort", abortFromCaller);
+  }
 
   if (response.status === 401 && options.retry !== false && !options.skipAuth) {
     const refreshed = await refreshAccessToken();

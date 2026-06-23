@@ -1,7 +1,12 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using PoolHub.Core.DTOs.Auth;
+using PoolHub.Core.DTOs.Users;
+using PoolHub.Core.Interfaces.Services;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -54,6 +59,33 @@ public class HealthTests
     }
 
     [Fact]
+    public async Task Login_WithInvalidCredentials_ReturnsUnauthorizedJson()
+    {
+        using var factory = CreateFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IAuthService>();
+                services.AddSingleton<IAuthService, InvalidLoginAuthService>();
+            });
+        });
+        var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new
+        {
+            email = "missing-user@example.com",
+            password = "wrong-password"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(
+            "Invalid email or password.",
+            body.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task ForgotPassword_IsRateLimited()
     {
         using var factory = CreateFactory();
@@ -85,4 +117,41 @@ public class HealthTests
                 });
             });
         });
+
+    private sealed class InvalidLoginAuthService : IAuthService
+    {
+        public Task<AuthResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<AuthResponse?>(null);
+
+        public Task<AuthResponse> RegisterAsync(
+            RegisterRequest request,
+            long? currentUserId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<UserDto> MeAsync(long userId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ChangePasswordAsync(
+            long userId,
+            ChangePasswordRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<AuthResponse> RefreshTokenAsync(string token, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task LogoutAsync(long userId, string token, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ForgotPasswordAsync(
+            ForgotPasswordRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ResetPasswordAsync(
+            ResetPasswordRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
 }

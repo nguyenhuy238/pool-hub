@@ -27,8 +27,18 @@ public class AuthController(IAuthService authService) : ControllerBase
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Login(
-        [FromBody] LoginRequest request, CancellationToken ct) =>
-        Ok(ApiResponse<AuthResponse>.Ok(await authService.LoginAsync(request, ct), "Login successfully"));
+        [FromBody] LoginRequest request, CancellationToken ct)
+    {
+        var result = await authService.LoginAsync(request, ct);
+        if (result is null)
+        {
+            return Unauthorized(ApiResponse<AuthResponse>.Fail(
+                "Invalid email or password.",
+                ["Invalid email or password."]));
+        }
+
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Login successfully"));
+    }
 
     [HttpGet("me")]
     [Authorize]

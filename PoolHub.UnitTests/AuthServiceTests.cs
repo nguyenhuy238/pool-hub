@@ -39,8 +39,55 @@ public class AuthServiceTests
 
         var result = await service.LoginAsync(new LoginRequest { Email = " Admin@PoolHub.com ", Password = "Admin@123" }, default);
 
+        Assert.NotNull(result);
         Assert.False(string.IsNullOrWhiteSpace(result.AccessToken));
         Assert.Equal("admin@poolhub.com", result.Email);
+    }
+
+    [Fact]
+    public async Task Login_WithInvalidCredentials_ReturnsNullInsteadOfThrowing()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var db = new PoolHubDbContext(options);
+        db.Users.Add(new User
+        {
+            UserId = 1,
+            FullName = "Admin",
+            Email = "admin@poolhub.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123", 12),
+            Status = UserStatus.Active
+        });
+        await db.SaveChangesAsync();
+
+        var jwt = Options.Create(new JwtSettings
+        {
+            SecretKey = "UNIT_TEST_SECRET_KEY_12345678901234567890",
+            Issuer = "PoolHub.API",
+            Audience = "PoolHub.Client",
+            AccessTokenExpirationMinutes = 480
+        });
+        var accessor = new HttpContextAccessor();
+        var service = new AuthService(
+            db,
+            new TokenService(jwt),
+            new AuditService(db, accessor),
+            new TestEmailService(),
+            Options.Create(new EmailSettings
+            {
+                SmtpHost = "smtp.test.local",
+                FromEmail = "noreply@poolhub.test",
+                FrontendBaseUrl = "http://localhost:3000"
+            }),
+            accessor,
+            NullLogger<AuthService>.Instance);
+
+        var result = await service.LoginAsync(
+            new LoginRequest { Email = "admin@poolhub.com", Password = "wrong-password" },
+            default);
+
+        Assert.Null(result);
     }
 
     private sealed class TestEmailService : IEmailService

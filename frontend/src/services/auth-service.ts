@@ -11,7 +11,12 @@ import type {
 
 export const authService = {
   login: (payload: LoginRequest) =>
-    apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(payload), skipAuth: true }),
+    apiFetch<AuthResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      skipAuth: true,
+      timeoutMs: 15_000
+    }),
   register: (payload: RegisterRequest) =>
     apiFetch<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify(payload), skipAuth: true }),
   getMe: () => apiFetch<AuthUser>("/api/auth/me"),
