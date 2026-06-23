@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 
@@ -15,7 +14,14 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unhandled exception");
+            if (ex is AppException)
+                logger.LogWarning(ex, "Request failed with a handled application exception");
+            else
+                logger.LogError(ex, "Unhandled exception");
+
+            if (context.Response.HasStarted)
+                throw;
+
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -39,6 +45,6 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
         context.Response.StatusCode = (int)code;
         var response = ApiResponse<object>.Fail(message, [message]);
         response.TraceId = context.TraceIdentifier;
-        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+        await context.Response.WriteAsJsonAsync(response, context.RequestAborted);
     }
 }

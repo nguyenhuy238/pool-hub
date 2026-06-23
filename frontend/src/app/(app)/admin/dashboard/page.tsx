@@ -123,12 +123,14 @@ export default function AdminDashboardPage() {
                 dataKey="value" 
                 labelLine={false}
                 label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+                  const angle = midAngle ?? 0;
+                  const ratio = percent ?? 0;
                   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                  const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
-                  const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+                  const x = cx + radius * Math.cos(-angle * (Math.PI / 180));
+                  const y = cy + radius * Math.sin(-angle * (Math.PI / 180));
                   return (
                     <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" style={{ fontSize: '13px', fontWeight: 'bold' }}>
-                      {`${(percent * 100).toFixed(0)}%`}
+                      {`${(ratio * 100).toFixed(0)}%`}
                     </text>
                   );
                 }}

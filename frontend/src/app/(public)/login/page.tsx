@@ -32,6 +32,7 @@ export default function LoginPage() {
           ? "Tài khoản đã bị khóa hoặc vô hiệu hóa. Vui lòng liên hệ quản trị viên."
           : err instanceof Error ? err.message : "Không thể đăng nhập.";
       setError(message);
+      toast(message, "error");
     } finally {
       setLoading(false);
     }

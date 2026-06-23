@@ -74,7 +74,7 @@ public class AuthService(
         return await BuildAuthResponseAsync(user, ct);
     }
 
-    public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct)
+    public async Task<AuthResponse?> LoginAsync(LoginRequest request, CancellationToken ct)
     {
         var email = NormalizeEmail(request.Email);
         var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
@@ -83,7 +83,7 @@ public class AuthService(
             logger.LogWarning("Login failed for normalized email {Email}", email);
             await auditService.LogAsync(null, AuditActions.LoginFailed, "User",
                 description: $"Login failed for {email}.", ct: ct);
-            throw new UnauthorizedException("Invalid email or password.");
+            return null;
         }
 
         if (user.Status != UserStatus.Active)
