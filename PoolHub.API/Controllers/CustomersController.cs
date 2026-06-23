@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PoolHub.Core.DTOs.Customer;
+using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Extensions;
 
 namespace PoolHub.API.Controllers;
 
@@ -12,7 +14,7 @@ namespace PoolHub.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/customers")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff, Policy = PermissionConstants.CustomersManage)]
 public class CustomersController(ICustomerService customerService) : ControllerBase
 {
     /// <summary>
@@ -101,6 +103,14 @@ public class CustomersController(ICustomerService customerService) : ControllerB
     public async Task<ActionResult<ApiResponse<object>>> GetCustomer(long id, CancellationToken ct)
         => Ok(ApiResponse<object>.Ok(await customerService.GetCustomerAsync(id, ct)));
 
+    [HttpPost]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+    public async Task<ActionResult<ApiResponse<object>>> CreateCustomer(
+        [FromBody] CreateCustomerRequest request,
+        CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created,
+            ApiResponse<object>.Ok(await customerService.CreateCustomerAsync(request, User.GetUserId(), ct), "Customer created."));
+
     /// <summary>
     /// Cap nhat thong tin khach hang.
     /// </summary>
@@ -152,5 +162,39 @@ public class CustomersController(ICustomerService customerService) : ControllerB
         long id,
         [FromBody] UpdateCustomerRequest request,
         CancellationToken ct)
-        => Ok(ApiResponse<object>.Ok(await customerService.UpdateCustomerAsync(id, request, ct)));
+        => Ok(ApiResponse<object>.Ok(await customerService.UpdateCustomerAsync(id, request, User.GetUserId(), ct)));
+
+    [HttpPatch("{id:long}/status")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+    public async Task<ActionResult<ApiResponse<object>>> UpdateStatus(
+        long id,
+        [FromBody] UpdateCustomerStatusRequest request,
+        CancellationToken ct)
+    {
+        await customerService.UpdateStatusAsync(id, request.Status, User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(new { }, "Customer status updated."));
+    }
+
+    [HttpDelete("{id:long}")]
+    [Authorize(Roles = RoleConstants.Admin)]
+    public async Task<ActionResult<ApiResponse<object>>> SoftDelete(long id, CancellationToken ct)
+    {
+        await customerService.UpdateStatusAsync(id, false, User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(new { }, "Customer soft-deleted."));
+    }
+
+    [HttpGet("{id:long}/booking-history")]
+    public async Task<ActionResult<ApiResponse<object>>> BookingHistory(
+        long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await customerService.GetBookingHistoryAsync(id, request, ct)));
+
+    [HttpGet("{id:long}/session-history")]
+    public async Task<ActionResult<ApiResponse<object>>> SessionHistory(
+        long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await customerService.GetSessionHistoryAsync(id, request, ct)));
+
+    [HttpGet("{id:long}/invoice-history")]
+    public async Task<ActionResult<ApiResponse<object>>> InvoiceHistory(
+        long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await customerService.GetInvoiceHistoryAsync(id, request, ct)));
 }

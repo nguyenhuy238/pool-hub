@@ -43,8 +43,9 @@ export default function AdminDashboardPage() {
   const activeSessions = useLoad(() => adminDashboardApi.activeSessions(), []);
   const topProducts = useLoad(() => reportsApi.products(range), [range]);
   const tableUsage = useLoad(() => reportsApi.tableUsage(range), [range]);
-  const loading = summary.loading || revenue.loading || activeSessions.loading || topProducts.loading || tableUsage.loading;
-  const error = summary.error || revenue.error || activeSessions.error || topProducts.error || tableUsage.error;
+  const paymentMethods = useLoad(() => reportsApi.paymentMethods(range), [range]);
+  const loading = summary.loading || revenue.loading || activeSessions.loading || topProducts.loading || tableUsage.loading || paymentMethods.loading;
+  const error = summary.error || revenue.error || activeSessions.error || topProducts.error || tableUsage.error || paymentMethods.error;
 
   const cards = summary.data ? [
     ["Tổng số bàn", summary.data.totalTables],
@@ -59,6 +60,9 @@ export default function AdminDashboardPage() {
     ["Sản phẩm sắp hết", summary.data.lowStockProducts],
     ["Thông báo chưa đọc", summary.data.unreadNotifications],
     ["Audit hôm nay", summary.data.todayAuditLogs ?? 0]
+    ,["Orders hôm nay", summary.data.ordersToday ?? 0]
+    ,["Khách hàng", summary.data.totalCustomers ?? 0]
+    ,["Hóa đơn hôm nay", summary.data.invoicesToday ?? 0]
   ] : [];
 
   return (
@@ -110,12 +114,11 @@ export default function AdminDashboardPage() {
         </div>
         <div className="card" style={{ flex: 4, height: 350, display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ marginBottom: '16px', flexShrink: 0 }}>Phương thức thanh toán</h3>
-          {/* Mock data vì backend hiện chưa có API /reports/payment-methods */}
           <div style={{ flex: 1, minHeight: 0 }}>
             <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie 
-                data={[{ name: "Tiền mặt", value: 60 }, { name: "Chuyển khoản", value: 40 }]} 
+                data={(paymentMethods.data || []).map((item) => ({ name: item.paymentMethodName, value: item.amount }))}
                 cx="50%" cy="50%" 
                 innerRadius={60}
                 outerRadius={90} 

@@ -130,8 +130,15 @@ public class AuthService(
     {
         var hash = tokenService.HashToken(token);
         var current = await db.RefreshTokens.FirstOrDefaultAsync(
-            x => x.TokenHash == hash && !x.IsRevoked, ct)
+            x => x.TokenHash == hash, ct)
             ?? throw new UnauthorizedException("Invalid refresh token.");
+        if (current.IsRevoked)
+        {
+            await RevokeTokenFamilyAsync(current.UserId, current.FamilyId, ct);
+            await auditService.LogAsync(current.UserId, "AUTH_REFRESH_TOKEN_REUSE", "RefreshToken",
+                current.RefreshTokenId, description: "Refresh token reuse detected; token family revoked.", ct: ct);
+            throw new UnauthorizedException("Refresh token reuse detected.");
+        }
         if (current.ExpiresAtUtc <= DateTime.UtcNow)
             throw new UnauthorizedException("Refresh token expired.");
 
@@ -143,7 +150,8 @@ public class AuthService(
         current.IsRevoked = true;
         current.RevokedAtUtc = DateTime.UtcNow;
         current.RevokedByIp = GetIpAddress();
-        var response = await BuildAuthResponseAsync(user, ct);
+        var response = await BuildAuthResponseAsync(user, ct, current.FamilyId);
+        current.ReplacedByTokenHash = tokenService.HashToken(response.RefreshToken);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(user.UserId, AuditActions.RefreshToken, "RefreshToken",
             current.RefreshTokenId, description: "Refresh token rotated.", ct: ct);
@@ -251,16 +259,18 @@ public class AuthService(
             user.UserId, user.PublicId, description: "Password reset successful.", ct: ct);
     }
 
-    private async Task<AuthResponse> BuildAuthResponseAsync(User user, CancellationToken ct)
+    private async Task<AuthResponse> BuildAuthResponseAsync(User user, CancellationToken ct, Guid? familyId = null)
     {
         var roles = await GetRolesAsync(user.UserId, ct);
-        var pair = tokenService.CreateTokenPair(user, roles);
+        var permissions = await GetPermissionsAsync(user.UserId, ct);
+        var pair = tokenService.CreateTokenPair(user, roles, permissions);
         db.RefreshTokens.Add(new RefreshToken
         {
             UserId = user.UserId,
             TokenHash = tokenService.HashToken(pair.RefreshToken),
             ExpiresAtUtc = pair.RefreshTokenExpiresAtUtc,
-            CreatedByIp = GetIpAddress()
+            CreatedByIp = GetIpAddress(),
+            FamilyId = familyId ?? Guid.NewGuid()
         });
         await db.SaveChangesAsync(ct);
 
@@ -273,13 +283,15 @@ public class AuthService(
             Email = user.Email,
             FullName = user.FullName,
             Roles = roles,
+            Permissions = permissions,
             User = new AuthUserSummary
             {
                 UserId = user.UserId,
                 PublicId = user.PublicId,
                 FullName = user.FullName,
                 Email = user.Email,
-                Roles = roles
+                Roles = roles,
+                Permissions = permissions
             }
         };
     }
@@ -306,6 +318,13 @@ public class AuthService(
          where ur.UserId == userId && role.IsActive
          select role.Name).ToListAsync(ct);
 
+    private Task<List<string>> GetPermissionsAsync(long userId, CancellationToken ct) =>
+        (from userRole in db.UserRoles
+         join rolePermission in db.RolePermissions on userRole.RoleId equals rolePermission.RoleId
+         join permission in db.Permissions on rolePermission.PermissionId equals permission.PermissionId
+         where userRole.UserId == userId && permission.IsActive
+         select permission.Code).Distinct().ToListAsync(ct);
+
     private void RevokeAllRefreshTokens(long userId)
     {
         var now = DateTime.UtcNow;
@@ -315,6 +334,21 @@ public class AuthService(
             token.RevokedAtUtc = now;
             token.RevokedByIp = GetIpAddress();
         }
+    }
+
+    private async Task RevokeTokenFamilyAsync(long userId, Guid familyId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var tokens = await db.RefreshTokens
+            .Where(x => x.UserId == userId && x.FamilyId == familyId && !x.IsRevoked)
+            .ToListAsync(ct);
+        foreach (var token in tokens)
+        {
+            token.IsRevoked = true;
+            token.RevokedAtUtc = now;
+            token.RevokedByIp = GetIpAddress();
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();

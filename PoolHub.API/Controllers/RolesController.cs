@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/roles")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.RolesManage)]
 public class RolesController(IRoleService roleService) : ControllerBase
 {
     [HttpGet]
@@ -21,6 +21,19 @@ public class RolesController(IRoleService roleService) : ControllerBase
     [HttpGet("{id:long}")]
     public async Task<ActionResult<ApiResponse<object>>> GetById(long id, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await roleService.GetByIdAsync(id, ct)));
+
+    [HttpGet("permissions")]
+    public async Task<ActionResult<ApiResponse<object>>> GetPermissions(CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await roleService.GetPermissionsAsync(ct)));
+
+    [HttpPut("{id:long}/permissions")]
+    [Authorize(Roles = RoleConstants.Admin)]
+    public async Task<ActionResult<ApiResponse<object>>> SetPermissions(
+        long id, [FromBody] UpdateRolePermissionsRequest request, CancellationToken ct)
+    {
+        await roleService.SetPermissionsAsync(id, request, User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(new { }, "Role permissions updated."));
+    }
 
     [HttpPost]
     [Authorize(Roles = RoleConstants.Admin)]

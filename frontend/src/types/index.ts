@@ -24,6 +24,7 @@ export type AuthUser = {
   email: string;
   fullName: string;
   roles: RoleName[];
+  permissions?: string[];
 };
 
 export type AuthResponse = AuthUser & {
@@ -84,6 +85,7 @@ export type Role = {
   userCount?: number;
   createdAtUtc?: string;
   updatedAtUtc?: string;
+  permissionCodes?: string[];
 };
 
 export type Booking = {
@@ -216,6 +218,9 @@ export type DashboardSummary = {
   confirmedBookings?: number;
   unpaidInvoices?: number;
   todayAuditLogs?: number;
+  ordersToday?: number;
+  totalCustomers?: number;
+  invoicesToday?: number;
 };
 
 export type RevenuePoint = { date: string; amount: number };
@@ -292,6 +297,9 @@ export type RevenueReport = { date: string; revenue: number; invoiceCount: numbe
 export type TableUsageReport = { tableId: number; tableName: string; sessionCount: number; totalMinutes: number };
 export type ProductSalesReport = { productId: number; productName: string; quantity: number; revenue: number };
 export type BookingReport = { status: number; count: number };
+export type CustomerReport = { customerId: number; customerName: string; bookingCount: number; sessionCount: number; revenue: number };
+export type PaymentMethodReport = { paymentMethodId: number; paymentMethodName: string; paymentCount: number; amount: number };
+export type InventoryReport = { productId: number; productName: string; currentStock: number; netMovement: number; inventoryValue: number };
 export type AuditLog = {
   auditLogId: number;
   actorUserId?: number;
@@ -317,6 +325,34 @@ export type CustomerDto = {
   status: boolean;
   createdAtUtc: string;
   totalBookings: number;
+};
+
+export type CustomerBookingHistory = {
+  bookingId: number;
+  bookingCode: string;
+  tableId?: number;
+  tableName?: string;
+  startTimeUtc: string;
+  endTimeUtc: string;
+  status: number;
+};
+
+export type CustomerSessionHistory = {
+  sessionId: number;
+  sessionCode: string;
+  startedAtUtc: string;
+  endedAtUtc?: string;
+  status: number;
+};
+
+export type CustomerInvoiceHistory = {
+  invoiceId: number;
+  invoiceCode: string;
+  grandTotalAmount: number;
+  paidAmount: number;
+  paymentStatus: number;
+  status: number;
+  issuedAtUtc?: string;
 };
 
 export type SelectOption = { value: string; label: string };

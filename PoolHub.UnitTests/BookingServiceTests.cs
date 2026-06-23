@@ -3,6 +3,7 @@ using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.Entities;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Services.Booking;
+using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.UnitTests;
 
@@ -40,7 +41,7 @@ public class BookingServiceTests
             EndTimeUtc = new DateTime(2023, 1, 1, 13, 0, 0, DateTimeKind.Utc)
         };
 
-        var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateAsync(request, default));
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => service.CreateAsync(request, default));
         Assert.Equal("Table is already booked and confirmed for the selected time.", ex.Message);
     }
     

@@ -1,6 +1,7 @@
-import { activeSorted, type GeneralInfoSettings, type BookingPolicySettings, type SocialLinkSettings } from "@/lib/api/landingSettingsApi";
+import { activeSorted, type GeneralInfoSettings, type BookingPolicySettings, type FooterSettings, type LegalSettings, type QrCodeSettings, type SocialLinkSettings } from "@/lib/api/landingSettingsApi";
+import { SafeImage } from "@/components/landing/SafeImage";
 
-export function LandingFooter({ info, bookingPolicy, socialLinks }: { info: GeneralInfoSettings; bookingPolicy: BookingPolicySettings; socialLinks: SocialLinkSettings[] }) {
+export function LandingFooter({ info, bookingPolicy, socialLinks, footer, legal, qrCode }: { info: GeneralInfoSettings; bookingPolicy: BookingPolicySettings; socialLinks: SocialLinkSettings[]; footer: FooterSettings; legal: LegalSettings; qrCode: QrCodeSettings }) {
   const visibleSocials = activeSorted(socialLinks || []);
   return (
     <footer className="landing-footer">
@@ -12,15 +13,18 @@ export function LandingFooter({ info, bookingPolicy, socialLinks }: { info: Gene
         </div>
       </div>
       <div>
-        <strong>Menu nhanh</strong>
+        <strong>{footer.menuTitle}</strong>
         <a href="#services">Dịch vụ</a>
         <a href="#pricing">Bảng giá</a>
         <a href="#booking">Đặt bàn</a>
       </div>
       <div>
-        <strong>Chính sách đặt lịch</strong>
+        <strong>{footer.policyTitle}</strong>
         <p>{bookingPolicy.policyNote}</p>
-        <p>Copyright 2026 PoolHub.</p>
+        {legal.privacyPolicy ? <p>{legal.privacyPolicy}</p> : null}
+        {legal.termsOfService ? <p>{legal.termsOfService}</p> : null}
+        {qrCode.isEnabled && qrCode.imageUrl ? <SafeImage className="footer-qr" src={qrCode.imageUrl} alt={qrCode.caption || "PoolHub QR"} /> : null}
+        <p>{footer.copyright}</p>
       </div>
     </footer>
   );

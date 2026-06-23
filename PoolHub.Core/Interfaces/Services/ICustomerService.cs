@@ -1,4 +1,5 @@
 using PoolHub.Core.DTOs.Customer;
+using PoolHub.Core.DTOs.Common;
 using PoolHub.Shared;
 
 namespace PoolHub.Core.Interfaces.Services;
@@ -22,6 +23,7 @@ public interface ICustomerService
     /// <param name="id">ID khách hàng.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<CustomerDto> GetCustomerAsync(long id, CancellationToken ct);
+    Task<CustomerDto> CreateCustomerAsync(CreateCustomerRequest request, long actorUserId, CancellationToken ct);
 
     /// <summary>
     /// Cập nhật thông tin khách hàng (fullName, email, note, status).
@@ -30,5 +32,9 @@ public interface ICustomerService
     /// <param name="id">ID khách hàng.</param>
     /// <param name="request">Dữ liệu cập nhật.</param>
     /// <param name="ct">Cancellation token.</param>
-    Task<CustomerDto> UpdateCustomerAsync(long id, UpdateCustomerRequest request, CancellationToken ct);
+    Task<CustomerDto> UpdateCustomerAsync(long id, UpdateCustomerRequest request, long actorUserId, CancellationToken ct);
+    Task UpdateStatusAsync(long id, bool status, long actorUserId, CancellationToken ct);
+    Task<PagedResult<CustomerBookingHistoryDto>> GetBookingHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<CustomerSessionHistoryDto>> GetSessionHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<CustomerInvoiceHistoryDto>> GetInvoiceHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
 }

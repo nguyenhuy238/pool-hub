@@ -7,7 +7,7 @@ import { useToast } from "@/components/toast";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, StateBlock } from "@/components/ui";
 import { ROLES } from "@/lib/auth/constants";
 import { dateTime } from "@/lib/status";
-import { roleService, type RolePayload } from "@/services/role-service";
+import { roleService, type Permission, type RolePayload } from "@/services/role-service";
 import type { PagedResult, Role } from "@/types";
 
 export default function RolesPage() {
@@ -20,6 +20,7 @@ export default function RolesPage() {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Role | "new" | null>(null);
   const [deleting, setDeleting] = useState<Role | null>(null);
+  const [permissionRole, setPermissionRole] = useState<Role | null>(null);
 
   async function load() {
     setLoading(true);
@@ -66,13 +67,71 @@ export default function RolesPage() {
         { key: "updatedAtUtc", label: "Cập nhật", render: (row) => dateTime(String(row.updatedAtUtc ?? "")) }
       ]} actions={isAdmin ? (row) => {
         const role = row as unknown as Role;
-        return <div className="action-group"><button className="ghost-btn compact" onClick={() => setEditing(role)}>Sửa</button><button className="danger-btn compact" disabled={role.isSystem} onClick={() => setDeleting(role)}>Xóa</button></div>;
+        return <div className="action-group"><button className="ghost-btn compact" onClick={() => setPermissionRole(role)}>Quyền</button><button className="ghost-btn compact" onClick={() => setEditing(role)}>Sửa</button><button className="danger-btn compact" disabled={role.isSystem} onClick={() => setDeleting(role)}>Xóa</button></div>;
       } : undefined} />
       <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     </> : null}
     {editing ? <RoleFormModal role={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); }} /> : null}
+    {permissionRole ? <RolePermissionsModal role={permissionRole} onClose={() => setPermissionRole(null)} onSaved={async () => { setPermissionRole(null); await load(); }} /> : null}
     {deleting ? <ConfirmDialog title="Xóa role" message={`Xóa role “${deleting.name}”? Role đang được gán sẽ bị backend từ chối.`} confirmLabel="Xóa role" danger onCancel={() => setDeleting(null)} onConfirm={remove} /> : null}
   </>;
+}
+
+function RolePermissionsModal({ role, onClose, onSaved }: { role: Role; onClose: () => void; onSaved: () => Promise<void> }) {
+  const toast = useToast();
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    roleService.getPermissions()
+      .then((items) => {
+        setPermissions(items);
+        const codes = new Set(role.permissionCodes ?? []);
+        setSelected(items.filter((item) => codes.has(item.code)).map((item) => item.permissionId));
+      })
+      .finally(() => setLoading(false));
+  }, [role.permissionCodes]);
+
+  async function save() {
+    if (!role.roleId) return;
+    setSaving(true);
+    try {
+      await roleService.setPermissions(role.roleId, selected);
+      toast("Đã cập nhật permission cho role.", "success");
+      await onSaved();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể cập nhật permission.", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const groups = permissions.reduce<Record<string, Permission[]>>((result, permission) => {
+    (result[permission.group] ??= []).push(permission);
+    return result;
+  }, {});
+
+  return <Modal title={`Permissions — ${role.name}`} onClose={onClose} size="large">
+    <StateBlock loading={loading} />
+    {!loading ? <div className="form-stack">
+      {Object.entries(groups).map(([group, items]) => <div className="card" key={group}>
+        <strong>{group}</strong>
+        <div className="form-grid" style={{ marginTop: 12 }}>
+          {items.map((permission) => <label className="check-row" key={permission.permissionId}>
+            <input type="checkbox" checked={selected.includes(permission.permissionId)} onChange={(event) =>
+              setSelected((current) => event.target.checked
+                ? [...current, permission.permissionId]
+                : current.filter((id) => id !== permission.permissionId))}
+            />
+            <span>{permission.code}</span>
+          </label>)}
+        </div>
+      </div>)}
+      <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Hủy</button><button className="primary-btn" disabled={saving} onClick={save}>{saving ? "Đang lưu..." : "Lưu permissions"}</button></div>
+    </div> : null}
+  </Modal>;
 }
 
 function RoleFormModal({ role, onClose, onSaved }: { role: Role | null; onClose: () => void; onSaved: () => Promise<void> }) {

@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/floors")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.VenueManage)]
 public class FloorsController(ICrudService s) : ControllerBase
 {
     /// <summary>

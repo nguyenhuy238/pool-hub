@@ -4,7 +4,7 @@ namespace PoolHub.Core.Interfaces.Services;
 
 public interface ITokenService
 {
-    TokenPair CreateTokenPair(User user, IReadOnlyCollection<string> roles);
+    TokenPair CreateTokenPair(User user, IReadOnlyCollection<string> roles, IReadOnlyCollection<string> permissions);
     string HashToken(string token);
 }
 

@@ -9,7 +9,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/admin/dashboard")]
-[Authorize(Roles = RoleConstants.Admin)]
+[Authorize(Roles = RoleConstants.Admin, Policy = PermissionConstants.ReportsView)]
 public class AdminDashboardController(IDashboardService dashboardService) : ControllerBase
 {
     [HttpGet("summary")]

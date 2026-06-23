@@ -20,4 +20,7 @@ public static class AuditActions
     public const string RoleDeleted = "ROLE_DELETED";
     public const string UserRoleAssigned = "USER_ROLE_ASSIGNED";
     public const string UserRoleRemoved = "USER_ROLE_REMOVED";
+    public const string CustomerCreated = "CUSTOMER_CREATED";
+    public const string CustomerUpdated = "CUSTOMER_UPDATED";
+    public const string CustomerStatusChanged = "CUSTOMER_STATUS_CHANGED";
 }

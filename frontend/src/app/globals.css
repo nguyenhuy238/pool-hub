@@ -330,6 +330,37 @@ button, input, select, textarea { font: inherit; }
   grid-template-columns: minmax(260px, .75fr) minmax(320px, 1.25fr);
   gap: 24px;
 }
+
+:root[data-theme="dark"] {
+  --ink: #e7f0ed;
+  --muted: #9db2aa;
+  --line: #31443e;
+  --surface: #17231f;
+  --soft: #0e1714;
+  --shadow: 0 12px 30px rgba(0, 0, 0, .3);
+}
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] .main-shell,
+:root[data-theme="dark"] .state-card,
+:root[data-theme="dark"] .table-wrap { background: var(--soft); }
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .topbar,
+:root[data-theme="dark"] .bottom-nav,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .modal-card,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] th { background: var(--surface); color: var(--ink); }
+.about-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: center;
+}
+.about-section img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 8px; }
+.about-section h2 { font-size: clamp(28px, 4vw, 44px); margin: 0; }
+.footer-qr { width: 112px; height: 112px; object-fit: contain; background: white; padding: 6px; border-radius: 8px; }
 .map-placeholder {
   min-height: 320px;
   display: grid;
@@ -845,7 +876,7 @@ input:focus, select:focus, textarea:focus {
   .hero-overlay { background: linear-gradient(180deg, rgba(9, 27, 24, .9), rgba(9, 27, 24, .58)); }
   .landing-hero-content { padding-top: 54px; padding-bottom: 72px; }
   .landing-hero h1 { font-size: clamp(38px, 12vw, 54px); }
-  .split-heading, .booking-section, .contact-section, .landing-footer { display: grid; grid-template-columns: 1fr; }
+  .split-heading, .booking-section, .contact-section, .about-section, .landing-footer { display: grid; grid-template-columns: 1fr; }
   .availability-filters, .booking-form { grid-template-columns: 1fr; }
   .booking-copy { position: static; }
   .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

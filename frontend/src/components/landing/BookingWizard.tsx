@@ -61,6 +61,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     if (selectedTable && bookingDate) {
       fetchExistingBookings();
     }
+    // fetchExistingBookings intentionally follows the selected table/date lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTable, bookingDate]);
 
   const fetchExistingBookings = async () => {

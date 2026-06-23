@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { RoleGuard } from "@/components/guards";
 import { useToast } from "@/components/toast";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, StateBlock } from "@/components/ui";
+import { FileUploadButton } from "@/components/admin/settings/FileUploadButton";
 import { ROLES } from "@/lib/auth/constants";
 import { dateTime } from "@/lib/status";
 import { validateEmail, validatePassword } from "@/lib/validation";
@@ -169,6 +170,7 @@ function UserDetailModal({ userId, editable, onClose, onSaved }: { userId: numbe
     <label><span>Họ tên</span><input value={form.fullName} disabled={!editable} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label>
     <label><span>Số điện thoại</span><input value={form.phoneNumber} disabled={!editable} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} /></label>
     <label className="full-field"><span>Avatar URL</span><input value={form.avatarUrl} disabled={!editable} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} /></label>
+    {editable ? <div className="full-field"><FileUploadButton mediaType="image" folder="avatars" altText={form.fullName} onUploaded={(asset) => setForm({ ...form, avatarUrl: asset.url })} /></div> : null}
     <label className="check-option full-field"><input type="checkbox" checked={form.emailConfirmed} disabled={!editable} onChange={(e) => setForm({ ...form, emailConfirmed: e.target.checked })} />Email đã xác nhận</label>
     <div className="modal-actions full-field"><button type="button" className="ghost-btn" onClick={onClose}>Đóng</button>{editable ? <button className="primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu thay đổi"}</button> : null}</div>
   </form>}</Modal>;

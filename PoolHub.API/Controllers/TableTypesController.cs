@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/table-types")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.VenueManage)]
 public class TableTypesController(ICrudService s) : ControllerBase
 {
     /// <summary>

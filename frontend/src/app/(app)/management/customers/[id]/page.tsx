@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { customerApi } from "@/lib/api/endpoints";
-import { PageHeader, StateBlock } from "@/components/ui";
+import { DataTable, PageHeader, StateBlock } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { CustomerDto } from "@/types";
+import { bookingStatus, dateTime, money, sessionStatus } from "@/lib/status";
+import type { CustomerBookingHistory, CustomerDto, CustomerInvoiceHistory, CustomerSessionHistory } from "@/types";
 
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -16,6 +17,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [customer, setCustomer] = useState<CustomerDto | null>(null);
+  const [bookings, setBookings] = useState<CustomerBookingHistory[]>([]);
+  const [sessions, setSessions] = useState<CustomerSessionHistory[]>([]);
+  const [invoices, setInvoices] = useState<CustomerInvoiceHistory[]>([]);
 
   useEffect(() => {
     if (isNaN(customerId)) {
@@ -24,11 +28,17 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       return;
     }
 
-    customerApi.detail(customerId)
-      .then(res => {
-        // Handle unwrap if necessary
-        const data = ('data' in res) ? res.data : res;
-        setCustomer(data as CustomerDto);
+    Promise.all([
+      customerApi.detail(customerId),
+      customerApi.bookingHistory(customerId),
+      customerApi.sessionHistory(customerId),
+      customerApi.invoiceHistory(customerId)
+    ])
+      .then(([customerResult, bookingResult, sessionResult, invoiceResult]) => {
+        setCustomer(customerResult);
+        setBookings(bookingResult.items ?? []);
+        setSessions(sessionResult.items ?? []);
+        setInvoices(invoiceResult.items ?? []);
         setLoading(false);
       })
       .catch(err => {
@@ -71,6 +81,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       <StateBlock loading={loading} error={error?.message} empty={!loading && !customer} />
 
       {!loading && customer && (
+        <>
         <form className="card" onSubmit={handleSubmit} style={{ maxWidth: 800, margin: '0 auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
             <div className="state-card" style={{ padding: '16px', background: '#f8fbfa', border: 'none' }}>
@@ -137,6 +148,36 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             </button>
           </div>
         </form>
+        <div className="grid-2" style={{ marginTop: 24 }}>
+          <section className="card">
+            <h3>Lịch sử booking</h3>
+            <DataTable rows={bookings as unknown as Record<string, unknown>[]} columns={[
+              { key: "bookingCode", label: "Mã" },
+              { key: "tableName", label: "Bàn" },
+              { key: "startTimeUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startTimeUtc)) },
+              { key: "status", label: "Trạng thái", render: (row) => bookingStatus[Number(row.status)] ?? String(row.status) }
+            ]} />
+          </section>
+          <section className="card">
+            <h3>Lịch sử session</h3>
+            <DataTable rows={sessions as unknown as Record<string, unknown>[]} columns={[
+              { key: "sessionCode", label: "Mã" },
+              { key: "startedAtUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startedAtUtc)) },
+              { key: "endedAtUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endedAtUtc ?? "")) },
+              { key: "status", label: "Trạng thái", render: (row) => sessionStatus[Number(row.status)] ?? String(row.status) }
+            ]} />
+          </section>
+        </div>
+        <section className="card" style={{ marginTop: 24 }}>
+          <h3>Lịch sử hóa đơn</h3>
+          <DataTable rows={invoices as unknown as Record<string, unknown>[]} columns={[
+            { key: "invoiceCode", label: "Mã hóa đơn" },
+            { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => money(Number(row.grandTotalAmount)) },
+            { key: "paidAmount", label: "Đã trả", render: (row) => money(Number(row.paidAmount)) },
+            { key: "issuedAtUtc", label: "Ngày xuất", render: (row) => dateTime(String(row.issuedAtUtc ?? "")) }
+          ]} />
+        </section>
+        </>
       )}
     </>
   );

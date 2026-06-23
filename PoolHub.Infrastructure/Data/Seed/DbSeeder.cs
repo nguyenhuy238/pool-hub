@@ -11,6 +11,7 @@ public static class DbSeeder
     {
         await db.Database.MigrateAsync(ct);
         await EnsureRolesAsync(db, ct);
+        await EnsurePermissionsAsync(db, ct);
         await EnsureDemoUsersAsync(db, ct);
 
         var userMap = await db.Users.ToDictionaryAsync(x => x.Email, x => x.UserId, ct);
@@ -374,5 +375,62 @@ public static class DbSeeder
                 await db.SaveChangesAsync(ct);
             }
         }
+    }
+
+    private static async Task EnsurePermissionsAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var definitions = PermissionConstants.All.Select(code =>
+        {
+            var group = code.Split('.')[0];
+            return new Permission
+            {
+                Code = code,
+                Name = code.Replace('.', ' '),
+                Group = group,
+                Description = $"Allows {code.Replace('.', ' ')} operations."
+            };
+        }).ToList();
+
+        var existingCodes = await db.Permissions.Select(x => x.Code).ToListAsync(ct);
+        var missing = definitions.Where(x => !existingCodes.Contains(x.Code)).ToList();
+        if (missing.Count > 0)
+        {
+            db.Permissions.AddRange(missing);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var roleMap = await db.Roles.ToDictionaryAsync(x => x.Name, x => x.RoleId, ct);
+        var permissionMap = await db.Permissions.Where(x => x.IsActive)
+            .ToDictionaryAsync(x => x.Code, x => x.PermissionId, ct);
+        var rolePermissions = new Dictionary<string, string[]>
+        {
+            [RoleConstants.Admin] = PermissionConstants.All,
+            [RoleConstants.Manager] =
+            [
+                PermissionConstants.UsersManage, PermissionConstants.RolesManage,
+                PermissionConstants.CustomersManage, PermissionConstants.VenueManage,
+                PermissionConstants.PricingManage, PermissionConstants.ProductsManage,
+                PermissionConstants.InventoryManage, PermissionConstants.ReportsView,
+                PermissionConstants.AuditView
+            ],
+            [RoleConstants.Staff] = [PermissionConstants.CustomersManage],
+            [RoleConstants.Cashier] = [PermissionConstants.DiscountsManage, PermissionConstants.PaymentsManage]
+        };
+
+        foreach (var (roleName, codes) in rolePermissions)
+        {
+            if (!roleMap.TryGetValue(roleName, out var roleId)) continue;
+            foreach (var code in codes)
+            {
+                var permissionId = permissionMap[code];
+                if (!await db.RolePermissions.AnyAsync(
+                    x => x.RoleId == roleId && x.PermissionId == permissionId, ct))
+                {
+                    db.RolePermissions.Add(new RolePermission { RoleId = roleId, PermissionId = permissionId });
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 }

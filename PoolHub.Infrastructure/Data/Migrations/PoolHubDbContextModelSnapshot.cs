@@ -1282,6 +1282,60 @@ namespace PoolHub.Infrastructure.Migrations
                     b.ToTable("product_categories", (string)null);
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.Permission", b =>
+                {
+                    b.Property<long>("PermissionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("permission_id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("PermissionId"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("group");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("PermissionId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("Group", "IsActive");
+
+                    b.ToTable("permissions", (string)null);
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.RefreshToken", b =>
                 {
                     b.Property<long>("RefreshTokenId")
@@ -1304,6 +1358,10 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("expires_at_utc");
 
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("family_id");
+
                     b.Property<bool>("IsRevoked")
                         .HasColumnType("bit")
                         .HasColumnName("is_revoked");
@@ -1316,6 +1374,11 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)")
                         .HasColumnName("revoked_by_ip");
+
+                    b.Property<string>("ReplacedByTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("replaced_by_token_hash");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -1337,6 +1400,8 @@ namespace PoolHub.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("UserId", "IsRevoked", "ExpiresAtUtc");
+
+                    b.HasIndex("UserId", "FamilyId");
 
                     b.ToTable("refresh_tokens", (string)null);
                 });
@@ -1712,6 +1777,33 @@ namespace PoolHub.Infrastructure.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.RolePermission", b =>
+                {
+                    b.Property<long>("RoleId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("role_id");
+
+                    b.Property<long>("PermissionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("permission_id");
+
+                    b.Property<DateTime>("AssignedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("assigned_at_utc");
+
+                    b.Property<long?>("AssignedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("assigned_by_user_id");
+
+                    b.HasKey("RoleId", "PermissionId");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("PermissionId");
+
+                    b.ToTable("role_permissions", (string)null);
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.UserRole", b =>
                 {
                     b.Property<long>("UserId")
@@ -2064,6 +2156,26 @@ namespace PoolHub.Infrastructure.Migrations
                     b.HasOne("PoolHub.Core.Entities.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PoolHub.Core.Entities.RolePermission", b =>
+                {
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PoolHub.Core.Entities.Permission", null)
+                        .WithMany()
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PoolHub.Core.Entities.Role", null)
+                        .WithMany()
+                        .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

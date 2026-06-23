@@ -22,8 +22,11 @@ import type {
   VenueTable,
   Zone,
   BookingCalendarItem,
-  CustomerDto
-  , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport
+  CustomerDto,
+  CustomerBookingHistory,
+  CustomerSessionHistory,
+  CustomerInvoiceHistory
+  , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport
 } from "@/types";
 
 export const venueApi = {
@@ -61,7 +64,10 @@ export const customerApi = {
   create: (body: Partial<Customer>) => apiFetch<Customer>("/api/customers", { method: "POST", body: JSON.stringify(body) }),
   detail: (id: number) => apiFetch<CustomerDto>(`/api/customers/${id}`),
   update: (id: number, body: Partial<CustomerDto>) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) })
+  updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  bookingHistory: (id: number) => apiFetch<{ items?: CustomerBookingHistory[] }>(`/api/customers/${id}/booking-history`),
+  sessionHistory: (id: number) => apiFetch<{ items?: CustomerSessionHistory[] }>(`/api/customers/${id}/session-history`),
+  invoiceHistory: (id: number) => apiFetch<{ items?: CustomerInvoiceHistory[] }>(`/api/customers/${id}/invoice-history`)
 };
 
 export const sessionApi = {
@@ -99,6 +105,9 @@ export const productApi = {
   update: (id: number, body: Partial<Product>) => apiFetch<Product>(`/api/products/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   delete: (id: number) => apiFetch(`/api/products/${id}`, { method: "DELETE" }),
   createCategory: (body: Partial<ProductCategory>) => apiFetch<ProductCategory>("/api/products/categories", { method: "POST", body: JSON.stringify(body) })
+  ,
+  updateCategory: (id: number, body: Partial<ProductCategory>) => apiFetch<ProductCategory>(`/api/products/categories/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteCategory: (id: number) => apiFetch(`/api/products/categories/${id}`, { method: "DELETE" })
 };
 
 export const pricingApi = {
@@ -156,4 +165,8 @@ export const reportsApi = {
   tableUsage: (params: Record<string, string | undefined> = {}) => apiFetch<TableUsageReport[]>(`/api/reports/table-usage${toQuery(params)}`),
   products: (params: Record<string, string | undefined> = {}) => apiFetch<ProductSalesReport[]>(`/api/reports/products${toQuery(params)}`),
   bookings: (params: Record<string, string | undefined> = {}) => apiFetch<BookingReport[]>(`/api/reports/bookings${toQuery(params)}`)
+  ,
+  customers: (params: Record<string, string | undefined> = {}) => apiFetch<CustomerReport[]>(`/api/reports/customers${toQuery(params)}`),
+  paymentMethods: (params: Record<string, string | undefined> = {}) => apiFetch<PaymentMethodReport[]>(`/api/reports/payment-methods${toQuery(params)}`),
+  inventory: (params: Record<string, string | undefined> = {}) => apiFetch<InventoryReport[]>(`/api/reports/inventory${toQuery(params)}`)
 };

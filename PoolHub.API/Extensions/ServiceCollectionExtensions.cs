@@ -26,6 +26,7 @@ using PoolHub.Services.Roles;
 using PoolHub.Services.Session;
 using PoolHub.Services.Users;
 using PoolHub.Services.Venue;
+using PoolHub.Shared.Constants;
 
 namespace PoolHub.API.Extensions;
 
@@ -103,7 +104,14 @@ public static class ServiceCollectionExtensions
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            foreach (var permission in PermissionConstants.All)
+            {
+                options.AddPolicy(permission, policy =>
+                    policy.RequireClaim(PermissionConstants.ClaimType, permission));
+            }
+        });
         return services;
     }
 

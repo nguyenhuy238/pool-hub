@@ -11,7 +11,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/venue-tables")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier, Policy = PermissionConstants.VenueManage)]
 public class VenueTablesController(ICrudService s, IVenueService venueService) : ControllerBase
 {
     /// <summary>

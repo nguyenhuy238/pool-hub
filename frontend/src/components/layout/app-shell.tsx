@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { MANAGEMENT_READ_ROLES, OPERATION_ROLES, ROLES } from "@/lib/auth/constants";
 import { NotificationDropdown } from "./notification-dropdown";
@@ -40,6 +41,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const roles = user?.roles || [];
   const allowed = nav.filter((item) => item.roles.some((role) => roles.includes(role)));
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const enabled = localStorage.getItem("poolhub.theme") === "dark";
+    setDarkMode(enabled);
+    document.documentElement.dataset.theme = enabled ? "dark" : "light";
+  }, []);
+
+  function toggleTheme() {
+    const enabled = !darkMode;
+    setDarkMode(enabled);
+    localStorage.setItem("poolhub.theme", enabled ? "dark" : "light");
+    document.documentElement.dataset.theme = enabled ? "dark" : "light";
+  }
 
   return (
     <div className="app-shell">
@@ -59,6 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <NotificationDropdown />
+            <button className="ghost-btn" onClick={toggleTheme}>{darkMode ? "Light" : "Dark"}</button>
             <span className="role-badge">{roles.join(", ") || "Guest"}</span>
             <button className="ghost-btn" onClick={logout}>Logout</button>
           </div>

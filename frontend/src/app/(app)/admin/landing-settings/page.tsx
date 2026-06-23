@@ -13,13 +13,15 @@ const tabs = [
   "Thông tin chung",
   "Banner khuyến mãi",
   "Hero Section",
+  "About & Footer",
   "Lợi ích nổi bật",
   "Dịch vụ & Menu",
   "Bảng giá nổi bật",
   "Gallery",
   "Review khách hàng",
   "Chính sách đặt bàn",
-  "SEO"
+  "SEO",
+  "Legal, QR & Theme"
 ];
 
 type ListName = "uspItems" | "services" | "pricingHighlights" | "gallery" | "reviews";
@@ -175,6 +177,17 @@ export default function LandingSettingsPage() {
               </FormGrid>
             ) : null}
 
+            {activeTab === "About & Footer" ? <FormGrid>
+              <Check label="Hiển thị About" checked={settings.about.isEnabled} onChange={(isEnabled) => patch("about", { ...settings.about, isEnabled })} />
+              <Text label="About eyebrow" value={settings.about.eyebrow} onChange={(eyebrow) => patch("about", { ...settings.about, eyebrow })} />
+              <Text label="About title" value={settings.about.title} onChange={(title) => patch("about", { ...settings.about, title })} />
+              <Area label="About description" value={settings.about.description} onChange={(description) => patch("about", { ...settings.about, description })} />
+              <MediaPicker label="About image" folder="about" value={settings.about.imageUrl || ""} onChange={(imageUrl) => patch("about", { ...settings.about, imageUrl })} />
+              <Text label="Footer menu title" value={settings.footer.menuTitle} onChange={(menuTitle) => patch("footer", { ...settings.footer, menuTitle })} />
+              <Text label="Footer policy title" value={settings.footer.policyTitle} onChange={(policyTitle) => patch("footer", { ...settings.footer, policyTitle })} />
+              <Text label="Copyright" value={settings.footer.copyright} onChange={(copyright) => patch("footer", { ...settings.footer, copyright })} />
+            </FormGrid> : null}
+
             {activeTab === "Lợi ích nổi bật" ? <Repeater title="Lợi ích" name="uspItems" items={settings.uspItems} onAdd={addItem} onRemove={removeItem}>{(item, index) => <FormGrid><Text label="Icon" value={item.icon || ""} onChange={(icon) => updateList("uspItems", index, { ...item, icon })} /><Text label="Title" value={item.title} onChange={(title) => updateList("uspItems", index, { ...item, title })} /><Area label="Description" value={item.description} onChange={(description) => updateList("uspItems", index, { ...item, description })} /><NumberInput label="Display order" value={item.displayOrder} onChange={(displayOrder) => updateList("uspItems", index, { ...item, displayOrder })} /><Check label="Active" checked={item.isActive} onChange={(isActive) => updateList("uspItems", index, { ...item, isActive })} /></FormGrid>}</Repeater> : null}
             {activeTab === "Dịch vụ & Menu" ? (
               <Repeater title="Dịch vụ" name="services" items={settings.services} onAdd={addItem} onRemove={removeItem}>
@@ -197,6 +210,15 @@ export default function LandingSettingsPage() {
             {activeTab === "Review khách hàng" ? <Repeater title="Review" name="reviews" items={settings.reviews} onAdd={addItem} onRemove={removeItem}>{(item, index) => <FormGrid><Text label="Tên khách" value={item.customerName} onChange={(customerName) => updateList("reviews", index, { ...item, customerName })} /><MediaPicker label="Avatar" folder="reviews" value={item.avatarUrl || ""} altText={item.customerName} onChange={(avatarUrl) => updateList("reviews", index, { ...item, avatarUrl })} /><MediaPicker label="Ảnh check-in" folder="reviews" value={item.checkInImageUrl || ""} altText={item.customerName} onChange={(checkInImageUrl) => updateList("reviews", index, { ...item, checkInImageUrl })} /><NumberInput label="Rating" value={item.rating} onChange={(rating) => updateList("reviews", index, { ...item, rating })} /><Area label="Nội dung" value={item.content} onChange={(content) => updateList("reviews", index, { ...item, content })} /><NumberInput label="Display order" value={item.displayOrder} onChange={(displayOrder) => updateList("reviews", index, { ...item, displayOrder })} /><Check label="Featured" checked={item.isFeatured} onChange={(isFeatured) => updateList("reviews", index, { ...item, isFeatured })} /><Check label="Active" checked={item.isActive} onChange={(isActive) => updateList("reviews", index, { ...item, isActive })} /></FormGrid>}</Repeater> : null}
             {activeTab === "Chính sách đặt bàn" ? <FormGrid><Check label="Cho phép đặt online" checked={settings.bookingPolicy.allowOnlineBooking} onChange={(allowOnlineBooking) => patch("bookingPolicy", { ...settings.bookingPolicy, allowOnlineBooking })} /><NumberInput label="Giữ bàn sau giờ hẹn (phút)" value={settings.bookingPolicy.holdMinutes} onChange={(holdMinutes) => patch("bookingPolicy", { ...settings.bookingPolicy, holdMinutes })} /><NumberInput label="Thời lượng mặc định (phút)" value={settings.bookingPolicy.defaultDurationMinutes} onChange={(defaultDurationMinutes) => patch("bookingPolicy", { ...settings.bookingPolicy, defaultDurationMinutes })} /><NumberInput label="Thời lượng tối thiểu (phút)" value={settings.bookingPolicy.minDurationMinutes} onChange={(minDurationMinutes) => patch("bookingPolicy", { ...settings.bookingPolicy, minDurationMinutes })} /><NumberInput label="Thời lượng tối đa (phút)" value={settings.bookingPolicy.maxDurationMinutes} onChange={(maxDurationMinutes) => patch("bookingPolicy", { ...settings.bookingPolicy, maxDurationMinutes })} /><NumberInput label="Số ngày đặt trước" value={settings.bookingPolicy.advanceBookingDays} onChange={(advanceBookingDays) => patch("bookingPolicy", { ...settings.bookingPolicy, advanceBookingDays })} /><Area label="Thông báo sau khi đặt thành công" value={settings.bookingPolicy.successMessage} onChange={(successMessage) => patch("bookingPolicy", { ...settings.bookingPolicy, successMessage })} /><Area label="Ghi chú chính sách" value={settings.bookingPolicy.policyNote} onChange={(policyNote) => patch("bookingPolicy", { ...settings.bookingPolicy, policyNote })} /></FormGrid> : null}
             {activeTab === "SEO" ? <FormGrid><Text label="Meta title" value={settings.seo.metaTitle} onChange={(metaTitle) => patch("seo", { ...settings.seo, metaTitle })} /><Area label="Meta description" value={settings.seo.metaDescription} onChange={(metaDescription) => patch("seo", { ...settings.seo, metaDescription })} /><Text label="Meta keywords" value={settings.seo.metaKeywords || ""} onChange={(metaKeywords) => patch("seo", { ...settings.seo, metaKeywords })} /><MediaPicker label="OG image" folder="seo" value={settings.seo.ogImageUrl || ""} onChange={(ogImageUrl) => patch("seo", { ...settings.seo, ogImageUrl })} /><Text label="Canonical URL" value={settings.seo.canonicalUrl || ""} onChange={(canonicalUrl) => patch("seo", { ...settings.seo, canonicalUrl })} /></FormGrid> : null}
+            {activeTab === "Legal, QR & Theme" ? <FormGrid>
+              <Area label="Privacy policy" value={settings.legal.privacyPolicy} onChange={(privacyPolicy) => patch("legal", { ...settings.legal, privacyPolicy })} />
+              <Area label="Terms of service" value={settings.legal.termsOfService} onChange={(termsOfService) => patch("legal", { ...settings.legal, termsOfService })} />
+              <Text label="Primary color" value={settings.theme.primaryColor} onChange={(primaryColor) => patch("theme", { ...settings.theme, primaryColor })} />
+              <Text label="Accent color" value={settings.theme.accentColor} onChange={(accentColor) => patch("theme", { ...settings.theme, accentColor })} />
+              <Check label="Hiển thị QR code" checked={settings.qrCode.isEnabled} onChange={(isEnabled) => patch("qrCode", { ...settings.qrCode, isEnabled })} />
+              <MediaPicker label="QR image" folder="qr" value={settings.qrCode.imageUrl || ""} onChange={(imageUrl) => patch("qrCode", { ...settings.qrCode, imageUrl })} />
+              <Text label="QR caption" value={settings.qrCode.caption || ""} onChange={(caption) => patch("qrCode", { ...settings.qrCode, caption })} />
+            </FormGrid> : null}
           </div>
         </div>
       ) : null}

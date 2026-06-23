@@ -28,6 +28,9 @@ export default function ReportsPage() {
   const tables = useLoad(() => reportsApi.tableUsage(range), [range]);
   const products = useLoad(() => reportsApi.products(range), [range]);
   const bookings = useLoad(() => reportsApi.bookings(range), [range]);
+  const customers = useLoad(() => reportsApi.customers(range), [range]);
+  const paymentMethods = useLoad(() => reportsApi.paymentMethods(range), [range]);
+  const inventory = useLoad(() => reportsApi.inventory(range), [range]);
 
   return (
     <>
@@ -115,6 +118,38 @@ export default function ReportsPage() {
               ]} 
             />
           )}
+        </div>
+
+        <div className="card">
+          <h3>Khách hàng</h3>
+          <StateBlock loading={customers.loading} error={customers.error} empty={!customers.loading && !customers.data?.length} />
+          {customers.data?.length ? <DataTable rows={customers.data} columns={[
+            { key: "customerName", label: "Khách hàng" },
+            { key: "bookingCount", label: "Booking" },
+            { key: "sessionCount", label: "Session" },
+            { key: "revenue", label: "Doanh thu", render: (row: any) => money(row.revenue) }
+          ]} /> : null}
+        </div>
+
+        <div className="card">
+          <h3>Phương thức thanh toán</h3>
+          <StateBlock loading={paymentMethods.loading} error={paymentMethods.error} empty={!paymentMethods.loading && !paymentMethods.data?.length} />
+          {paymentMethods.data?.length ? <DataTable rows={paymentMethods.data} columns={[
+            { key: "paymentMethodName", label: "Phương thức" },
+            { key: "paymentCount", label: "Giao dịch" },
+            { key: "amount", label: "Tổng tiền", render: (row: any) => money(row.amount) }
+          ]} /> : null}
+        </div>
+
+        <div className="card">
+          <h3>Tồn kho</h3>
+          <StateBlock loading={inventory.loading} error={inventory.error} empty={!inventory.loading && !inventory.data?.length} />
+          {inventory.data?.length ? <DataTable rows={inventory.data} columns={[
+            { key: "productName", label: "Sản phẩm" },
+            { key: "currentStock", label: "Tồn hiện tại" },
+            { key: "netMovement", label: "Biến động" },
+            { key: "inventoryValue", label: "Giá trị", render: (row: any) => money(row.inventoryValue) }
+          ]} /> : null}
         </div>
       </div>
     </>
