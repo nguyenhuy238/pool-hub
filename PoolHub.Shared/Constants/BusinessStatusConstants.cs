@@ -1,5 +1,14 @@
 namespace PoolHub.Shared.Constants;
 
+public static class BookingStatuses
+{
+    public const int Pending = 1;
+    public const int Confirmed = 2;
+    public const int Cancelled = 3;
+    public const int Completed = 4;
+    public const int NoShow = 5;
+}
+
 public static class InvoicePaymentStatuses
 {
     public const int Unpaid = 1;

@@ -1,2 +1,2 @@
 import { PageHeader } from "@/components/ui";
-export default function SettingsPage() { return <><PageHeader title="Settings" description="Khu vực cấu hình hệ thống. Backend hiện chưa có endpoint settings riêng." /><div className="state-card">Chưa có API settings trong backend hiện tại.</div></>; }
+export default function SettingsPage() { return <><PageHeader title="Cấu hình hệ thống" description="Khu vực quản lý các thiết lập chung của hệ thống." /><div className="state-card">Chức năng cấu hình hệ thống chung chưa được hỗ trợ ở máy chủ.</div></>; }

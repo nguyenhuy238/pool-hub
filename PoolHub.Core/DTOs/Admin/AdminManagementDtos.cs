@@ -142,3 +142,29 @@ public class BookingReportDto
     public int Status { get; set; }
     public int Count { get; set; }
 }
+
+public class CustomerReportDto
+{
+    public long CustomerId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public int BookingCount { get; set; }
+    public int SessionCount { get; set; }
+    public decimal Revenue { get; set; }
+}
+
+public class PaymentMethodReportDto
+{
+    public long PaymentMethodId { get; set; }
+    public string PaymentMethodName { get; set; } = string.Empty;
+    public int PaymentCount { get; set; }
+    public decimal Amount { get; set; }
+}
+
+public class InventoryReportDto
+{
+    public long ProductId { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public int CurrentStock { get; set; }
+    public int NetMovement { get; set; }
+    public decimal InventoryValue { get; set; }
+}

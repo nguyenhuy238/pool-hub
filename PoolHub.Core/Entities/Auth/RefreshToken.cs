@@ -10,4 +10,6 @@ public class RefreshToken : BaseEntity
     public string? CreatedByIp { get; set; }
     public string? RevokedByIp { get; set; }
     public bool IsRevoked { get; set; }
+    public Guid FamilyId { get; set; } = Guid.NewGuid();
+    public string? ReplacedByTokenHash { get; set; }
 }

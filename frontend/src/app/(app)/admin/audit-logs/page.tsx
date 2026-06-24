@@ -26,7 +26,7 @@ export default function AuditLogsPage() {
         pageSize: query.pageSize
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không tải được audit logs.");
+      setError(err instanceof Error ? err.message : "Không tải được nhật ký hệ thống.");
     } finally { setLoading(false); }
   }
   useEffect(() => {
@@ -35,10 +35,10 @@ export default function AuditLogsPage() {
   }, [query.action, query.entityName, query.fromDate, query.toDate, query.pageNumber, query.pageSize]);
   const rows = result?.items ?? [];
   return <>
-    <PageHeader title="Audit Logs" description="Theo dõi các thao tác bảo mật và quản trị quan trọng." />
+    <PageHeader title="Nhật ký hệ thống" description="Theo dõi các thao tác bảo mật, quản trị và thay đổi dữ liệu quan trọng." />
     <div className="card filter-grid">
-      <label><span>Action</span><input placeholder="AUTH_LOGIN..." value={query.action} onChange={(e) => setQuery({ ...query, action: e.target.value, pageNumber: 1 })} /></label>
-      <label><span>Entity</span><input placeholder="User, Role..." value={query.entityName} onChange={(e) => setQuery({ ...query, entityName: e.target.value, pageNumber: 1 })} /></label>
+      <label><span>Hành động</span><input placeholder="Ví dụ: AUTH_LOGIN..." value={query.action} onChange={(e) => setQuery({ ...query, action: e.target.value, pageNumber: 1 })} /></label>
+      <label><span>Đối tượng dữ liệu</span><input placeholder="Ví dụ: User, Role..." value={query.entityName} onChange={(e) => setQuery({ ...query, entityName: e.target.value, pageNumber: 1 })} /></label>
       <label><span>Từ ngày</span><input type="date" value={query.fromDate} onChange={(e) => setQuery({ ...query, fromDate: e.target.value, pageNumber: 1 })} /></label>
       <label><span>Đến ngày</span><input type="date" value={query.toDate} onChange={(e) => setQuery({ ...query, toDate: e.target.value, pageNumber: 1 })} /></label>
     </div>
@@ -46,21 +46,21 @@ export default function AuditLogsPage() {
     {!loading && rows.length ? <>
       <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
         { key: "createdAtUtc", label: "Thời gian", render: (row) => dateTime(String(row.createdAtUtc)) },
-        { key: "actorName", label: "Actor", render: (row) => <div>{String(row.actorName ?? "System")}<div className="table-subtext">{row.actorUserId ? `#${row.actorUserId}` : "Anonymous"}</div></div> },
-        { key: "action", label: "Action", render: (row) => <Badge tone={String(row.action).includes("FAILED") ? "red" : "blue"}>{String(row.action)}</Badge> },
-        { key: "entityName", label: "Entity" },
-        { key: "entityId", label: "Entity ID" },
+        { key: "actorName", label: "Người thực hiện", render: (row) => <div>{String(row.actorName ?? "Hệ thống")}<div className="table-subtext">{row.actorUserId ? `#${row.actorUserId}` : "Ẩn danh"}</div></div> },
+        { key: "action", label: "Hành động", render: (row) => <Badge tone={String(row.action).includes("FAILED") ? "red" : "blue"}>{String(row.action)}</Badge> },
+        { key: "entityName", label: "Đối tượng" },
+        { key: "entityId", label: "Mã đối tượng" },
         { key: "description", label: "Mô tả" },
         { key: "ipAddress", label: "IP" }
       ]} actions={(row) => <button className="ghost-btn compact" onClick={() => setSelected(row as unknown as AuditLog)}>Chi tiết</button>} />
       <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     </> : null}
-    {selected ? <Modal title={`Audit #${selected.auditLogId}`} onClose={() => setSelected(null)} size="large">
+    {selected ? <Modal title={`Nhật ký #${selected.auditLogId}`} onClose={() => setSelected(null)} size="large">
       <div className="audit-detail-grid">
-        <div><span>Action</span><strong>{selected.action}</strong></div><div><span>Entity</span><strong>{selected.entityName} #{selected.entityId ?? "-"}</strong></div>
-        <div><span>Actor</span><strong>{selected.actorName ?? "System/Anonymous"}</strong></div><div><span>IP</span><strong>{selected.ipAddress ?? "-"}</strong></div>
+        <div><span>Hành động</span><strong>{selected.action}</strong></div><div><span>Đối tượng</span><strong>{selected.entityName} #{selected.entityId ?? "-"}</strong></div>
+        <div><span>Người thực hiện</span><strong>{selected.actorName ?? "Hệ thống/Ẩn danh"}</strong></div><div><span>Địa chỉ IP</span><strong>{selected.ipAddress ?? "-"}</strong></div>
         <div className="full-field"><span>Mô tả</span><p>{selected.description ?? "-"}</p></div>
-        <div className="full-field"><span>User Agent</span><p className="break-text">{selected.userAgent ?? "-"}</p></div>
+        <div className="full-field"><span>Thông tin thiết bị</span><p className="break-text">{selected.userAgent ?? "-"}</p></div>
         <div><span>Giá trị cũ</span><JsonPreview value={selected.oldValues} /></div><div><span>Giá trị mới</span><JsonPreview value={selected.newValues} /></div>
       </div>
     </Modal> : null}

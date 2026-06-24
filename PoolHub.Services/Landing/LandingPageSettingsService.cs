@@ -79,6 +79,8 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         if (dto.BookingPolicy.MaxDurationMinutes < dto.BookingPolicy.MinDurationMinutes) throw new ValidationException("Maximum duration must be greater than minimum duration.");
         if (dto.BookingPolicy.AdvanceBookingDays < 0) throw new ValidationException("Advance booking days cannot be negative.");
         if (string.IsNullOrWhiteSpace(dto.Hero.BackgroundImageUrl)) throw new ValidationException("Hero background image is required.");
+        ValidateUrl(dto.About.ImageUrl, nameof(dto.About.ImageUrl), allowRelative: true);
+        ValidateUrl(dto.QrCode.ImageUrl, nameof(dto.QrCode.ImageUrl), allowRelative: true);
         if (dto.Hero.UseVideo && string.IsNullOrWhiteSpace(dto.Hero.BackgroundVideoUrl)) throw new ValidationException("Hero video URL is required when video is enabled.");
         if (dto.Hero.UseVideo && string.IsNullOrWhiteSpace(dto.Hero.FallbackImageUrl)) throw new ValidationException("Hero fallback image is required when video is enabled.");
         if (dto.Services.Any(item => item.IsActive && string.IsNullOrWhiteSpace(item.ImageUrl))) throw new ValidationException("Active services require an image.");
@@ -97,6 +99,8 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         ValidateMediaExtension(dto.Hero.BackgroundImageUrl, "Hero background image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
         ValidateMediaExtension(dto.Hero.FallbackImageUrl, "Hero fallback image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
         ValidateMediaExtension(dto.Hero.BackgroundVideoUrl, "Hero video", [".mp4", ".webm"]);
+        ValidateMediaExtension(dto.About.ImageUrl, "About image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+        ValidateMediaExtension(dto.QrCode.ImageUrl, "QR code", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
         foreach (var item in dto.Gallery) ValidateUrl(item.ImageUrl, "Gallery image URL", allowRelative: true);
         foreach (var item in dto.Services) ValidateUrl(item.ImageUrl, "Service image URL", allowRelative: true);
         foreach (var item in dto.Gallery) ValidateMediaExtension(item.ImageUrl, "Gallery image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
@@ -263,6 +267,11 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
             UseVideo = false,
             Badges = ["12+ bàn sẵn sàng", "09:00 mở cửa mỗi ngày", "4.8/5 đánh giá khách"]
         },
+        About = new AboutSectionDto
+        {
+            Description = "PoolHub kết hợp bàn chơi chất lượng, dịch vụ tận bàn và hệ thống đặt lịch trực tuyến trong một không gian hiện đại.",
+            ImageUrl = "/images/poolhub/hero.png"
+        },
         UspItems =
         [
             new() { Title = "Bàn chuẩn thi đấu", Description = "Mặt bàn, bóng và cơ gậy được kiểm tra định kỳ.", DisplayOrder = 1 },
@@ -298,6 +307,10 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
             new() { Platform = "TikTok", Url = "https://www.tiktok.com", Icon = "t", DisplayOrder = 2, IsActive = false }
         ],
         BookingPolicy = new BookingPolicyDto(),
-        Seo = new SeoSettingsDto()
+        Seo = new SeoSettingsDto(),
+        Footer = new FooterSettingsDto(),
+        Legal = new LegalSettingsDto(),
+        Theme = new ThemeSettingsDto(),
+        QrCode = new QrCodeSettingsDto()
     };
 }

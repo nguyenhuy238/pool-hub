@@ -4,6 +4,7 @@ using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
+using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using EntityBooking = PoolHub.Core.Entities.Booking;
 using EntityCustomer = PoolHub.Core.Entities.Customer;
@@ -32,6 +33,7 @@ public class BookingService(PoolHubDbContext db) : IBookingService
 
     public async Task<BookingDto> CreateAsync(CreateBookingRequest request, CancellationToken ct)
     {
+        ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
         long customerId = 0;
 
         if (request.CustomerId.HasValue && request.CustomerId > 0)
@@ -55,7 +57,7 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         }
         else
         {
-            throw new Exception("Either CustomerId or PhoneNumber must be provided.");
+            throw new ValidationException("Either CustomerId or PhoneNumber must be provided.");
         }
 
         if (request.StartTimeUtc.Minute % 30 != 0 || request.StartTimeUtc.Second != 0 || request.StartTimeUtc.Millisecond != 0 ||
@@ -68,13 +70,13 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         {
             var isConflict = await db.Bookings.AnyAsync(b => 
                 b.TableId == request.TableId.Value && 
-                b.Status == 2 && // Confirmed
+                b.Status == BookingStatuses.Confirmed &&
                 b.StartTimeUtc < request.EndTimeUtc && 
                 b.EndTimeUtc > request.StartTimeUtc, ct);
 
             if (isConflict)
             {
-                throw new Exception("Table is already booked and confirmed for the selected time.");
+                throw new ConflictException("Table is already booked and confirmed for the selected time.");
             }
         }
 
@@ -83,12 +85,11 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             CustomerId = customerId,
             TableId = request.TableId,
             TableTypeId = request.TableTypeId,
-            BookingCode = $"BK{DateTime.UtcNow:yyyyMMddHHmmss}",
+            BookingCode = $"BK{DateTime.UtcNow:yyyyMMddHHmmss}{Guid.NewGuid():N}"[..24].ToUpperInvariant(),
             StartTimeUtc = request.StartTimeUtc,
             EndTimeUtc = request.EndTimeUtc,
             NumberOfGuests = request.NumberOfGuests,
-            Status = 2, // Confirmed (Auto-confirm)
-            ConfirmedAtUtc = DateTime.UtcNow
+            Status = BookingStatuses.Pending
         };
         db.Bookings.Add(entity);
         await db.SaveChangesAsync(ct);
@@ -98,11 +99,11 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> ConfirmAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status != 1) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
+        if (booking.Status != BookingStatuses.Pending) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
         if (booking.TableId.HasValue && await HasConflictAsync(booking, ct))
             throw new ConflictException("Table is already booked for the selected time.");
 
-        booking.Status = 2; // Confirmed
+        booking.Status = BookingStatuses.Confirmed;
         booking.ConfirmedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
@@ -111,9 +112,10 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> CancelAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status == 3 || booking.Status == 4 || booking.Status == 5) throw new BusinessRuleException("Booking cannot be cancelled.");
+        if (booking.Status is BookingStatuses.Cancelled or BookingStatuses.Completed or BookingStatuses.NoShow)
+            throw new BusinessRuleException("Booking cannot be cancelled.");
 
-        booking.Status = 3; // Cancelled
+        booking.Status = BookingStatuses.Cancelled;
         booking.CancelledAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
@@ -122,8 +124,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> MarkNoShowAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status != 2) throw new BusinessRuleException("Only Confirmed bookings can be marked NoShow.");
-        booking.Status = 5;
+        if (booking.Status != BookingStatuses.Confirmed) throw new BusinessRuleException("Only Confirmed bookings can be marked NoShow.");
+        booking.Status = BookingStatuses.NoShow;
         await db.SaveChangesAsync(ct);
         return Map(booking);
     }
@@ -131,8 +133,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> MarkCompletedAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (booking.Status != 2) throw new BusinessRuleException("Only Confirmed bookings can be completed.");
-        booking.Status = 4;
+        if (booking.Status != BookingStatuses.Confirmed) throw new BusinessRuleException("Only Confirmed bookings can be completed.");
+        booking.Status = BookingStatuses.Completed;
         await db.SaveChangesAsync(ct);
         return Map(booking);
     }
@@ -144,7 +146,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
                     join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
                     where table.OperationalStatus == 1
                        && !db.SessionTableAssignments.Any(a => a.TableId == table.TableId && a.EndedAtUtc == null)
-                       && !db.Bookings.Any(b => b.TableId == table.TableId && b.Status == 2
+                       && !db.Bookings.Any(b => b.TableId == table.TableId &&
+                            (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.Confirmed)
                             && b.StartTimeUtc < request.EndTimeUtc && b.EndTimeUtc > request.StartTimeUtc)
                     select new AvailableTableDto {
                         TableId = table.TableId, TableCode = table.TableCode, TableName = table.TableName,
@@ -155,7 +158,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     }
 
     private Task<bool> HasConflictAsync(EntityBooking booking, CancellationToken ct) =>
-        db.Bookings.AnyAsync(x => x.BookingId != booking.BookingId && x.TableId == booking.TableId && x.Status == 2
+        db.Bookings.AnyAsync(x => x.BookingId != booking.BookingId && x.TableId == booking.TableId &&
+            (x.Status == BookingStatuses.Pending || x.Status == BookingStatuses.Confirmed)
             && x.StartTimeUtc < booking.EndTimeUtc && x.EndTimeUtc > booking.StartTimeUtc, ct);
 
     private static BookingDto Map(EntityBooking booking) => new() {
@@ -252,7 +256,7 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         // Lấy các Booking của TableId này trong ngày, với Status = 1 (Pending) hoặc 2 (Confirmed)
         var slots = await db.Bookings
             .Where(b => b.TableId == tableId && 
-                        (b.Status == 1 || b.Status == 2) && 
+                        (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.Confirmed) &&
                         b.StartTimeUtc < endOfDay && 
                         b.EndTimeUtc > startOfDay)
             .OrderBy(b => b.StartTimeUtc)
@@ -264,5 +268,13 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             .ToListAsync(ct);
 
         return slots;
+    }
+
+    private static void ValidateBookingPeriod(DateTime startTimeUtc, DateTime endTimeUtc)
+    {
+        if (startTimeUtc.Kind != DateTimeKind.Utc || endTimeUtc.Kind != DateTimeKind.Utc)
+            throw new ValidationException("Booking times must use UTC.");
+        if (endTimeUtc <= startTimeUtc)
+            throw new ValidationException("End time must be after start time.");
     }
 }

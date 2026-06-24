@@ -46,11 +46,11 @@ public interface ICrudService
 
     Task<PagedResult<ProductCategoryDto>> GetProductCategoriesAsync(PaginationRequest request, CancellationToken ct);
     Task<ProductCategoryDto> CreateProductCategoryAsync(ProductCategoryDto dto, CancellationToken ct);
+    Task<ProductCategoryDto> UpdateProductCategoryAsync(int id, ProductCategoryDto dto, CancellationToken ct);
+    Task DeleteProductCategoryAsync(int id, CancellationToken ct);
 
     Task<PagedResult<BookingDto>> GetBookingsCrudAsync(PaginationRequest request, CancellationToken ct);
     Task<BookingDto> GetBookingAsync(long id, CancellationToken ct);
     Task DeleteBookingAsync(long id, CancellationToken ct);
-
-    Task<object> UpdateProductCategoryAsync(int id, ProductCategoryDto dto, CancellationToken ct);
 
 }

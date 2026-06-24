@@ -50,6 +50,12 @@ export type HeroSettings = {
   badges: string[];
 };
 
+export type AboutSettings = { isEnabled: boolean; eyebrow: string; title: string; description: string; imageUrl?: string };
+export type FooterSettings = { menuTitle: string; policyTitle: string; copyright: string };
+export type LegalSettings = { privacyPolicy: string; termsOfService: string };
+export type ThemeSettings = { primaryColor: string; accentColor: string };
+export type QrCodeSettings = { isEnabled: boolean; imageUrl?: string; caption?: string };
+
 export type OrderedLandingItem = {
   title: string;
   description: string;
@@ -106,6 +112,7 @@ export type LandingPageSettings = {
   generalInfo: GeneralInfoSettings;
   promotionBanner: PromotionBannerSettings;
   hero: HeroSettings;
+  about: AboutSettings;
   uspItems: UspSettings[];
   services: ServiceSettings[];
   pricingHighlights: PricingHighlightSettings[];
@@ -114,6 +121,10 @@ export type LandingPageSettings = {
   socialLinks: SocialLinkSettings[];
   bookingPolicy: BookingPolicySettings;
   seo: SeoSettings;
+  footer: FooterSettings;
+  legal: LegalSettings;
+  theme: ThemeSettings;
+  qrCode: QrCodeSettings;
 };
 
 export const defaultLandingSettings: LandingPageSettings = {
@@ -151,6 +162,13 @@ export const defaultLandingSettings: LandingPageSettings = {
     fallbackImageUrl: "/images/poolhub/hero.png",
     useVideo: false,
     badges: ["12+ bàn sẵn sàng", "09:00 mở cửa mỗi ngày", "4.8/5 đánh giá khách"]
+  },
+  about: {
+    isEnabled: true,
+    eyebrow: "Về PoolHub",
+    title: "Không gian giải trí dành cho mọi cuộc gặp",
+    description: "PoolHub kết hợp bàn chơi chất lượng, dịch vụ tận bàn và hệ thống đặt lịch trực tuyến trong một không gian hiện đại.",
+    imageUrl: "/images/poolhub/hero.png"
   },
   uspItems: [
     { title: "Bàn chuẩn thi đấu", description: "Mặt bàn, bóng và cơ gậy được kiểm tra định kỳ.", displayOrder: 1, isActive: true },
@@ -193,7 +211,11 @@ export const defaultLandingSettings: LandingPageSettings = {
   seo: {
     metaTitle: "PoolHub - Đặt bàn bi-a online nhanh chóng",
     metaDescription: "Trung tâm bi-a và giải trí với bàn chuẩn, không gian hiện đại, đồ uống đa dạng và đặt bàn online."
-  }
+  },
+  footer: { menuTitle: "Menu nhanh", policyTitle: "Chính sách", copyright: "Copyright 2026 PoolHub." },
+  legal: { privacyPolicy: "", termsOfService: "" },
+  theme: { primaryColor: "#0f5d4b", accentColor: "#c89d3f" },
+  qrCode: { isEnabled: false, imageUrl: "", caption: "" }
 };
 
 export function activeSorted<T extends { displayOrder: number; isActive?: boolean }>(items: T[]) {

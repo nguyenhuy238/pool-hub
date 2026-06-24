@@ -17,17 +17,17 @@ public class PublicLandingPageController(ILandingPageSettingsService service) : 
         => Ok(ApiResponse<LandingPageSettingsDto>.Ok(await service.GetPublicLandingPageAsync(ct)));
 
     [HttpGet("api/admin/landing-page-settings")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.LandingManage)]
     public async Task<ActionResult<ApiResponse<LandingPageSettingsDto>>> GetAdmin(CancellationToken ct)
         => Ok(ApiResponse<LandingPageSettingsDto>.Ok(await service.GetAdminSettingsAsync(ct)));
 
     [HttpPut("api/admin/landing-page-settings")]
-    [Authorize(Roles = RoleConstants.Admin)]
+    [Authorize(Roles = RoleConstants.Admin, Policy = PermissionConstants.LandingManage)]
     public async Task<ActionResult<ApiResponse<LandingPageSettingsDto>>> Update([FromBody] LandingPageSettingsDto request, CancellationToken ct)
         => Ok(ApiResponse<LandingPageSettingsDto>.Ok(await service.UpdateSettingsAsync(request, User.GetUserId(), ct), "Landing page settings updated"));
 
     [HttpPost("api/admin/landing-page-settings/reset-default")]
-    [Authorize(Roles = RoleConstants.Admin)]
+    [Authorize(Roles = RoleConstants.Admin, Policy = PermissionConstants.LandingManage)]
     public async Task<ActionResult<ApiResponse<LandingPageSettingsDto>>> ResetDefault(CancellationToken ct)
         => Ok(ApiResponse<LandingPageSettingsDto>.Ok(await service.ResetDefaultAsync(User.GetUserId(), ct), "Landing page settings reset"));
 }

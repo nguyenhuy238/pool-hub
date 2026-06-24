@@ -23,4 +23,7 @@ public interface IAdminManagementService
     Task<List<TableUsageReportDto>> GetTableUsageReportAsync(ReportQueryRequest request, CancellationToken ct);
     Task<List<ProductSalesReportDto>> GetProductReportAsync(ReportQueryRequest request, CancellationToken ct);
     Task<List<BookingReportDto>> GetBookingReportAsync(ReportQueryRequest request, CancellationToken ct);
+    Task<List<CustomerReportDto>> GetCustomerReportAsync(ReportQueryRequest request, CancellationToken ct);
+    Task<List<PaymentMethodReportDto>> GetPaymentMethodReportAsync(ReportQueryRequest request, CancellationToken ct);
+    Task<List<InventoryReportDto>> GetInventoryReportAsync(ReportQueryRequest request, CancellationToken ct);
 }

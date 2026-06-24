@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/pricing-plans")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.PricingManage)]
 public class PricingPlansController(ICrudService s) : ControllerBase
 {
     /// <summary>

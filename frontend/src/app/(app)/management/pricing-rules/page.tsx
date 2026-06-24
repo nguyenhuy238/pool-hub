@@ -11,9 +11,9 @@ export default function PricingRulesPage() {
 
   return (
     <>
-      <PageHeader title="Pricing Rules" description="Quản lý rule theo plan." />
+      <PageHeader title="Quy tắc tính giá" description="Quản lý quy tắc tính giá theo từng bảng giá." />
       <SmartForm<PricingPlanRule>
-        title="Tạo pricing rule"
+        title="Tạo quy tắc tính giá"
         initial={{ minimumMinutes: 30, billingBlockMinutes: 15 }}
         fields={[
           { name: "pricingPlanId", label: "Plan ID", type: "number", required: true },

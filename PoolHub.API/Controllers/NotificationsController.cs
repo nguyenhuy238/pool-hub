@@ -33,14 +33,14 @@ public class NotificationsController(INotificationService notificationService) :
     public async Task<IActionResult> Read(long id, CancellationToken ct)
     {
         await notificationService.MarkReadAsync(id, User.GetUserId(), User.IsInRole(RoleConstants.Admin), ct);
-        return NoContent();
+        return Ok(ApiResponse<object>.Ok(new { }, "Notification marked as read."));
     }
 
     [HttpPatch("read-all")]
     public async Task<IActionResult> ReadAll(CancellationToken ct)
     {
         await notificationService.MarkAllReadAsync(User.GetUserId(), User.IsInRole(RoleConstants.Admin), ct);
-        return NoContent();
+        return Ok(ApiResponse<object>.Ok(new { }, "All notifications marked as read."));
     }
 
     [HttpGet("unread-count")]
@@ -54,6 +54,6 @@ public class NotificationsController(INotificationService notificationService) :
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
     {
         await notificationService.DeleteAsync(id, User.GetUserId(), User.IsInRole(RoleConstants.Admin), ct);
-        return NoContent();
+        return Ok(ApiResponse<object>.Ok(new { }, "Notification deleted."));
     }
 }

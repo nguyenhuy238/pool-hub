@@ -134,7 +134,7 @@ export default function BookingCalendarPage() {
   return (
     <div className="calendar-container">
       <PageHeader 
-        title="Lịch Đặt Bàn (Calendar)" 
+        title="Lịch đặt bàn"
         description="Xem danh sách đặt bàn theo trục thời gian trong ngày." 
       />
 
@@ -199,7 +199,7 @@ export default function BookingCalendarPage() {
                         key={booking.bookingId} 
                         className={`booking-block status-${booking.status}`}
                         style={getPositionStyle(booking.startTimeUtc, booking.endTimeUtc)}
-                        title={`Booking: ${booking.bookingCode}\nKhách: ${booking.customerName}\nGiờ: ${formatTime(booking.startTimeUtc)} - ${formatTime(booking.endTimeUtc)}`}
+                        title={`Đặt bàn: ${booking.bookingCode}\nKhách: ${booking.customerName}\nGiờ: ${formatTime(booking.startTimeUtc)} - ${formatTime(booking.endTimeUtc)}`}
                         onClick={() => setSelectedBooking(booking)}
                       >
                         <span className="booking-time">{formatTime(booking.startTimeUtc)} - {formatTime(booking.endTimeUtc)}</span>

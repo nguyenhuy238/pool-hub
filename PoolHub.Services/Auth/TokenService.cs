@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
+using PoolHub.Shared.Constants;
 
 namespace PoolHub.Services.Auth;
 
@@ -14,7 +15,7 @@ public class TokenService(IOptions<JwtSettings> jwtOptions) : ITokenService
 {
     private readonly JwtSettings _jwt = jwtOptions.Value;
 
-    public TokenPair CreateTokenPair(User user, IReadOnlyCollection<string> roles)
+    public TokenPair CreateTokenPair(User user, IReadOnlyCollection<string> roles, IReadOnlyCollection<string> permissions)
     {
         var now = DateTime.UtcNow;
         var accessExpiresAt = now.AddMinutes(_jwt.AccessTokenExpirationMinutes);
@@ -31,6 +32,7 @@ public class TokenService(IOptions<JwtSettings> jwtOptions) : ITokenService
             new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange(permissions.Select(permission => new Claim(PermissionConstants.ClaimType, permission)));
 
         var descriptor = new SecurityTokenDescriptor
         {

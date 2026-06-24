@@ -9,7 +9,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/audit-logs")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.AuditView)]
 public class AuditLogsController(IAuditService auditService) : ControllerBase
 {
     [HttpGet]

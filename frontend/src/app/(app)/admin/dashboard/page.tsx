@@ -43,27 +43,31 @@ export default function AdminDashboardPage() {
   const activeSessions = useLoad(() => adminDashboardApi.activeSessions(), []);
   const topProducts = useLoad(() => reportsApi.products(range), [range]);
   const tableUsage = useLoad(() => reportsApi.tableUsage(range), [range]);
-  const loading = summary.loading || revenue.loading || activeSessions.loading || topProducts.loading || tableUsage.loading;
-  const error = summary.error || revenue.error || activeSessions.error || topProducts.error || tableUsage.error;
+  const paymentMethods = useLoad(() => reportsApi.paymentMethods(range), [range]);
+  const loading = summary.loading || revenue.loading || activeSessions.loading || topProducts.loading || tableUsage.loading || paymentMethods.loading;
+  const error = summary.error || revenue.error || activeSessions.error || topProducts.error || tableUsage.error || paymentMethods.error;
 
   const cards = summary.data ? [
     ["Tổng số bàn", summary.data.totalTables],
     ["Bàn hoạt động", summary.data.activeTables ?? 0],
     ["Bàn bảo trì", summary.data.maintenanceTables],
-    ["Session active", summary.data.activeSessions],
-    ["Booking hôm nay", summary.data.todayBookings],
-    ["Booking pending", summary.data.pendingBookings ?? 0],
-    ["Booking confirmed", summary.data.confirmedBookings ?? 0],
+    ["Phiên chơi đang hoạt động", summary.data.activeSessions],
+    ["Lượt đặt bàn hôm nay", summary.data.todayBookings],
+    ["Đặt bàn chờ xác nhận", summary.data.pendingBookings ?? 0],
+    ["Đặt bàn đã xác nhận", summary.data.confirmedBookings ?? 0],
     ["Doanh thu hôm nay", money(summary.data.todayRevenue)],
     ["Hóa đơn chưa thanh toán", summary.data.unpaidInvoices ?? 0],
     ["Sản phẩm sắp hết", summary.data.lowStockProducts],
     ["Thông báo chưa đọc", summary.data.unreadNotifications],
     ["Audit hôm nay", summary.data.todayAuditLogs ?? 0]
+    ,["Đơn hàng hôm nay", summary.data.ordersToday ?? 0]
+    ,["Khách hàng", summary.data.totalCustomers ?? 0]
+    ,["Hóa đơn hôm nay", summary.data.invoicesToday ?? 0]
   ] : [];
 
   return (
     <>
-      <PageHeader title="Admin Dashboard" description="Tổng quan quản trị lấy từ dữ liệu hiện có trong database." />
+      <PageHeader title="Tổng quan quản trị" description="Tổng hợp các chỉ số vận hành và kinh doanh từ dữ liệu hệ thống." />
       <div className="card list-controls" style={{ marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'center' }}>
         <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span>Tùy chọn:</span>
@@ -110,12 +114,11 @@ export default function AdminDashboardPage() {
         </div>
         <div className="card" style={{ flex: 4, height: 350, display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ marginBottom: '16px', flexShrink: 0 }}>Phương thức thanh toán</h3>
-          {/* Mock data vì backend hiện chưa có API /reports/payment-methods */}
           <div style={{ flex: 1, minHeight: 0 }}>
             <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie 
-                data={[{ name: "Tiền mặt", value: 60 }, { name: "Chuyển khoản", value: 40 }]} 
+                data={(paymentMethods.data || []).map((item) => ({ name: item.paymentMethodName, value: item.amount }))}
                 cx="50%" cy="50%" 
                 innerRadius={60}
                 outerRadius={90} 

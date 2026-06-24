@@ -15,10 +15,10 @@ export default function TableTypesPage() {
 
   return (
     <>
-      <PageHeader title="Quản lý Loại Bàn (Table Types)" description="Danh sách các loại bàn như Bida Lỗ, Bida Phăng, Bida Snooker." />
+      <PageHeader title="Quản lý loại bàn" description="Danh sách các loại bàn như bida lỗ, bida phăng và snooker." />
       
       <SmartForm<TableType> 
-        title="Tạo Loại bàn mới" 
+        title="Tạo loại bàn mới"
         initial={{}} 
         fields={[
           { name: "name", label: "Tên Loại", required: true }, 

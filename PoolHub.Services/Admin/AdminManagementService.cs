@@ -224,6 +224,62 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
         return query.GroupBy(x => x.Status).OrderBy(x => x.Key).Select(x => new BookingReportDto { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
     }
 
+    public Task<List<CustomerReportDto>> GetCustomerReportAsync(ReportQueryRequest request, CancellationToken ct)
+    {
+        var invoices = FilterInvoices(request);
+        return db.Customers.AsNoTracking().Where(x => x.Status)
+            .Select(customer => new CustomerReportDto
+            {
+                CustomerId = customer.CustomerId,
+                CustomerName = customer.FullName,
+                BookingCount = db.Bookings.Count(x => x.CustomerId == customer.CustomerId &&
+                    (!request.FromDate.HasValue || x.StartTimeUtc >= request.FromDate.Value) &&
+                    (!request.ToDate.HasValue || x.StartTimeUtc < request.ToDate.Value.Date.AddDays(1))),
+                SessionCount = db.Sessions.Count(x => x.CustomerId == customer.CustomerId &&
+                    (!request.FromDate.HasValue || x.StartedAtUtc >= request.FromDate.Value) &&
+                    (!request.ToDate.HasValue || x.StartedAtUtc < request.ToDate.Value.Date.AddDays(1))),
+                Revenue = invoices.Where(x => x.CustomerId == customer.CustomerId).Sum(x => (decimal?)x.PaidAmount) ?? 0
+            })
+            .OrderByDescending(x => x.Revenue)
+            .ToListAsync(ct);
+    }
+
+    public Task<List<PaymentMethodReportDto>> GetPaymentMethodReportAsync(ReportQueryRequest request, CancellationToken ct)
+    {
+        var payments = db.Payments.AsNoTracking().Where(x => x.PaymentStatus == PaymentStatuses.Completed);
+        if (request.FromDate.HasValue) payments = payments.Where(x => x.PaidAtUtc >= request.FromDate.Value);
+        if (request.ToDate.HasValue) payments = payments.Where(x => x.PaidAtUtc < request.ToDate.Value.Date.AddDays(1));
+        return (from payment in payments
+                join method in db.PaymentMethods.AsNoTracking() on payment.PaymentMethodId equals method.PaymentMethodId
+                group payment by new { method.PaymentMethodId, method.Name } into grouped
+                orderby grouped.Sum(x => x.Amount) descending
+                select new PaymentMethodReportDto
+                {
+                    PaymentMethodId = grouped.Key.PaymentMethodId,
+                    PaymentMethodName = grouped.Key.Name,
+                    PaymentCount = grouped.Count(),
+                    Amount = grouped.Sum(x => x.Amount)
+                }).ToListAsync(ct);
+    }
+
+    public Task<List<InventoryReportDto>> GetInventoryReportAsync(ReportQueryRequest request, CancellationToken ct)
+    {
+        var movements = db.InventoryTransactions.AsNoTracking().AsQueryable();
+        if (request.FromDate.HasValue) movements = movements.Where(x => x.CreatedAtUtc >= request.FromDate.Value);
+        if (request.ToDate.HasValue) movements = movements.Where(x => x.CreatedAtUtc < request.ToDate.Value.Date.AddDays(1));
+        return db.Products.AsNoTracking().Where(x => x.IsActive && x.IsStockTracked)
+            .Select(product => new InventoryReportDto
+            {
+                ProductId = product.ProductId,
+                ProductName = product.Name,
+                CurrentStock = product.StockQuantity,
+                NetMovement = movements.Where(x => x.ProductId == product.ProductId).Sum(x => (int?)x.Quantity) ?? 0,
+                InventoryValue = product.StockQuantity * product.UnitPrice
+            })
+            .OrderBy(x => x.ProductName)
+            .ToListAsync(ct);
+    }
+
     private IQueryable<PoolHub.Core.Entities.Invoice> FilterInvoices(ReportQueryRequest request)
     {
         var query = db.Invoices.AsNoTracking().AsQueryable();

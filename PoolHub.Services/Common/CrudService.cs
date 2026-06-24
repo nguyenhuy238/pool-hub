@@ -18,7 +18,7 @@ public partial class CrudService : ICrudService
 
     private static PagedResult<T> Page<T>(IReadOnlyCollection<T> items, int page, int size, int total) => new() { Items = items, PageNumber = page, PageSize = size, TotalCount = total };
 
-    public async Task<object> UpdateProductCategoryAsync(
+    public async Task<ProductCategoryDto> UpdateProductCategoryAsync(
         int id,
         ProductCategoryDto dto,
         CancellationToken ct)
@@ -38,6 +38,17 @@ public partial class CrudService : ICrudService
             ProductCategoryId = category.ProductCategoryId,
             Name = category.Name
         };
+    }
+
+    public async Task DeleteProductCategoryAsync(int id, CancellationToken ct)
+    {
+        var category = await db.ProductCategories.FirstOrDefaultAsync(x => x.ProductCategoryId == id, ct)
+            ?? throw new NotFoundException("Product category not found.");
+        if (await db.Products.AnyAsync(x => x.ProductCategoryId == id && x.IsActive, ct))
+            throw new ConflictException("Product category still has active products.");
+        category.IsActive = false;
+        category.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
 }

@@ -41,10 +41,10 @@ export default function InvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Invoice & Payment" description="Generate invoice, xem chi tiết và ghi nhận thanh toán." />
+      <PageHeader title="Hóa đơn và thanh toán" description="Tạo hóa đơn, xem chi tiết và ghi nhận thanh toán." />
       <ListControls search={params.search} pageNumber={params.pageNumber} pageSize={params.pageSize} onChange={setParams} />
       <SmartForm<{ sessionId: number }> 
-        title="Tạo hóa đơn từ session" 
+        title="Tạo hóa đơn từ phiên chơi"
         initial={{}} 
         fields={[{ name: "sessionId", label: "Session ID", type: "number", required: true }]} 
         onSubmit={async (value) => { 
@@ -65,7 +65,7 @@ export default function InvoicesPage() {
         actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>} 
       />
       {invoice ? (
-        <Modal title={invoice.invoiceCode || `Invoice #${invoice.invoiceId}`} onClose={() => setInvoice(null)} size="large">
+        <Modal title={invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`} onClose={() => setInvoice(null)} size="large">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : Number(invoice.status) === 3 ? <span className="badge red" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ HỦY</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}

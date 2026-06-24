@@ -103,6 +103,8 @@ export function TableTimelinePicker({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
+    // Helpers are deterministic for the values listed below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, durationHours, pastMins, isToday, localStartMins, onTimeChange, existingBookings]);
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {

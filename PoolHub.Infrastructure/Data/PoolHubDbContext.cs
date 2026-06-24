@@ -1,13 +1,27 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
+using System.Text.Json;
 using PoolHub.Core.Entities;
 
 namespace PoolHub.Infrastructure.Data;
 
-public class PoolHubDbContext(DbContextOptions<PoolHubDbContext> options) : DbContext(options)
+public class PoolHubDbContext(
+    DbContextOptions<PoolHubDbContext> options,
+    IHttpContextAccessor? httpContextAccessor = null) : DbContext(options)
 {
+    private static readonly HashSet<string> ExplicitlyAuditedEntities =
+    [
+        nameof(AuditLog), nameof(User), nameof(Role), nameof(Customer), nameof(RefreshToken),
+        nameof(PasswordResetToken), nameof(SiteSetting), nameof(MediaAsset), nameof(Discount),
+        nameof(PaymentMethod), nameof(Permission), nameof(RolePermission)
+    ];
+
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<User> Users => Set<User>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
+    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Customer> Customers => Set<Customer>();
@@ -41,6 +55,70 @@ public class PoolHubDbContext(DbContextOptions<PoolHubDbContext> options) : DbCo
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PoolHubDbContext).Assembly);
         ApplySnakeCaseColumns(modelBuilder);
         base.OnModelCreating(modelBuilder);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        AddAutomaticAuditEntries();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void AddAutomaticAuditEntries()
+    {
+        var context = httpContextAccessor?.HttpContext;
+        if (context is null) return;
+
+        var actorId = long.TryParse(
+            context.User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+            context.User.FindFirstValue("sub"), out var parsedActorId)
+            ? parsedActorId
+            : (long?)null;
+
+        var mutations = ChangeTracker.Entries()
+            .Where(entry => entry.Entity is BaseEntity &&
+                            entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted &&
+                            !ExplicitlyAuditedEntities.Contains(entry.Metadata.ClrType.Name))
+            .ToList();
+
+        foreach (var entry in mutations)
+        {
+            var action = entry.State switch
+            {
+                EntityState.Added => "CREATE",
+                EntityState.Modified => "UPDATE",
+                EntityState.Deleted => "DELETE",
+                _ => "MUTATE"
+            };
+            var entityName = entry.Metadata.ClrType.Name;
+            var primaryKey = entry.Properties.FirstOrDefault(x => x.Metadata.IsPrimaryKey());
+            var publicId = entry.Properties.FirstOrDefault(x => x.Metadata.Name == "PublicId")?.CurrentValue as Guid?;
+            var oldValues = entry.State == EntityState.Added ? null : SerializeProperties(entry, original: true);
+            var newValues = entry.State == EntityState.Deleted ? null : SerializeProperties(entry, original: false);
+
+            AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                Action = $"{entityName.ToUpperInvariant()}_{action}",
+                EntityName = entityName,
+                EntityId = primaryKey?.CurrentValue is null ? null : Convert.ToInt64(primaryKey.CurrentValue),
+                EntityPublicId = publicId,
+                OldValues = oldValues,
+                NewValues = newValues,
+                IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = context.Request.Headers.UserAgent.ToString(),
+                Description = $"Automatic audit for {action.ToLowerInvariant()} {entityName}."
+            });
+        }
+    }
+
+    private static string SerializeProperties(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, bool original)
+    {
+        var values = entry.Properties
+            .Where(property => property.Metadata.Name is not "PasswordHash" and not "TokenHash" and not "RowVersion")
+            .ToDictionary(
+                property => property.Metadata.Name,
+                property => original ? property.OriginalValue : property.CurrentValue);
+        return JsonSerializer.Serialize(values);
     }
 
     private static void ApplySnakeCaseColumns(ModelBuilder modelBuilder)

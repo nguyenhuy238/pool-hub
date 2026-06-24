@@ -55,6 +55,9 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
             ConfirmedBookings = await db.Bookings.CountAsync(x => x.Status == 2, ct),
             UnpaidInvoices = await db.Invoices.CountAsync(x => x.PaymentStatus != InvoicePaymentStatuses.Paid, ct),
             TodayAuditLogs = await db.AuditLogs.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
+            ,OrdersToday = await db.Orders.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
+            ,TotalCustomers = await db.Customers.CountAsync(x => x.Status, ct)
+            ,InvoicesToday = await db.Invoices.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
         };
     }
 

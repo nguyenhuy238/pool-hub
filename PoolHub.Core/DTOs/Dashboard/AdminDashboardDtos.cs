@@ -7,6 +7,9 @@ public class AdminDashboardSummaryDto : DashboardSummaryDto
     public int ConfirmedBookings { get; set; }
     public int UnpaidInvoices { get; set; }
     public int TodayAuditLogs { get; set; }
+    public int OrdersToday { get; set; }
+    public int TotalCustomers { get; set; }
+    public int InvoicesToday { get; set; }
 }
 
 public class RevenuePointDto

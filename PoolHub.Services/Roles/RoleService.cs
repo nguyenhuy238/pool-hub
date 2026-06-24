@@ -34,9 +34,14 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
             .GroupBy(x => x.RoleId)
             .Select(x => new { RoleId = x.Key, Count = x.Count() })
             .ToDictionaryAsync(x => x.RoleId, x => x.Count, ct);
+        var permissionRows = await (from rolePermission in db.RolePermissions
+                                    join permission in db.Permissions on rolePermission.PermissionId equals permission.PermissionId
+                                    where ids.Contains(rolePermission.RoleId) && permission.IsActive
+                                    select new { rolePermission.RoleId, permission.Code }).ToListAsync(ct);
         return new PagedResult<RoleDto>
         {
-            Items = roles.Select(x => Map(x, counts.GetValueOrDefault(x.RoleId))).ToList(),
+            Items = roles.Select(x => Map(x, counts.GetValueOrDefault(x.RoleId),
+                permissionRows.Where(p => p.RoleId == x.RoleId).Select(p => p.Code).ToList())).ToList(),
             PageNumber = request.PageNumber,
             PageSize = request.PageSize,
             TotalItems = total
@@ -48,7 +53,11 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
         var role = await db.Roles.AsNoTracking().FirstOrDefaultAsync(x => x.RoleId == id && x.IsActive, ct)
             ?? throw new NotFoundException("Role not found.");
         var count = await db.UserRoles.CountAsync(x => x.RoleId == id, ct);
-        return Map(role, count);
+        var permissions = await (from rolePermission in db.RolePermissions
+                                 join permission in db.Permissions on rolePermission.PermissionId equals permission.PermissionId
+                                 where rolePermission.RoleId == id && permission.IsActive
+                                 select permission.Code).ToListAsync(ct);
+        return Map(role, count, permissions);
     }
 
     public async Task<RoleDto> CreateAsync(CreateRoleRequest request, long actorUserId, CancellationToken ct)
@@ -68,7 +77,7 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
         await auditService.LogAsync(actorUserId, AuditActions.RoleCreated, "Role",
             role.RoleId, newValues: new { role.Name, role.Description, role.IsSystem },
             description: "Role created.", ct: ct);
-        return Map(role, 0);
+        return Map(role, 0, []);
     }
 
     public async Task<RoleDto> UpdateAsync(long id, UpdateRoleRequest request, long actorUserId, CancellationToken ct)
@@ -109,7 +118,42 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
             description: "Role soft-deleted.", ct: ct);
     }
 
-    private static RoleDto Map(Role role, int userCount) => new()
+    public Task<List<PermissionDto>> GetPermissionsAsync(CancellationToken ct) =>
+        db.Permissions.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Group).ThenBy(x => x.Code)
+            .Select(x => new PermissionDto
+            {
+                PermissionId = x.PermissionId,
+                Code = x.Code,
+                Name = x.Name,
+                Group = x.Group,
+                Description = x.Description
+            }).ToListAsync(ct);
+
+    public async Task SetPermissionsAsync(long roleId, UpdateRolePermissionsRequest request, long actorUserId, CancellationToken ct)
+    {
+        var role = await db.Roles.FirstOrDefaultAsync(x => x.RoleId == roleId && x.IsActive, ct)
+            ?? throw new NotFoundException("Role not found.");
+        var permissionIds = request.PermissionIds.Distinct().ToList();
+        var validCount = await db.Permissions.CountAsync(x => permissionIds.Contains(x.PermissionId) && x.IsActive, ct);
+        if (validCount != permissionIds.Count) throw new ValidationException("One or more permissions are invalid.");
+
+        var existing = await db.RolePermissions.Where(x => x.RoleId == roleId).ToListAsync(ct);
+        var oldIds = existing.Select(x => x.PermissionId).ToList();
+        db.RolePermissions.RemoveRange(existing);
+        db.RolePermissions.AddRange(permissionIds.Select(permissionId => new RolePermission
+        {
+            RoleId = roleId,
+            PermissionId = permissionId,
+            AssignedByUserId = actorUserId
+        }));
+        role.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        await auditService.LogAsync(actorUserId, "ROLE_PERMISSIONS_UPDATED", nameof(Role), roleId,
+            oldValues: new { PermissionIds = oldIds }, newValues: new { PermissionIds = permissionIds },
+            description: "Role permissions updated.", ct: ct);
+    }
+
+    private static RoleDto Map(Role role, int userCount, List<string> permissionCodes) => new()
     {
         RoleId = role.RoleId,
         Name = role.Name,
@@ -119,5 +163,6 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
         UserCount = userCount,
         CreatedAtUtc = role.CreatedAtUtc,
         UpdatedAtUtc = role.UpdatedAtUtc
+        ,PermissionCodes = permissionCodes
     };
 }

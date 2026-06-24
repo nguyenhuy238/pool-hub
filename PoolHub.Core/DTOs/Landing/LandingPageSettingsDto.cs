@@ -7,6 +7,7 @@ public class LandingPageSettingsDto
     public GeneralInfoDto GeneralInfo { get; set; } = new();
     public PromotionBannerDto PromotionBanner { get; set; } = new();
     public HeroSectionDto Hero { get; set; } = new();
+    public AboutSectionDto About { get; set; } = new();
     public List<UspItemDto> UspItems { get; set; } = [];
     public List<ServiceHighlightDto> Services { get; set; } = [];
     public List<PricingHighlightDto> PricingHighlights { get; set; } = [];
@@ -15,6 +16,45 @@ public class LandingPageSettingsDto
     public List<SocialLinkDto> SocialLinks { get; set; } = [];
     public BookingPolicyDto BookingPolicy { get; set; } = new();
     public SeoSettingsDto Seo { get; set; } = new();
+    public FooterSettingsDto Footer { get; set; } = new();
+    public LegalSettingsDto Legal { get; set; } = new();
+    public ThemeSettingsDto Theme { get; set; } = new();
+    public QrCodeSettingsDto QrCode { get; set; } = new();
+}
+
+public class AboutSectionDto
+{
+    public bool IsEnabled { get; set; } = true;
+    public string Eyebrow { get; set; } = "Về PoolHub";
+    public string Title { get; set; } = "Không gian giải trí dành cho mọi cuộc gặp";
+    public string Description { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
+}
+
+public class FooterSettingsDto
+{
+    public string MenuTitle { get; set; } = "Menu nhanh";
+    public string PolicyTitle { get; set; } = "Chính sách";
+    public string Copyright { get; set; } = "Copyright 2026 PoolHub.";
+}
+
+public class LegalSettingsDto
+{
+    public string PrivacyPolicy { get; set; } = string.Empty;
+    public string TermsOfService { get; set; } = string.Empty;
+}
+
+public class ThemeSettingsDto
+{
+    public string PrimaryColor { get; set; } = "#0f5d4b";
+    public string AccentColor { get; set; } = "#c89d3f";
+}
+
+public class QrCodeSettingsDto
+{
+    public bool IsEnabled { get; set; }
+    public string? ImageUrl { get; set; }
+    public string? Caption { get; set; }
 }
 
 public class GeneralInfoDto
