@@ -159,7 +159,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             ]} />
           </section>
           <section className="card">
-            <h3>Lịch sử session</h3>
+            <h3>Lịch sử phiên chơi</h3>
             <DataTable rows={sessions as unknown as Record<string, unknown>[]} columns={[
               { key: "sessionCode", label: "Mã" },
               { key: "startedAtUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startedAtUtc)) },

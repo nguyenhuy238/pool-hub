@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
+import { getTotalPages } from "@/lib/api/client";
 import { dateTime, label, bookingStatus } from "@/lib/status";
-import { Badge, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
+import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Booking } from "@/types";
 import { BookingModal } from "./BookingModal";
@@ -13,6 +14,7 @@ export default function BookingsPage() {
   const [status, setStatus] = useState("");
   const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20 });
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [cancelling, setCancelling] = useState<Booking | null>(null);
   
   // Load tables, table types, and bookings concurrently
   const { data, loading, error, reload } = useLoad(async () => {
@@ -48,13 +50,13 @@ export default function BookingsPage() {
         description="Theo dõi và tạo lịch đặt bàn mới cho khách hàng." 
         action={
           <div style={{display: 'flex', gap: '12px'}}>
-            <a href="/operation/bookings/calendar" className="primary-btn" style={{background: '#123b63', textDecoration: 'none'}}>📅 Xem Lịch (Calendar)</a>
+            <a href="/operation/bookings/calendar" className="primary-btn" style={{background: '#123b63', textDecoration: 'none'}}>Xem lịch</a>
             <select value={status} onChange={(e) => setStatus(e.target.value)} style={{padding: '8px', borderRadius: '6px', border: '1px solid var(--line)'}}>
               <option value="">Tất cả trạng thái</option>
-              <option value="1">Chờ xác nhận (Pending)</option>
-              <option value="2">Đã xác nhận (Confirmed)</option>
-              <option value="3">Đã hủy (Cancelled)</option>
-              <option value="4">Hoàn thành (Completed)</option>
+              <option value="1">Chờ xác nhận</option>
+              <option value="2">Đã xác nhận</option>
+              <option value="3">Đã hủy</option>
+              <option value="4">Hoàn thành</option>
             </select>
           </div>
         } 
@@ -123,7 +125,7 @@ export default function BookingsPage() {
               <button 
                 className="danger-btn" 
                 style={{padding: '6px 12px', fontSize: '13px'}} 
-                onClick={() => action(bookingApi.cancel(Number(row.bookingId)), "Đã hủy booking.")}
+                onClick={() => setCancelling(row as unknown as Booking)}
               >
                 Hủy
               </button>
@@ -133,9 +135,10 @@ export default function BookingsPage() {
       />
       <Pagination 
         pageNumber={params.pageNumber} 
-        totalPages={(data?.bookings as any)?.totalCount ? Math.ceil((data?.bookings as any).totalCount / params.pageSize) : 102}
+        totalPages={getTotalPages(data?.bookings, params.pageSize)}
         onChange={(page) => setParams(prev => ({ ...prev, pageNumber: page }))} 
       />
+      {cancelling ? <ConfirmDialog title="Hủy đặt bàn" message={`Xác nhận hủy đặt bàn ${cancelling.bookingCode || cancelling.bookingId}?`} confirmLabel="Hủy đặt bàn" danger onCancel={() => setCancelling(null)} onConfirm={async () => { await action(bookingApi.cancel(cancelling.bookingId), "Đã hủy booking."); setCancelling(null); }} /> : null}
     </>
   );
 }

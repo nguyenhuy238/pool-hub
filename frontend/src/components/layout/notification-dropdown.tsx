@@ -2,19 +2,22 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { miscApi } from "@/lib/api/endpoints";
 import { useAuth } from "@/components/auth-provider";
+import { notificationService } from "@/services/notification-service";
+import type { Notification } from "@/types";
 
 export function NotificationDropdown() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(0);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) return;
-    miscApi.notificationUnreadCount()
+    notificationService.getUnreadCount()
       .then(res => setCount(res.count))
       .catch(() => {});
   }, [user]);
@@ -31,22 +34,28 @@ export function NotificationDropdown() {
 
   const toggleDropdown = async () => {
     if (!open) {
+      setLoading(true);
+      setError("");
       try {
-        const data = await miscApi.notifications();
-        setNotifications((data as any).items || data || []);
-      } catch (err) {}
+        const data = await notificationService.getNotifications({ pageNumber: 1, pageSize: 5 });
+        setNotifications(data.items ?? []);
+      } catch {
+        setError("Không tải được thông báo.");
+      } finally {
+        setLoading(false);
+      }
     }
     setOpen(!open);
   };
 
   const markAsRead = async (id: number) => {
-    await miscApi.notificationRead(id);
+    await notificationService.markAsRead(id);
     setNotifications(prev => prev.map(n => n.notificationId === id ? { ...n, isRead: true } : n));
     setCount(c => Math.max(0, c - 1));
   };
 
   const markAllAsRead = async () => {
-    await miscApi.notificationReadAll();
+    await notificationService.markAllAsRead();
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setCount(0);
   };
@@ -69,10 +78,14 @@ export function NotificationDropdown() {
             {count > 0 && <button className="ghost-btn" style={{ fontSize: "12px", padding: "4px 8px" }} onClick={markAllAsRead}>Đánh dấu đã đọc tất cả</button>}
           </div>
           <div style={{ maxHeight: "300px", overflowY: "auto" }}>
-            {notifications.length === 0 ? (
+            {loading ? (
+              <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>Đang tải...</div>
+            ) : error ? (
+              <div style={{ padding: "20px", textAlign: "center", color: "#b42318" }}>{error}</div>
+            ) : notifications.length === 0 ? (
               <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>Không có thông báo</div>
             ) : (
-              notifications.map((n: any) => (
+              notifications.map((n) => (
                 <div key={n.notificationId} onClick={() => { if (!n.isRead) markAsRead(n.notificationId); }} style={{ padding: "12px 16px", borderBottom: "1px solid #eee", cursor: "pointer", background: n.isRead ? "white" : "#f0f8ff" }}>
                   <div style={{ fontWeight: n.isRead ? "normal" : "bold", fontSize: "14px", marginBottom: "4px" }}>{n.title}</div>
                   <div style={{ fontSize: "12px", color: "#555" }}>{n.message}</div>
@@ -81,7 +94,7 @@ export function NotificationDropdown() {
             )}
           </div>
           <div style={{ padding: "8px", textAlign: "center", borderTop: "1px solid #eee", background: "#f9f9f9" }}>
-            <Link href="/operation/notifications" onClick={() => setOpen(false)} style={{ fontSize: "13px", color: "var(--primary)", textDecoration: "none" }}>Xem tất cả thông báo</Link>
+            <Link href="/notifications" onClick={() => setOpen(false)} style={{ fontSize: "13px", color: "var(--primary)", textDecoration: "none" }}>Xem tất cả thông báo</Link>
           </div>
         </div>
       )}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { invoiceApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
-import { DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
+import { ConfirmDialog, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Invoice, PaymentMethod } from "@/types";
 
@@ -11,6 +11,11 @@ export default function InvoicesPage() {
   const toast = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState<number | "">("");
+  const [confirmPayment, setConfirmPayment] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
   const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20 });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods] = await Promise.all([
@@ -39,6 +44,38 @@ export default function InvoicesPage() {
     reload();
   }
 
+  async function cancelInvoice() {
+    if (!invoice || !cancelReason.trim()) {
+      toast("Vui lòng nhập lý do hủy hóa đơn.", "error");
+      return;
+    }
+    await invoiceApi.cancel(invoice.invoiceId, cancelReason.trim())
+      .then(async () => {
+        toast("Hóa đơn đã bị hủy.", "success");
+        setCancelOpen(false);
+        setCancelReason("");
+        await loadDetail(invoice.invoiceId);
+        reload();
+      })
+      .catch(err => toast(err.message, "error"));
+  }
+
+  async function applyDiscount() {
+    if (!invoice || !discountCode.trim()) {
+      toast("Vui lòng nhập mã giảm giá.", "error");
+      return;
+    }
+    await invoiceApi.discount(invoice.invoiceId, discountCode.trim())
+      .then(async () => {
+        toast("Đã áp dụng mã giảm giá.", "success");
+        setDiscountOpen(false);
+        setDiscountCode("");
+        await loadDetail(invoice.invoiceId);
+        reload();
+      })
+      .catch(err => toast(err.message, "error"));
+  }
+
   return (
     <>
       <PageHeader title="Hóa đơn và thanh toán" description="Tạo hóa đơn, xem chi tiết và ghi nhận thanh toán." />
@@ -46,7 +83,7 @@ export default function InvoicesPage() {
       <SmartForm<{ sessionId: number }> 
         title="Tạo hóa đơn từ phiên chơi"
         initial={{}} 
-        fields={[{ name: "sessionId", label: "Session ID", type: "number", required: true }]} 
+        fields={[{ name: "sessionId", label: "Mã phiên chơi", type: "number", required: true }]} 
         onSubmit={async (value) => { 
           const created = await invoiceApi.generate(Number(value.sessionId)); 
           setInvoice(await invoiceApi.detail(created.invoiceId)); 
@@ -58,7 +95,7 @@ export default function InvoicesPage() {
         rows={invoices as unknown as Record<string, unknown>[]} 
         columns={[
           { key: "invoiceCode", label: "Mã" },
-          { key: "sessionId", label: "Session" },
+          { key: "sessionId", label: "Phiên chơi" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
           { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
         ]} 
@@ -71,10 +108,9 @@ export default function InvoicesPage() {
               {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : Number(invoice.status) === 3 ? <span className="badge red" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ HỦY</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}
             </div>
             <button className="ghost-btn" onClick={() => {
-              invoiceApi.exportPdf(invoice.invoiceId).then(res => { 
-                const printWindow = window.open("", "_blank");
-                if (printWindow) {
-                  printWindow.document.write(`<html><head><title>Invoice ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
+              const printWindow = window.open("", "_blank");
+              if (printWindow) {
+                printWindow.document.write(`<html><head><title>Hoa don ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
                     <h1 style="text-align:center;">HÓA ĐƠN THANH TOÁN</h1>
                     <h3 style="text-align:center; color: #555;">Mã: ${invoice.invoiceCode || invoice.invoiceId}</h3>
                     <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
@@ -86,10 +122,9 @@ export default function InvoicesPage() {
                     <p style="text-align:center; margin-top: 40px; font-style: italic;">Cảm ơn quý khách và hẹn gặp lại!</p>
                     <script>setTimeout(() => window.print(), 500);</script>
                   </body></html>`);
-                  printWindow.document.close();
-                }
-              }).catch(err => toast(err.message, "error"));
-            }}>In PDF / Xuất Bill</button>
+                printWindow.document.close();
+              }
+            }}>In bill</button>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
@@ -113,21 +148,9 @@ export default function InvoicesPage() {
                 <option value="">-- Chọn phương thức thanh toán --</option>
                 {methods.map((method) => <option key={method.paymentMethodId} value={method.paymentMethodId}>{method.name}</option>)}
               </select>
-              <button className="primary-btn" onClick={pay}>Thanh toán ngay</button>
-              <button className="ghost-btn" onClick={() => {
-                const code = window.prompt("Nhập mã giảm giá");
-                if (code) invoiceApi.discount(invoice.invoiceId, code).then(async () => { toast("Đã áp dụng discount.", "success"); await loadDetail(invoice.invoiceId); reload(); }).catch((err) => toast(err.message, "error"));
-              }}>Áp dụng mã giảm giá</button>
-              <button className="danger-btn" style={{ marginLeft: "auto" }} onClick={() => {
-                const reason = window.prompt("Nhập lý do hủy hóa đơn:");
-                if (reason) {
-                  invoiceApi.cancel(invoice.invoiceId, reason).then(async () => {
-                    toast("Hóa đơn đã bị hủy.", "success");
-                    await loadDetail(invoice.invoiceId);
-                    reload();
-                  }).catch(err => toast(err.message, "error"));
-                }
-              }}>Hủy hóa đơn</button>
+              <button className="primary-btn" onClick={() => setConfirmPayment(true)}>Thanh toán ngay</button>
+              <button className="ghost-btn" onClick={() => setDiscountOpen(true)}>Áp dụng mã giảm giá</button>
+              <button className="danger-btn" style={{ marginLeft: "auto" }} onClick={() => setCancelOpen(true)}>Hủy hóa đơn</button>
             </div>
           ) : (
             <div className="state-card" style={{ background: '#e4f7ec', color: '#187344', border: '1px solid #c2ebd5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -136,6 +159,19 @@ export default function InvoicesPage() {
           )}
         </Modal>
       ) : null}
+      {confirmPayment && invoice ? <ConfirmDialog title="Ghi nhận thanh toán" message={`Xác nhận thanh toán ${money(invoice.grandTotalAmount || 0)} cho hóa đơn này?`} confirmLabel="Thanh toán" onCancel={() => setConfirmPayment(false)} onConfirm={async () => { setConfirmPayment(false); await pay(); }} /> : null}
+      {discountOpen && invoice ? <Modal title="Áp dụng mã giảm giá" onClose={() => setDiscountOpen(false)}>
+        <div className="form-stack">
+          <label><span>Mã giảm giá</span><input value={discountCode} onChange={(event) => setDiscountCode(event.target.value)} /></label>
+          <div className="modal-actions"><button className="ghost-btn" onClick={() => setDiscountOpen(false)}>Hủy</button><button className="primary-btn" onClick={applyDiscount}>Áp dụng</button></div>
+        </div>
+      </Modal> : null}
+      {cancelOpen && invoice ? <Modal title="Hủy hóa đơn" onClose={() => setCancelOpen(false)}>
+        <div className="form-stack">
+          <label><span>Lý do hủy</span><textarea rows={4} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></label>
+          <div className="modal-actions"><button className="ghost-btn" onClick={() => setCancelOpen(false)}>Hủy</button><button className="danger-btn" onClick={cancelInvoice}>Xác nhận hủy hóa đơn</button></div>
+        </div>
+      </Modal> : null}
     </>
   );
 }

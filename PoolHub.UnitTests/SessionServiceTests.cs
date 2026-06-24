@@ -48,6 +48,43 @@ public class SessionServiceTests
     }
 
     [Fact]
+    public async Task StartAsync_WhenTableIsNotAvailable_ThrowsBusinessRuleException()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        db.VenueTables.Add(new VenueTable { TableId = 1, TableName = "Table 1", TableTypeId = 1, OperationalStatus = 3, IsActive = true });
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db);
+        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.StartAsync(99, new StartSessionRequest { TableId = 1 }, CancellationToken.None));
+
+        Assert.Equal("Table is not available for a new session.", exception.Message);
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenCustomerIsBlocked_ThrowsBusinessRuleException()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        db.Customers.Add(new Customer { CustomerId = 1, FullName = "Blocked Customer", PhoneNumber = "0900000000", Status = false });
+        db.VenueTables.Add(new VenueTable { TableId = 1, TableName = "Table 1", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db);
+        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.StartAsync(99, new StartSessionRequest { TableId = 1, CustomerId = 1 }, CancellationToken.None));
+
+        Assert.Equal("Customer is blocked or inactive.", exception.Message);
+    }
+
+    [Fact]
     public async Task TransferTableAsync_WhenNewTableAlreadyHasActiveSession_ThrowsBusinessRuleException()
     {
         // Arrange

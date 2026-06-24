@@ -16,20 +16,20 @@ export default function PricingRulesPage() {
         title="Tạo quy tắc tính giá"
         initial={{ minimumMinutes: 30, billingBlockMinutes: 15 }}
         fields={[
-          { name: "pricingPlanId", label: "Plan ID", type: "number", required: true },
-          { name: "tableTypeId", label: "Table Type ID", type: "number", required: true },
-          { name: "dayOfWeek", label: "Day of week", type: "number", required: true },
+          { name: "pricingPlanId", label: "Mã bảng giá", type: "number", required: true },
+          { name: "tableTypeId", label: "Mã loại bàn", type: "number", required: true },
+          { name: "dayOfWeek", label: "Thứ trong tuần", type: "number", required: true },
           { name: "hourlyRate", label: "Giá/giờ", type: "number", required: true }
         ]}
         onSubmit={async (value) => { await pricingApi.createRule(Number(value.pricingPlanId), value); reload(); }}
       />
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
       <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
-        { key: "pricingPlanId", label: "Plan" },
+        { key: "pricingPlanId", label: "Bảng giá" },
         { key: "tableTypeId", label: "Loại bàn" },
         { key: "dayOfWeek", label: "Thứ" },
         { key: "hourlyRate", label: "Giá", render: (row) => money(Number(row.hourlyRate)) }
-      ]} actions={(row) => <button className="danger-btn" onClick={() => pricingApi.deleteRule(Number(row.pricingPlanId), Number(row.pricingPlanRuleId)).then(() => reload())}>Delete</button>} />
+      ]} actions={(row) => <button className="danger-btn" onClick={() => pricingApi.deleteRule(Number(row.pricingPlanId), Number(row.pricingPlanRuleId)).then(() => reload())}>Xóa</button>} />
     </>
   );
 }

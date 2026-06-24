@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useState } from "react";
+import { ConfirmDialog } from "@/components/ui";
 import { mediaApi, type MediaAsset } from "@/lib/api/mediaApi";
 import { useToast } from "@/components/toast";
 
@@ -26,6 +27,7 @@ export function MediaLibraryModal({
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState(mediaType);
   const [folder, setFolder] = useState(initialFolder || "all");
+  const [deleting, setDeleting] = useState<MediaAsset | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,11 +53,12 @@ export function MediaLibraryModal({
 
   if (!open) return null;
 
-  async function remove(asset: MediaAsset) {
-    if (!window.confirm(`Xóa media "${asset.originalFileName}"?`)) return;
+  async function remove() {
+    if (!deleting) return;
     try {
-      await mediaApi.delete(asset.mediaAssetId);
+      await mediaApi.delete(deleting.mediaAssetId);
       toast("Đã xóa media.", "success");
+      setDeleting(null);
       await load();
     } catch (error) {
       toast(error instanceof Error ? error.message : "Không thể xóa media.", "error");
@@ -69,18 +72,18 @@ export function MediaLibraryModal({
 
   return (
     <div className="media-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="media-modal" role="dialog" aria-modal="true" aria-label="Media Library">
+      <div className="media-modal" role="dialog" aria-modal="true" aria-label="Thư viện media">
         <div className="media-modal-head">
-          <div><h2>Media Library</h2><p>Chọn media đã upload hoặc quản lý file hiện có.</p></div>
+          <div><h2>Thư viện media</h2><p>Chọn media đã upload hoặc quản lý file hiện có.</p></div>
           <button type="button" className="ghost-btn" onClick={onClose}>Đóng</button>
         </div>
         <div className="media-library-controls">
           <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm theo tên file" />
           <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}>
-            <option value="all">All</option><option value="image">Image</option><option value="video">Video</option>
+            <option value="all">Tất cả</option><option value="image">Ảnh</option><option value="video">Video</option>
           </select>
           <select value={folder} onChange={(event) => setFolder(event.target.value)}>
-            {folders.map((item) => <option key={item} value={item}>{item === "all" ? "All folders" : item}</option>)}
+            {folders.map((item) => <option key={item} value={item}>{item === "all" ? "Tất cả thư mục" : item}</option>)}
           </select>
           <button type="button" className="primary-btn" onClick={load}>Tìm kiếm</button>
         </div>
@@ -100,13 +103,14 @@ export function MediaLibraryModal({
                 <span>{new Date(asset.createdAtUtc).toLocaleDateString("vi-VN")}</span>
               </div>
               <div className="media-manager-actions">
-                <button type="button" className="ghost-btn" onClick={() => copyUrl(asset.url)}>Copy URL</button>
-                <button type="button" className="danger-btn" onClick={() => remove(asset)}>Xóa</button>
+                <button type="button" className="ghost-btn" onClick={() => copyUrl(asset.url)}>Sao chép URL</button>
+                <button type="button" className="danger-btn" onClick={() => setDeleting(asset)}>Xóa</button>
               </div>
             </article>
           ))}
         </div>
       </div>
+      {deleting ? <ConfirmDialog title="Xóa media" message={`Xóa media "${deleting.originalFileName}"?`} confirmLabel="Xóa" danger onCancel={() => setDeleting(null)} onConfirm={remove} /> : null}
     </div>
   );
 }

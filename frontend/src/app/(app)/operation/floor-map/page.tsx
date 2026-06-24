@@ -1,42 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { venueApi, sessionApi, invoiceApi } from "@/lib/api/endpoints";
 import { label, tableStatus } from "@/lib/status";
-import { Badge, PageHeader, StateBlock, useLoad } from "@/components/ui";
+import { Badge, ConfirmDialog, PageHeader, StateBlock, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { VenueTableLayoutItem } from "@/types";
 import "./floor-map.css";
 
 export default function FloorMapPage() {
   const toast = useToast();
-  const [selected, setSelected] = useState<VenueTableLayoutItem | null>(null);
+  const [selected, setSelected] = useState<(VenueTableLayoutItem & { zoneName?: string }) | null>(null);
+  const [endingSessionId, setEndingSessionId] = useState<number | null>(null);
   const [activeFloorId, setActiveFloorId] = useState<number | null>(null);
 
   const { data: layoutRes, loading, error, reload } = useLoad(async () => {
     return await venueApi.layout();
   }, []);
 
-  const floors = layoutRes?.floors || [];
+  const floors = useMemo(() => layoutRes?.floors ?? [], [layoutRes?.floors]);
   
-  // Set default active floor when data is loaded
-  if (floors.length > 0 && activeFloorId === null) {
-    setActiveFloorId(floors[0].floorId);
-  }
+  useEffect(() => {
+    if (floors.length > 0 && activeFloorId === null) {
+      setActiveFloorId(floors[0].floorId);
+    }
+  }, [activeFloorId, floors]);
 
   const activeFloor = floors.find(f => f.floorId === activeFloorId) || floors[0];
 
-  async function startSession(tableId: number) {
-    await sessionApi.start({ tableId }).then(() => toast("Đã mở phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
+  async function startSession(table: VenueTableLayoutItem) {
+    if (table.operationalStatus !== 1) {
+      toast("Chỉ có thể mở phiên trên bàn đang sẵn sàng.", "error");
+      return;
+    }
+    await sessionApi.start({ tableId: table.tableId }).then(() => toast("Đã mở phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
     reload();
     setSelected(null);
   }
 
   async function endSession(sessionId: number) {
-    if (!confirm("Đóng phiên chơi này?")) return;
-    await sessionApi.end(sessionId).then(() => toast("Đã đóng session.", "success")).catch((err) => toast(err.message, "error"));
+    await sessionApi.end(sessionId).then(() => toast("Đã đóng phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
     reload();
     setSelected(null);
+    setEndingSessionId(null);
   }
 
   async function generateInvoice(sessionId: number) {
@@ -58,7 +64,7 @@ export default function FloorMapPage() {
     <div className="layout-container">
       <PageHeader title="Sơ đồ cơ sở" description="Theo dõi trạng thái bàn và phiên chơi theo thời gian thực." />
       
-      <StateBlock loading={loading} error={error} empty={!loading && floors.length === 0} />
+      <StateBlock loading={loading} error={error} empty={!loading && (!floors.length || !layoutRes?.totalTables)} />
 
       {!loading && layoutRes && (
         <div className="stats-bar">
@@ -105,7 +111,7 @@ export default function FloorMapPage() {
                   <div 
                     key={table.tableId} 
                     className={`venue-table-card status-${table.operationalStatus}`}
-                    onClick={() => setSelected(table)}
+                    onClick={() => setSelected({ ...table, zoneName: zone.zoneName })}
                   >
                     <div className="table-header">
                       <div>
@@ -120,7 +126,7 @@ export default function FloorMapPage() {
                     <div className="table-footer">
                       <span className="table-type">{table.tableTypeName} • {table.capacity} khách</span>
                       {table.activeSessionId && (
-                        <span className="active-session-badge">Session #{table.activeSessionId}</span>
+                        <span className="active-session-badge">Phiên #{table.activeSessionId}</span>
                       )}
                     </div>
                   </div>
@@ -145,21 +151,30 @@ export default function FloorMapPage() {
               <label>Sức chứa</label>
               <strong>{selected.capacity} người</strong>
             </div>
+            <div>
+              <label>Khu vực</label>
+              <strong>{selected.zoneName ?? "-"}</strong>
+            </div>
+            <div>
+              <label>Trạng thái</label>
+              <strong>{label(tableStatus, selected.operationalStatus)}</strong>
+            </div>
           </div>
 
           <div className="actions">
             {selected.activeSessionId ? (
               <>
-                <button className="danger-btn" style={{flex: 1}} onClick={() => endSession(selected.activeSessionId!)}>Đóng phiên</button>
-                <button className="secondary-btn" onClick={() => generateInvoice(selected.activeSessionId!)}>Tạo Invoice</button>
+                <button className="danger-btn" style={{flex: 1}} onClick={() => setEndingSessionId(selected.activeSessionId!)}>Đóng phiên</button>
+                <button className="secondary-btn" onClick={() => generateInvoice(selected.activeSessionId!)}>Tạo hóa đơn</button>
               </>
             ) : (
-              <button className="primary-btn" style={{flex: 1}} onClick={() => startSession(selected.tableId)}>Bắt đầu phiên chơi</button>
+              <button className="primary-btn" style={{flex: 1}} disabled={selected.operationalStatus !== 1} onClick={() => startSession(selected)}>Bắt đầu phiên chơi</button>
             )}
             <button className="ghost-btn" onClick={() => setSelected(null)}>Đóng</button>
           </div>
         </div>
       ) : null}
+      {endingSessionId ? <ConfirmDialog title="Đóng phiên chơi" message="Xác nhận đóng phiên chơi này?" confirmLabel="Đóng phiên" danger onCancel={() => setEndingSessionId(null)} onConfirm={() => endSession(endingSessionId)} /> : null}
     </div>
   );
 }

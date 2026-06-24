@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, toQuery } from "@/lib/api/client";
 import type { Notification, PagedResult } from "@/types";
 
 export type NotificationQueryRequest = {
@@ -14,14 +14,8 @@ export type CreateNotificationRequest = {
 };
 
 export const notificationService = {
-  getNotifications: (params?: NotificationQueryRequest) => {
-    const query = new URLSearchParams();
-    if (params?.isRead !== undefined) query.append("isRead", params.isRead.toString());
-    if (params?.pageNumber) query.append("pageNumber", params.pageNumber.toString());
-    if (params?.pageSize) query.append("pageSize", params.pageSize.toString());
-    
-    return apiFetch<PagedResult<Notification>>(`/api/notifications?${query.toString()}`);
-  },
+  getNotifications: (params: NotificationQueryRequest = {}) =>
+    apiFetch<PagedResult<Notification>>(`/api/notifications${toQuery(params)}`),
 
   getNotificationById: (id: number) =>
     apiFetch<Notification>(`/api/notifications/${id}`),
@@ -34,4 +28,10 @@ export const notificationService = {
 
   markAllAsRead: () =>
     apiFetch("/api/notifications/read-all", { method: "PATCH" }),
+
+  getUnreadCount: () =>
+    apiFetch<{ count: number }>("/api/notifications/unread-count"),
+
+  deleteNotification: (id: number) =>
+    apiFetch(`/api/notifications/${id}`, { method: "DELETE" }),
 };

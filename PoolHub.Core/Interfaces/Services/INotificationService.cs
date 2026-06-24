@@ -6,6 +6,7 @@ namespace PoolHub.Core.Interfaces.Services;
 public interface INotificationService
 {
     Task<List<NotificationDto>> GetNotificationsAsync(long userId, CancellationToken ct);
+    Task<PagedResult<NotificationDto>> GetNotificationsAsync(long userId, NotificationQueryRequest request, CancellationToken ct);
     Task<PagedResult<NotificationDto>> GetNotificationsAsync(NotificationQueryRequest request, CancellationToken ct);
     Task<NotificationDto> GetNotificationAsync(long id, long userId, bool isAdmin, CancellationToken ct);
     Task<NotificationDto> CreateAsync(CreateNotificationRequest request, CancellationToken ct);

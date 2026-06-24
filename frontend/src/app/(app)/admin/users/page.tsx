@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { RoleGuard } from "@/components/guards";
 import { useToast } from "@/components/toast";
-import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, StateBlock } from "@/components/ui";
+import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
 import { FileUploadButton } from "@/components/admin/settings/FileUploadButton";
 import { ROLES } from "@/lib/auth/constants";
 import { dateTime, userStatus } from "@/lib/status";
@@ -22,6 +22,7 @@ export default function UsersPage() {
   const toast = useToast();
   const isAdmin = hasRole(ROLES.ADMIN);
   const [query, setQuery] = useState({ keyword: "", status: "", roleId: "", pageNumber: 1, pageSize: 10 });
+  const debouncedKeyword = useDebouncedValue(query.keyword, 350);
   const [result, setResult] = useState<PagedResult<User> | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +38,7 @@ export default function UsersPage() {
     try {
       const [usersResult, rolesResult] = await Promise.all([
         userService.getUsers({
-          keyword: query.keyword || undefined,
+          keyword: debouncedKeyword || undefined,
           status: query.status || undefined,
           roleId: query.roleId ? Number(query.roleId) : undefined,
           pageNumber: query.pageNumber,
@@ -55,10 +56,9 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 250);
-    return () => window.clearTimeout(timer);
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.keyword, query.status, query.roleId, query.pageNumber, query.pageSize]);
+  }, [debouncedKeyword, query.status, query.roleId, query.pageNumber, query.pageSize]);
 
   const roleByName = useMemo(() => new Map(roles.map((role) => [role.name, role])), [roles]);
 
@@ -79,12 +79,12 @@ export default function UsersPage() {
     <>
       <PageHeader title="Người dùng" description="Tìm kiếm, quản lý trạng thái và phân quyền tài khoản."
         action={<RoleGuard roles={[ROLES.ADMIN]}><button className="primary-btn" onClick={() => setCreateOpen(true)}>+ Tạo người dùng</button></RoleGuard>} />
-      <div className="card filter-grid">
+      <SearchFilterBar>
         <label><span>Tìm kiếm</span><input placeholder="Tên hoặc email" value={query.keyword} onChange={(e) => setQuery({ ...query, keyword: e.target.value, pageNumber: 1 })} /></label>
         <label><span>Trạng thái</span><select value={query.status} onChange={(e) => setQuery({ ...query, status: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option><option value="Active">Đang hoạt động</option><option value="Locked">Đã khóa</option><option value="Deleted">Đã xóa</option></select></label>
         <label><span>Vai trò</span><select value={query.roleId} onChange={(e) => setQuery({ ...query, roleId: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{roles.map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select></label>
         <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => setQuery({ ...query, pageSize: Number(e.target.value), pageNumber: 1 })}><option>10</option><option>20</option><option>50</option></select></label>
-      </div>
+      </SearchFilterBar>
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
       {!loading && rows.length ? (
         <>
@@ -179,6 +179,7 @@ function UserDetailModal({ userId, editable, onClose, onSaved }: { userId: numbe
 function ManageRolesModal({ user, roles, roleByName, onClose, onSaved }: { user: User; roles: Role[]; roleByName: Map<string | undefined, Role>; onClose: () => void; onSaved: () => Promise<void> }) {
   const toast = useToast();
   const [selected, setSelected] = useState<number[]>([]);
+  const [removing, setRemoving] = useState<{ roleId: number; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const currentRoleIds = user.roles.map((name) => roleByName.get(name)?.roleId).filter((id): id is number => Boolean(id));
   const available = roles.filter((role) => role.roleId && !currentRoleIds.includes(role.roleId));
@@ -191,14 +192,18 @@ function ManageRolesModal({ user, roles, roleByName, onClose, onSaved }: { user:
   }
   async function remove(roleId: number) {
     setBusy(true);
-    try { await userService.removeRole(user.userId, roleId); toast("Đã gỡ vai trò.", "success"); onClose(); await onSaved(); }
+    try { await userService.removeRole(user.userId, roleId); toast("Đã gỡ vai trò.", "success"); setRemoving(null); onClose(); await onSaved(); }
     catch (err) { toast(err instanceof Error ? err.message : "Không thể gỡ vai trò.", "error"); }
     finally { setBusy(false); }
   }
   return <Modal title={`Quản lý vai trò — ${user.fullName}`} onClose={onClose}>
-    <div className="role-manager"><h3>Vai trò hiện tại</h3>{user.roles.map((name) => <div className="role-row" key={name}><Badge tone="blue">{name}</Badge><button className="danger-btn compact" disabled={busy || user.roles.length <= 1} onClick={() => remove(roleByName.get(name)?.roleId ?? 0)}>Gỡ</button></div>)}
+    <div className="role-manager"><h3>Vai trò hiện tại</h3>{user.roles.map((name) => {
+      const roleId = roleByName.get(name)?.roleId ?? 0;
+      return <div className="role-row" key={name}><Badge tone="blue">{name}</Badge><button className="danger-btn compact" disabled={busy || user.roles.length <= 1 || !roleId} onClick={() => setRemoving({ roleId, name })}>Gỡ</button></div>;
+    })}
       <h3>Thêm vai trò</h3><div className="role-options">{available.map((role) => <label className="check-option" key={role.roleId}><input type="checkbox" checked={selected.includes(role.roleId!)} onChange={(e) => setSelected(e.target.checked ? [...selected, role.roleId!] : selected.filter((id) => id !== role.roleId))} />{role.name}</label>)}</div>
       <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Đóng</button><button className="primary-btn" disabled={busy || !selected.length} onClick={assign}>Gán vai trò</button></div>
     </div>
+    {removing ? <ConfirmDialog title="Gỡ vai trò" message={`Gỡ vai trò “${removing.name}” khỏi ${user.fullName}?`} confirmLabel="Gỡ vai trò" danger busy={busy} onCancel={() => setRemoving(null)} onConfirm={() => remove(removing.roleId)} /> : null}
   </Modal>;
 }

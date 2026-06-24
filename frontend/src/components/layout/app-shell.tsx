@@ -12,7 +12,7 @@ const nav = [
   { href: "/dashboard", label: "Tổng quan vận hành", roles: OPERATION_ROLES },
   { href: "/operation/floor-map", label: "Sơ đồ bàn", roles: OPERATION_ROLES },
   { href: "/operation/bookings", label: "Đặt bàn", roles: OPERATION_ROLES },
-  { href: "/management/customers", label: "Khách hàng", roles: OPERATION_ROLES },
+  { href: "/management/customers", label: "Khách hàng", roles: MANAGEMENT_READ_ROLES },
   { href: "/operation/sessions", label: "Phiên chơi", roles: OPERATION_ROLES },
   { href: "/operation/orders", label: "Đơn hàng", roles: OPERATION_ROLES },
   { href: "/operation/invoices", label: "Hóa đơn", roles: OPERATION_ROLES },
@@ -24,8 +24,8 @@ const nav = [
   { href: "/management/venue-tables", label: "Bàn chơi", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/pricing-plans", label: "Bảng giá", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/pricing-rules", label: "Quy tắc tính giá", roles: MANAGEMENT_READ_ROLES },
-  { href: "/admin/users", label: "Người dùng", roles: MANAGEMENT_READ_ROLES },
-  { href: "/admin/roles", label: "Vai trò và quyền hạn", roles: MANAGEMENT_READ_ROLES },
+  { href: "/admin/users", label: "Người dùng", roles: [ROLES.ADMIN] },
+  { href: "/admin/roles", label: "Vai trò và quyền hạn", roles: [ROLES.ADMIN] },
   { href: "/admin/discounts", label: "Mã giảm giá", roles: [ROLES.ADMIN, ROLES.CASHIER] },
   { href: "/admin/inventory", label: "Tồn kho", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { href: "/admin/payments", label: "Thanh toán", roles: [ROLES.ADMIN, ROLES.CASHIER] },
@@ -33,7 +33,7 @@ const nav = [
   { href: "/admin/landing-settings", label: "Cấu hình trang chủ", roles: [ROLES.ADMIN] },
   { href: "/admin/audit-logs", label: "Nhật ký hệ thống", roles: MANAGEMENT_READ_ROLES },
   { href: "/change-password", label: "Đổi mật khẩu", roles: OPERATION_ROLES },
-  { href: "/operation/notifications", label: "Thông báo", roles: OPERATION_ROLES }
+  { href: "/notifications", label: "Thông báo", roles: OPERATION_ROLES }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

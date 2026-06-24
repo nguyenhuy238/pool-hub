@@ -35,6 +35,10 @@ export const venueApi = {
   zones: (params: Record<string, string | number | undefined> = {}) => apiFetch<Zone[] | { items?: Zone[] }>(`/api/zones${toQuery(params)}`),
   tableTypes: (params: Record<string, string | number | undefined> = {}) => apiFetch<TableType[] | { items?: TableType[] }>(`/api/table-types${toQuery(params)}`),
   tables: (params: Record<string, string | number | undefined> = {}) => apiFetch<VenueTable[] | { items?: VenueTable[] }>(`/api/venue-tables${toQuery(params)}`),
+  floorDetail: (id: number) => apiFetch<Floor>(`/api/floors/${id}`),
+  zoneDetail: (id: number) => apiFetch<Zone>(`/api/zones/${id}`),
+  tableTypeDetail: (id: number) => apiFetch<TableType>(`/api/table-types/${id}`),
+  tableDetail: (id: number) => apiFetch<VenueTable>(`/api/venue-tables/${id}`),
   createFloor: (body: Partial<Floor>) => apiFetch<Floor>("/api/floors", { method: "POST", body: JSON.stringify(body) }),
   updateFloor: (id: number, body: Partial<Floor>) => apiFetch<Floor>(`/api/floors/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteFloor: (id: number) => apiFetch(`/api/floors/${id}`, { method: "DELETE" }),
@@ -117,6 +121,7 @@ export const pricingApi = {
   updatePlan: (id: number, body: Partial<PricingPlan>) => apiFetch<PricingPlan>(`/api/pricing-plans/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deletePlan: (id: number) => apiFetch(`/api/pricing-plans/${id}`, { method: "DELETE" }),
   createRule: (planId: number, body: Partial<PricingPlanRule>) => apiFetch<PricingPlanRule>(`/api/pricing-plans/${planId}/rules`, { method: "POST", body: JSON.stringify(body) }),
+  updateRule: (planId: number, ruleId: number, body: Partial<PricingPlanRule>) => apiFetch<PricingPlanRule>(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteRule: (planId: number, ruleId: number) => apiFetch(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "DELETE" })
 };
 

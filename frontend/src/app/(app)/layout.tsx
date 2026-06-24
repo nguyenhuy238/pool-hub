@@ -8,13 +8,15 @@ import { MANAGEMENT_READ_ROLES, OPERATION_ROLES, ROLES } from "@/lib/auth/consta
 
 function rolesForPath(pathname: string): RoleName[] {
   if (pathname.startsWith("/admin/audit-logs")) return ["Admin", "Owner", "Manager"];
-  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/roles")) return MANAGEMENT_READ_ROLES;
+  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/roles")) return [ROLES.ADMIN];
   if (pathname.startsWith("/admin/landing-settings")) return [ROLES.ADMIN];
+  if (pathname.startsWith("/admin/discounts") || pathname.startsWith("/admin/payments")) return [ROLES.ADMIN, ROLES.CASHIER];
+  if (pathname.startsWith("/admin/inventory") || pathname.startsWith("/admin/reports")) return MANAGEMENT_READ_ROLES;
   if (pathname.startsWith("/admin")) return [ROLES.ADMIN];
-  if (pathname.startsWith("/management/customers")) return OPERATION_ROLES;
   if (pathname.startsWith("/management")) return MANAGEMENT_READ_ROLES;
   if (pathname.startsWith("/operation")) return OPERATION_ROLES;
   if (pathname.startsWith("/profile") || pathname.startsWith("/change-password")) return [];
+  if (pathname.startsWith("/notifications")) return [];
   if (pathname.startsWith("/dashboard")) return OPERATION_ROLES;
   return [];
 }

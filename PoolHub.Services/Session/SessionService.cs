@@ -92,6 +92,8 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
     public async Task<SessionDto> StartAsync(long userId, StartSessionRequest request, CancellationToken ct)
     {
+        await EnsureCustomerCanStartSessionAsync(request.CustomerId, request.BookingId, ct);
+
         // 1. Active session guard: a table cannot have 2 active sessions at the same time
         var hasActiveSession = await db.SessionTableAssignments
             .AnyAsync(sta => sta.TableId == request.TableId && sta.EndedAtUtc == null && db.Sessions.Any(s => s.SessionId == sta.SessionId && s.Status == 1), ct);
@@ -100,8 +102,12 @@ public class SessionService(PoolHubDbContext db) : ISessionService
             throw new BusinessRuleException("Table already has an active session.");
         }
 
-        // 2. Find table and set OperationalStatus to 2 (Occupied)
+        // 2. Find an available table and set OperationalStatus to 2 (Occupied)
         var table = await db.VenueTables.FindAsync([request.TableId], ct) ?? throw new NotFoundException("Table not found.");
+        if (!table.IsActive || table.OperationalStatus != 1)
+        {
+            throw new BusinessRuleException("Table is not available for a new session.");
+        }
         table.OperationalStatus = 2; // Occupied
 
         var session = new EntitySession
@@ -133,6 +139,40 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         await db.SaveChangesAsync(ct);
 
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
+    }
+
+    private async Task EnsureCustomerCanStartSessionAsync(long? customerId, long? bookingId, CancellationToken ct)
+    {
+        if (bookingId.HasValue)
+        {
+            var bookingCustomer = await db.Bookings
+                .Where(x => x.BookingId == bookingId.Value)
+                .Select(x => x.CustomerId)
+                .FirstOrDefaultAsync(ct);
+
+            if (bookingCustomer == 0)
+            {
+                throw new NotFoundException("Booking not found.");
+            }
+
+            customerId ??= bookingCustomer;
+        }
+
+        if (!customerId.HasValue)
+        {
+            return;
+        }
+
+        var customer = await db.Customers
+            .Where(x => x.CustomerId == customerId.Value)
+            .Select(x => new { x.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("Customer not found.");
+
+        if (!customer.Status)
+        {
+            throw new BusinessRuleException("Customer is blocked or inactive.");
+        }
     }
 
     public async Task<SessionDto> CloseAsync(long sessionId, long? closedByUserId, CancellationToken ct)
@@ -324,6 +364,10 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
         // 2. Find new table
         var newTable = await db.VenueTables.FindAsync([newTableId], ct) ?? throw new NotFoundException("New table not found.");
+        if (!newTable.IsActive || newTable.OperationalStatus != 1)
+        {
+            throw new BusinessRuleException("New table is not available.");
+        }
 
         // 3. Find current active assignment
         var currentAssignment = await db.SessionTableAssignments

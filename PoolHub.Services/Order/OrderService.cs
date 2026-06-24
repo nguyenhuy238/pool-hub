@@ -106,11 +106,13 @@ public class OrderService(PoolHubDbContext db) : IOrderService
 
     public async Task AddOrderItemAsync(long orderId, AddOrderItemRequest request, CancellationToken ct)
     {
-        var order = await db.Orders.FindAsync([orderId], ct) ?? throw new NotFoundException("Order not found.");
-        if (order.Status != 1)
+        if (request.Quantity <= 0)
         {
-            throw new BusinessRuleException("Cannot add items to a completed or cancelled order.");
+            throw new BusinessRuleException("Quantity must be greater than zero.");
         }
+
+        var order = await db.Orders.FindAsync([orderId], ct) ?? throw new NotFoundException("Order not found.");
+        await EnsureOrderEditableAsync(order, "add items to", ct);
 
         var product = await db.Products.FindAsync([request.ProductId], ct) ?? throw new NotFoundException("Product not found.");
         if (product.IsStockTracked && product.StockQuantity < request.Quantity) 
@@ -158,10 +160,7 @@ public class OrderService(PoolHubDbContext db) : IOrderService
         }
 
         var order = await db.Orders.FindAsync([orderId], ct) ?? throw new NotFoundException("Order not found.");
-        if (order.Status != 1)
-        {
-            throw new BusinessRuleException("Cannot update items on a completed or cancelled order.");
-        }
+        await EnsureOrderEditableAsync(order, "update items on", ct);
 
         var item = await db.OrderItems.FirstOrDefaultAsync(x => x.OrderItemId == itemId && x.OrderId == orderId, ct) ?? throw new NotFoundException("Order item not found.");
         var product = await db.Products.FindAsync([item.ProductId], ct) ?? throw new NotFoundException("Product not found.");
@@ -211,10 +210,7 @@ public class OrderService(PoolHubDbContext db) : IOrderService
     public async Task DeleteOrderItemAsync(long orderId, long itemId, CancellationToken ct)
     {
         var order = await db.Orders.FindAsync([orderId], ct) ?? throw new NotFoundException("Order not found.");
-        if (order.Status != 1)
-        {
-            throw new BusinessRuleException("Cannot delete items from a completed or cancelled order.");
-        }
+        await EnsureOrderEditableAsync(order, "delete items from", ct);
 
         var item = await db.OrderItems.FirstOrDefaultAsync(x => x.OrderItemId == itemId && x.OrderId == orderId, ct) ?? throw new NotFoundException("Order item not found.");
         var product = await db.Products.FindAsync([item.ProductId], ct) ?? throw new NotFoundException("Product not found.");
@@ -253,6 +249,7 @@ public class OrderService(PoolHubDbContext db) : IOrderService
         {
             throw new BusinessRuleException("Cannot cancel a completed/paid order.");
         }
+        await EnsureSessionActiveAsync(order.SessionId, ct);
 
         order.Status = 3; // Cancelled
         var items = await db.OrderItems.Where(x => x.OrderId == orderId).ToListAsync(ct);
@@ -282,5 +279,24 @@ public class OrderService(PoolHubDbContext db) : IOrderService
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private async Task EnsureOrderEditableAsync(EntityOrder order, string action, CancellationToken ct)
+    {
+        if (order.Status != 1)
+        {
+            throw new BusinessRuleException($"Cannot {action} a completed or cancelled order.");
+        }
+
+        await EnsureSessionActiveAsync(order.SessionId, ct);
+    }
+
+    private async Task EnsureSessionActiveAsync(long sessionId, CancellationToken ct)
+    {
+        var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
+        if (session.Status != 1)
+        {
+            throw new BusinessRuleException("Cannot modify orders for a closed session.");
+        }
     }
 }
