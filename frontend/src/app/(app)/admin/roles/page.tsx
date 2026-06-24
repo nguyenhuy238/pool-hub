@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { RoleGuard } from "@/components/guards";
 import { useToast } from "@/components/toast";
-import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, StateBlock } from "@/components/ui";
+import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
 import { ROLES } from "@/lib/auth/constants";
 import { dateTime } from "@/lib/status";
 import { roleService, type Permission, type RolePayload } from "@/services/role-service";
@@ -15,26 +15,27 @@ export default function RolesPage() {
   const toast = useToast();
   const isAdmin = hasRole(ROLES.ADMIN);
   const [query, setQuery] = useState({ keyword: "", pageNumber: 1, pageSize: 10 });
+  const debouncedKeyword = useDebouncedValue(query.keyword, 350);
   const [result, setResult] = useState<PagedResult<Role> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Role | "new" | null>(null);
+  const [detail, setDetail] = useState<Role | null>(null);
   const [deleting, setDeleting] = useState<Role | null>(null);
   const [permissionRole, setPermissionRole] = useState<Role | null>(null);
 
   async function load() {
     setLoading(true);
     setError("");
-    try { setResult(await roleService.getRoles(query)); }
+    try { setResult(await roleService.getRoles({ ...query, keyword: debouncedKeyword || undefined })); }
     catch (err) { setError(err instanceof Error ? err.message : "Không tải được danh sách vai trò."); }
     finally { setLoading(false); }
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 250);
-    return () => window.clearTimeout(timer);
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.keyword, query.pageNumber, query.pageSize]);
+  }, [debouncedKeyword, query.pageNumber, query.pageSize]);
 
   async function remove() {
     if (!deleting?.roleId) return;
@@ -52,10 +53,10 @@ export default function RolesPage() {
   return <>
     <PageHeader title="Vai trò và quyền hạn" description="Quản lý vai trò, phạm vi truy cập và số lượng người dùng được phân quyền."
       action={<RoleGuard roles={[ROLES.ADMIN]}><button className="primary-btn" onClick={() => setEditing("new")}>+ Tạo vai trò</button></RoleGuard>} />
-    <div className="card filter-grid compact-filters">
+    <SearchFilterBar>
       <label><span>Tìm kiếm</span><input placeholder="Tên hoặc mô tả" value={query.keyword} onChange={(e) => setQuery({ ...query, keyword: e.target.value, pageNumber: 1 })} /></label>
       <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => setQuery({ ...query, pageSize: Number(e.target.value), pageNumber: 1 })}><option>10</option><option>20</option><option>50</option></select></label>
-    </div>
+    </SearchFilterBar>
     <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
     {!loading && rows.length ? <>
       <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
@@ -67,14 +68,31 @@ export default function RolesPage() {
         { key: "updatedAtUtc", label: "Cập nhật", render: (row) => dateTime(String(row.updatedAtUtc ?? "")) }
       ]} actions={isAdmin ? (row) => {
         const role = row as unknown as Role;
-        return <div className="action-group"><button className="ghost-btn compact" onClick={() => setPermissionRole(role)}>Quyền</button><button className="ghost-btn compact" onClick={() => setEditing(role)}>Sửa</button><button className="danger-btn compact" disabled={role.isSystem} onClick={() => setDeleting(role)}>Xóa</button></div>;
+        return <div className="action-group"><button className="ghost-btn compact" onClick={() => setDetail(role)}>Chi tiết</button><button className="ghost-btn compact" onClick={() => setPermissionRole(role)}>Quyền</button><button className="ghost-btn compact" onClick={() => setEditing(role)}>Sửa</button><button className="danger-btn compact" disabled={role.isSystem} onClick={() => setDeleting(role)}>Xóa</button></div>;
       } : undefined} />
       <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     </> : null}
     {editing ? <RoleFormModal role={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); }} /> : null}
+    {detail ? <RoleDetailModal role={detail} onClose={() => setDetail(null)} /> : null}
     {permissionRole ? <RolePermissionsModal role={permissionRole} onClose={() => setPermissionRole(null)} onSaved={async () => { setPermissionRole(null); await load(); }} /> : null}
     {deleting ? <ConfirmDialog title="Xóa vai trò" message={`Xóa vai trò “${deleting.name}”? Hệ thống sẽ từ chối nếu vai trò vẫn đang được gán cho người dùng.`} confirmLabel="Xóa vai trò" danger onCancel={() => setDeleting(null)} onConfirm={remove} /> : null}
   </>;
+}
+
+function RoleDetailModal({ role, onClose }: { role: Role; onClose: () => void }) {
+  return <Modal title={`Chi tiết vai trò — ${role.name}`} onClose={onClose}>
+    <div className="audit-detail-grid">
+      <div><span>Tên vai trò</span><strong>{role.name}</strong></div>
+      <div><span>Loại</span><strong>{role.isSystem ? "Hệ thống" : "Tùy chỉnh"}</strong></div>
+      <div><span>Số người dùng</span><strong>{role.userCount ?? 0}</strong></div>
+      <div><span>Trạng thái</span><strong>{role.isActive === false ? "Ngừng hoạt động" : "Đang hoạt động"}</strong></div>
+      <div><span>Ngày tạo</span><strong>{dateTime(role.createdAtUtc)}</strong></div>
+      <div><span>Cập nhật</span><strong>{dateTime(role.updatedAtUtc)}</strong></div>
+      <div className="full-field"><span>Mô tả</span><p>{role.description || "-"}</p></div>
+      <div className="full-field"><span>Quyền hiện có</span><div className="badge-list">{(role.permissionCodes ?? []).length ? role.permissionCodes?.map((code) => <Badge key={code} tone="blue">{code}</Badge>) : <span className="muted-text">Chưa có quyền</span>}</div></div>
+    </div>
+    <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Đóng</button></div>
+  </Modal>;
 }
 
 function RolePermissionsModal({ role, onClose, onSaved }: { role: Role; onClose: () => void; onSaved: () => Promise<void> }) {

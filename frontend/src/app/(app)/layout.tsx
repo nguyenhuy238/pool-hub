@@ -15,6 +15,7 @@ function rolesForPath(pathname: string): RoleName[] {
   if (pathname.startsWith("/management")) return MANAGEMENT_READ_ROLES;
   if (pathname.startsWith("/operation")) return OPERATION_ROLES;
   if (pathname.startsWith("/profile") || pathname.startsWith("/change-password")) return [];
+  if (pathname.startsWith("/notifications")) return [];
   if (pathname.startsWith("/dashboard")) return OPERATION_ROLES;
   return [];
 }

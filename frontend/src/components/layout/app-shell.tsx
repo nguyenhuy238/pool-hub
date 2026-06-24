@@ -33,7 +33,7 @@ const nav = [
   { href: "/admin/landing-settings", label: "Cấu hình trang chủ", roles: [ROLES.ADMIN] },
   { href: "/admin/audit-logs", label: "Nhật ký hệ thống", roles: MANAGEMENT_READ_ROLES },
   { href: "/change-password", label: "Đổi mật khẩu", roles: OPERATION_ROLES },
-  { href: "/operation/notifications", label: "Thông báo", roles: OPERATION_ROLES }
+  { href: "/notifications", label: "Thông báo", roles: OPERATION_ROLES }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

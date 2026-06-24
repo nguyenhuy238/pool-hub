@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge, DataTable, JsonPreview, Modal, PageHeader, Pagination, StateBlock } from "@/components/ui";
+import { Badge, DataTable, JsonPreview, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
 import { dateTime } from "@/lib/status";
 import { auditService } from "@/services/audit-service";
 import type { AuditLog, PagedResult } from "@/types";
 
 export default function AuditLogsPage() {
-  const [query, setQuery] = useState({ action: "", entityName: "", fromDate: "", toDate: "", pageNumber: 1, pageSize: 20 });
+  const [query, setQuery] = useState({ actorUserId: "", action: "", entityName: "", fromDate: "", toDate: "", pageNumber: 1, pageSize: 20 });
+  const debouncedAction = useDebouncedValue(query.action, 350);
+  const debouncedEntity = useDebouncedValue(query.entityName, 350);
+  const debouncedActor = useDebouncedValue(query.actorUserId, 350);
   const [result, setResult] = useState<PagedResult<AuditLog> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -18,8 +21,9 @@ export default function AuditLogsPage() {
     setError("");
     try {
       setResult(await auditService.getAuditLogs({
-        action: query.action || undefined,
-        entityName: query.entityName || undefined,
+        actorUserId: debouncedActor ? Number(debouncedActor) : undefined,
+        action: debouncedAction || undefined,
+        entityName: debouncedEntity || undefined,
         fromDate: query.fromDate ? new Date(`${query.fromDate}T00:00:00`).toISOString() : undefined,
         toDate: query.toDate ? new Date(`${query.toDate}T23:59:59`).toISOString() : undefined,
         pageNumber: query.pageNumber,
@@ -32,16 +36,27 @@ export default function AuditLogsPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.action, query.entityName, query.fromDate, query.toDate, query.pageNumber, query.pageSize]);
+  }, [debouncedActor, debouncedAction, debouncedEntity, query.fromDate, query.toDate, query.pageNumber, query.pageSize]);
+
+  async function openDetail(id: number) {
+    try {
+      setSelected(await auditService.getAuditLogById(id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không tải được chi tiết nhật ký.");
+    }
+  }
+
   const rows = result?.items ?? [];
   return <>
     <PageHeader title="Nhật ký hệ thống" description="Theo dõi các thao tác bảo mật, quản trị và thay đổi dữ liệu quan trọng." />
-    <div className="card filter-grid">
+    <SearchFilterBar>
+      <label><span>Mã người thực hiện</span><input inputMode="numeric" placeholder="Ví dụ: 1" value={query.actorUserId} onChange={(e) => setQuery({ ...query, actorUserId: e.target.value.replace(/\D/g, ""), pageNumber: 1 })} /></label>
       <label><span>Hành động</span><input placeholder="Ví dụ: AUTH_LOGIN..." value={query.action} onChange={(e) => setQuery({ ...query, action: e.target.value, pageNumber: 1 })} /></label>
       <label><span>Đối tượng dữ liệu</span><input placeholder="Ví dụ: User, Role..." value={query.entityName} onChange={(e) => setQuery({ ...query, entityName: e.target.value, pageNumber: 1 })} /></label>
       <label><span>Từ ngày</span><input type="date" value={query.fromDate} onChange={(e) => setQuery({ ...query, fromDate: e.target.value, pageNumber: 1 })} /></label>
       <label><span>Đến ngày</span><input type="date" value={query.toDate} onChange={(e) => setQuery({ ...query, toDate: e.target.value, pageNumber: 1 })} /></label>
-    </div>
+      <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => setQuery({ ...query, pageSize: Number(e.target.value), pageNumber: 1 })}><option>10</option><option>20</option><option>50</option></select></label>
+    </SearchFilterBar>
     <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
     {!loading && rows.length ? <>
       <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
@@ -52,7 +67,7 @@ export default function AuditLogsPage() {
         { key: "entityId", label: "Mã đối tượng" },
         { key: "description", label: "Mô tả" },
         { key: "ipAddress", label: "IP" }
-      ]} actions={(row) => <button className="ghost-btn compact" onClick={() => setSelected(row as unknown as AuditLog)}>Chi tiết</button>} />
+      ]} actions={(row) => <button className="ghost-btn compact" onClick={() => openDetail(Number(row.auditLogId))}>Chi tiết</button>} />
       <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     </> : null}
     {selected ? <Modal title={`Nhật ký #${selected.auditLogId}`} onClose={() => setSelected(null)} size="large">

@@ -18,7 +18,7 @@ public class NotificationsController(INotificationService notificationService) :
     {
         if (User.IsInRole(RoleConstants.Admin))
             return Ok(ApiResponse<object>.Ok(await notificationService.GetNotificationsAsync(request, ct)));
-        return Ok(ApiResponse<object>.Ok(await notificationService.GetNotificationsAsync(User.GetUserId(), ct)));
+        return Ok(ApiResponse<object>.Ok(await notificationService.GetNotificationsAsync(User.GetUserId(), request, ct)));
     }
 
     [HttpGet("{id:long}")]

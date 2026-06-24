@@ -66,10 +66,22 @@ export function ConfirmDialog({ title, message, confirmLabel = "Xác nhận", da
   );
 }
 
+const sensitiveKeyPattern = /(password|token|secret|hash|authorization|cookie)/i;
+
+function maskSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(maskSensitive);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    sensitiveKeyPattern.test(key) ? "***" : maskSensitive(item)
+  ]));
+}
+
 export function JsonPreview({ value }: { value?: string }) {
   if (!value) return <span className="muted-text">Không có dữ liệu</span>;
   try {
-    return <pre className="json-preview">{JSON.stringify(JSON.parse(value), null, 2)}</pre>;
+    return <pre className="json-preview">{JSON.stringify(maskSensitive(JSON.parse(value)), null, 2)}</pre>;
   } catch {
     return <pre className="json-preview">{value}</pre>;
   }
@@ -93,6 +105,10 @@ export function ListControls({ search, pageNumber, pageSize, onChange, extra }: 
       {extra}
     </div>
   );
+}
+
+export function SearchFilterBar({ children }: { children: React.ReactNode }) {
+  return <div className="card filter-grid">{children}</div>;
 }
 
 export function Pagination({ pageNumber, totalPages = 1, onChange }: {
@@ -203,6 +219,17 @@ export function useLoad<T>(loader: () => Promise<T>, deps: React.DependencyList 
   }, deps);
 
   return { data, loading, error, reload };
+}
+
+export function useDebouncedValue<T>(value: T, delayMs = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+
+  return debounced;
 }
 
 export function SmartForm<T extends Record<string, unknown>>({ title, fields, initial, submitLabel = "Lưu", onSubmit }: {

@@ -27,6 +27,22 @@ public class NotificationService(PoolHubDbContext db) : INotificationService
             })
             .ToListAsync(ct);
 
+    public async Task<PagedResult<NotificationDto>> GetNotificationsAsync(long userId, NotificationQueryRequest request, CancellationToken ct)
+    {
+        request.PageNumber = Math.Max(1, request.PageNumber);
+        request.PageSize = Math.Clamp(request.PageSize, 1, 100);
+        var query = db.Notifications.AsNoTracking()
+            .Where(x => x.UserId == userId || x.UserId == null);
+        if (!string.IsNullOrWhiteSpace(request.Type)) query = query.Where(x => x.NotificationType == request.Type);
+        if (request.IsRead.HasValue) query = query.Where(x => x.IsRead == request.IsRead);
+        var total = await query.CountAsync(ct);
+        var items = await Project(query).OrderByDescending(x => x.NotificationId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToListAsync(ct);
+        return new PagedResult<NotificationDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalItems = total };
+    }
+
     public async Task<PagedResult<NotificationDto>> GetNotificationsAsync(NotificationQueryRequest request, CancellationToken ct)
     {
         request.PageNumber = Math.Max(1, request.PageNumber);
