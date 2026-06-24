@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { venueApi, sessionApi, invoiceApi } from "@/lib/api/endpoints";
 import { label, tableStatus } from "@/lib/status";
 import { Badge, PageHeader, StateBlock, useLoad } from "@/components/ui";
@@ -17,12 +17,13 @@ export default function FloorMapPage() {
     return await venueApi.layout();
   }, []);
 
-  const floors = layoutRes?.floors || [];
+  const floors = useMemo(() => layoutRes?.floors ?? [], [layoutRes?.floors]);
   
-  // Set default active floor when data is loaded
-  if (floors.length > 0 && activeFloorId === null) {
-    setActiveFloorId(floors[0].floorId);
-  }
+  useEffect(() => {
+    if (floors.length > 0 && activeFloorId === null) {
+      setActiveFloorId(floors[0].floorId);
+    }
+  }, [activeFloorId, floors]);
 
   const activeFloor = floors.find(f => f.floorId === activeFloorId) || floors[0];
 
@@ -34,7 +35,7 @@ export default function FloorMapPage() {
 
   async function endSession(sessionId: number) {
     if (!confirm("Đóng phiên chơi này?")) return;
-    await sessionApi.end(sessionId).then(() => toast("Đã đóng session.", "success")).catch((err) => toast(err.message, "error"));
+    await sessionApi.end(sessionId).then(() => toast("Đã đóng phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
     reload();
     setSelected(null);
   }
@@ -120,7 +121,7 @@ export default function FloorMapPage() {
                     <div className="table-footer">
                       <span className="table-type">{table.tableTypeName} • {table.capacity} khách</span>
                       {table.activeSessionId && (
-                        <span className="active-session-badge">Session #{table.activeSessionId}</span>
+                        <span className="active-session-badge">Phiên #{table.activeSessionId}</span>
                       )}
                     </div>
                   </div>
@@ -151,7 +152,7 @@ export default function FloorMapPage() {
             {selected.activeSessionId ? (
               <>
                 <button className="danger-btn" style={{flex: 1}} onClick={() => endSession(selected.activeSessionId!)}>Đóng phiên</button>
-                <button className="secondary-btn" onClick={() => generateInvoice(selected.activeSessionId!)}>Tạo Invoice</button>
+                <button className="secondary-btn" onClick={() => generateInvoice(selected.activeSessionId!)}>Tạo hóa đơn</button>
               </>
             ) : (
               <button className="primary-btn" style={{flex: 1}} onClick={() => startSession(selected.tableId)}>Bắt đầu phiên chơi</button>

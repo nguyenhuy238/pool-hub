@@ -170,3 +170,17 @@ export function unwrapList<T>(value: T[] | { items?: T[]; data?: T[] } | undefin
   if (Array.isArray(value)) return value;
   return value.items || value.data || [];
 }
+
+export function getTotalPages(value: unknown, fallbackPageSize = 20) {
+  if (!value || Array.isArray(value) || typeof value !== "object") return 1;
+
+  const page = value as { totalPages?: unknown; totalItems?: unknown; totalCount?: unknown; pageSize?: unknown };
+  const explicitTotalPages = Number(page.totalPages);
+  if (Number.isFinite(explicitTotalPages) && explicitTotalPages > 0) return explicitTotalPages;
+
+  const totalItems = Number(page.totalItems ?? page.totalCount);
+  const pageSize = Number(page.pageSize ?? fallbackPageSize);
+  if (!Number.isFinite(totalItems) || totalItems <= 0 || !Number.isFinite(pageSize) || pageSize <= 0) return 1;
+
+  return Math.max(1, Math.ceil(totalItems / pageSize));
+}

@@ -95,11 +95,13 @@ export function ListControls({ search, pageNumber, pageSize, onChange, extra }: 
   );
 }
 
-export function Pagination({ pageNumber, totalPages = 102, onChange }: {
+export function Pagination({ pageNumber, totalPages = 1, onChange }: {
   pageNumber: number;
   totalPages?: number;
   onChange: (page: number) => void;
 }) {
+  totalPages = Math.max(1, Math.floor(Number(totalPages) || 1));
+  pageNumber = Math.min(Math.max(1, pageNumber), totalPages);
   if (totalPages <= 1) return null;
 
   const getPageNumbers = () => {

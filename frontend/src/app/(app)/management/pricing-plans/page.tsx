@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { pricingApi, venueApi } from "@/lib/api/endpoints";
+import { getTotalPages } from "@/lib/api/client";
 import { money } from "@/lib/status";
 import { DataTable, PageHeader, SmartForm, StateBlock, useList, useLoad, ListControls, Pagination } from "@/components/ui";
 import type { PricingPlan, PricingPlanRule, TableType } from "@/types";
@@ -54,7 +55,7 @@ export default function PricingPlansPage() {
         title="Tạo quy tắc tính giá"
         initial={{ minimumMinutes: 30, billingBlockMinutes: 15 } as any}
         fields={[
-          { name: "pricingPlanId", label: "Plan", options: planOptions, required: true },
+          { name: "pricingPlanId", label: "Bảng giá", options: planOptions, required: true },
           { name: "tableTypeId", label: "Loại bàn", options: tableTypeOptions, required: true },
           { name: "dayOfWeek", label: "Thứ", options: DAYS_OF_WEEK.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
           { name: "startTime", label: "Giờ bắt đầu (HH:mm:ss)", type: "time", required: true },
@@ -85,11 +86,11 @@ export default function PricingPlansPage() {
       />
 
       <br />
-      <h2>Pricing Rules</h2>
+      <h2>Quy tắc tính giá</h2>
       <DataTable
         rows={rules.map(r => ({ ...r, id: r.pricingPlanRuleId || Math.random() })) as unknown as Record<string, unknown>[]}
         columns={[
-          { key: "pricingPlanId", label: "Plan", render: (row) => plans.find(p => p.pricingPlanId === Number(row.pricingPlanId))?.name || String(row.pricingPlanId) },
+          { key: "pricingPlanId", label: "Bảng giá", render: (row) => plans.find(p => p.pricingPlanId === Number(row.pricingPlanId))?.name || String(row.pricingPlanId) },
           { key: "tableTypeId", label: "Loại bàn", render: (row) => tableTypes.find(t => t.tableTypeId === Number(row.tableTypeId))?.name || String(row.tableTypeId) },
           { key: "dayOfWeek", label: "Thứ", render: (row) => DAYS_OF_WEEK.find(d => d.value === Number(row.dayOfWeek))?.label || String(row.dayOfWeek) },
           { key: "startTime", label: "Giờ bắt đầu" },
@@ -99,7 +100,7 @@ export default function PricingPlansPage() {
       />
       <Pagination 
         pageNumber={ruleParams.pageNumber} 
-        totalPages={(data?.rules as any)?.totalCount ? Math.ceil((data?.rules as any).totalCount / ruleParams.pageSize) : 102}
+        totalPages={getTotalPages(data?.rules, ruleParams.pageSize)}
         onChange={(page) => setRuleParams(prev => ({ ...prev, pageNumber: page }))} 
       />
     </>

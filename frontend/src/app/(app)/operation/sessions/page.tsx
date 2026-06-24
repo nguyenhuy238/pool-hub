@@ -23,7 +23,7 @@ export default function SessionsPage() {
         { key: "startedAtUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startedAtUtc)) },
         { key: "endedAtUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endedAtUtc || "")) },
         { key: "status", label: "Trạng thái", render: (row) => <Badge tone={Number(row.status) === 1 ? "green" : "neutral"}>{label(sessionStatus, Number(row.status))}</Badge> }
-      ]} actions={(row) => <button className="danger-btn" onClick={async () => { await sessionApi.end(Number(row.sessionId)).then(() => toast("Đã đóng session.", "success")).catch((err) => toast(err.message, "error")); reload(); }}>End</button>} />
+      ]} actions={(row) => <button className="danger-btn" onClick={async () => { await sessionApi.end(Number(row.sessionId)).then(() => toast("Đã đóng phiên chơi.", "success")).catch((err) => toast(err.message, "error")); reload(); }}>Kết thúc</button>} />
     </>
   );
 }

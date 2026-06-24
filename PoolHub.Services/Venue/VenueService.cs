@@ -17,25 +17,29 @@ public class VenueService(PoolHubDbContext db) : IVenueService
     /// <inheritdoc/>
     public async Task<VenueLayoutResponse> GetLayoutAsync(CancellationToken ct)
     {
-        // 1. Lấy tất cả các bàn đang active (IsActive=true), kèm thông tin Zone, Floor, TableType
-        var tables = await db.VenueTables
-            .Where(t => t.IsActive)
-            .Join(db.Zones.Where(z => z.IsActive),
-                t => t.ZoneId, z => z.ZoneId,
-                (t, z) => new { Table = t, Zone = z })
-            .Join(db.Floors.Where(f => f.IsActive),
-                tz => tz.Zone.FloorId, f => f.FloorId,
-                (tz, f) => new { tz.Table, tz.Zone, Floor = f })
-            .Join(db.TableTypes,
-                tzf => tzf.Table.TableTypeId, tt => tt.TableTypeId,
-                (tzf, tt) => new
-                {
-                    tzf.Table,
-                    tzf.Zone,
-                    tzf.Floor,
-                    TableTypeName = tt.Name
-                })
+        var floors = await db.Floors
+            .AsNoTracking()
+            .Where(f => f.IsActive)
+            .OrderBy(f => f.DisplayOrder)
+            .ThenBy(f => f.FloorId)
             .ToListAsync(ct);
+
+        var zones = await db.Zones
+            .AsNoTracking()
+            .Where(z => z.IsActive)
+            .OrderBy(z => z.DisplayOrder)
+            .ThenBy(z => z.ZoneId)
+            .ToListAsync(ct);
+
+        var tables = await db.VenueTables
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.TableCode)
+            .ToListAsync(ct);
+
+        var tableTypeNames = await db.TableTypes
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.TableTypeId, x => x.Name, ct);
 
         // 2. Lấy danh sách TableId đang có Session active (Status=1=Active, EndedAtUtc=null)
         //    Dùng SessionTableAssignment để biết bàn nào đang chơi
@@ -51,44 +55,49 @@ public class VenueService(PoolHubDbContext db) : IVenueService
             .GroupBy(x => x.TableId)
             .ToDictionary(g => g.Key, g => g.First().SessionId);
 
-        // 3. Build Floor → Zone → Table hierarchy
-        var floorGroups = tables
-            .GroupBy(x => new { x.Floor.FloorId, x.Floor.Name, x.Floor.Description, x.Floor.DisplayOrder })
-            .OrderBy(g => g.Key.DisplayOrder)
-            .Select(floorGroup => new VenueFloorLayoutItem
+        var activeZoneIds = zones.Select(z => z.ZoneId).ToHashSet();
+        var tablesByZone = tables
+            .Where(t => activeZoneIds.Contains(t.ZoneId))
+            .GroupBy(t => t.ZoneId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var zonesByFloor = zones
+            .GroupBy(z => z.FloorId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var floorGroups = floors
+            .Select(floor => new VenueFloorLayoutItem
             {
-                FloorId = floorGroup.Key.FloorId,
-                FloorName = floorGroup.Key.Name,
-                Description = floorGroup.Key.Description,
-                DisplayOrder = floorGroup.Key.DisplayOrder,
-                Zones = floorGroup
-                    .GroupBy(x => new { x.Zone.ZoneId, x.Zone.Name, x.Zone.Description, x.Zone.DisplayOrder })
-                    .OrderBy(zg => zg.Key.DisplayOrder)
-                    .Select(zoneGroup => new VenueZoneLayoutItem
+                FloorId = floor.FloorId,
+                FloorName = floor.Name,
+                Description = floor.Description,
+                DisplayOrder = floor.DisplayOrder,
+                Zones = zonesByFloor.GetValueOrDefault(floor.FloorId, [])
+                    .Select(zone => new VenueZoneLayoutItem
                     {
-                        ZoneId = zoneGroup.Key.ZoneId,
-                        ZoneName = zoneGroup.Key.Name,
-                        Description = zoneGroup.Key.Description,
-                        DisplayOrder = zoneGroup.Key.DisplayOrder,
-                        Tables = zoneGroup
-                            .Select(x =>
+                        ZoneId = zone.ZoneId,
+                        ZoneName = zone.Name,
+                        Description = zone.Description,
+                        DisplayOrder = zone.DisplayOrder,
+                        Tables = tablesByZone.GetValueOrDefault(zone.ZoneId, [])
+                            .Select(table =>
                             {
                                 // Ưu tiên lấy trạng thái từ session active, nếu không thì từ DB
-                                var activeSessionId = activeSessionMap.TryGetValue(x.Table.TableId, out var sid) ? sid : (long?)null;
-                                var operationalStatus = activeSessionId.HasValue ? 2 : x.Table.OperationalStatus; // 2=Occupied
+                                var activeSessionId = activeSessionMap.TryGetValue(table.TableId, out var sid) ? sid : (long?)null;
+                                var operationalStatus = activeSessionId.HasValue ? 2 : table.OperationalStatus; // 2=Occupied
 
                                 return new VenueTableLayoutItem
                                 {
-                                    TableId = x.Table.TableId,
-                                    TableCode = x.Table.TableCode,
-                                    TableName = x.Table.TableName,
-                                    TableTypeId = x.Table.TableTypeId,
-                                    TableTypeName = x.TableTypeName,
-                                    Capacity = x.Table.Capacity,
+                                    TableId = table.TableId,
+                                    TableCode = table.TableCode,
+                                    TableName = table.TableName,
+                                    TableTypeId = table.TableTypeId,
+                                    TableTypeName = tableTypeNames.GetValueOrDefault(table.TableTypeId, "Chưa phân loại"),
+                                    Capacity = table.Capacity,
                                     OperationalStatus = operationalStatus,
-                                    PositionX = x.Table.PositionX,
-                                    PositionY = x.Table.PositionY,
-                                    IsActive = x.Table.IsActive,
+                                    PositionX = table.PositionX,
+                                    PositionY = table.PositionY,
+                                    IsActive = table.IsActive,
                                     ActiveSessionId = activeSessionId
                                 };
                             })

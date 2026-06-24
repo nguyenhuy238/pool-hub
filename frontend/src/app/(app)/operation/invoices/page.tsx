@@ -46,7 +46,7 @@ export default function InvoicesPage() {
       <SmartForm<{ sessionId: number }> 
         title="Tạo hóa đơn từ phiên chơi"
         initial={{}} 
-        fields={[{ name: "sessionId", label: "Session ID", type: "number", required: true }]} 
+        fields={[{ name: "sessionId", label: "Mã phiên chơi", type: "number", required: true }]} 
         onSubmit={async (value) => { 
           const created = await invoiceApi.generate(Number(value.sessionId)); 
           setInvoice(await invoiceApi.detail(created.invoiceId)); 
@@ -58,7 +58,7 @@ export default function InvoicesPage() {
         rows={invoices as unknown as Record<string, unknown>[]} 
         columns={[
           { key: "invoiceCode", label: "Mã" },
-          { key: "sessionId", label: "Session" },
+          { key: "sessionId", label: "Phiên chơi" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
           { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
         ]} 
@@ -74,7 +74,7 @@ export default function InvoicesPage() {
               invoiceApi.exportPdf(invoice.invoiceId).then(res => { 
                 const printWindow = window.open("", "_blank");
                 if (printWindow) {
-                  printWindow.document.write(`<html><head><title>Invoice ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
+                  printWindow.document.write(`<html><head><title>Hoa don ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
                     <h1 style="text-align:center;">HÓA ĐƠN THANH TOÁN</h1>
                     <h3 style="text-align:center; color: #555;">Mã: ${invoice.invoiceCode || invoice.invoiceId}</h3>
                     <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>

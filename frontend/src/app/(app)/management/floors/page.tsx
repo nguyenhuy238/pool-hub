@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { venueApi } from "@/lib/api/endpoints";
+import { getTotalPages } from "@/lib/api/client";
 import { DataTable, PageHeader, SmartForm, StateBlock, useList, useLoad, ListControls, Pagination } from "@/components/ui";
 import type { Floor } from "@/types";
 
@@ -52,7 +53,7 @@ export default function FloorsPage() {
       
       <Pagination 
         pageNumber={params.pageNumber} 
-        totalPages={(data as any)?.totalCount ? Math.ceil((data as any).totalCount / params.pageSize) : 102}
+        totalPages={getTotalPages(data, params.pageSize)}
         onChange={(page) => setParams(prev => ({ ...prev, pageNumber: page }))} 
       />
     </>

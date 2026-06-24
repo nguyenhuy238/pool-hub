@@ -1,14 +1,15 @@
 "use client";
 import { useState } from "react";
 import { venueApi } from "@/lib/api/endpoints";
+import { getTotalPages } from "@/lib/api/client";
 import { Badge, DataTable, PageHeader, SmartForm, StateBlock, useList, useLoad, ListControls, Pagination } from "@/components/ui";
 import type { VenueTable, Zone, TableType } from "@/types";
 
 const STATUS_OPTIONS = [
-  { value: "1", label: "Available (Sẵn sàng)" },
-  { value: "2", label: "In Use (Đang chơi)" },
-  { value: "3", label: "Reserved (Đã đặt)" },
-  { value: "4", label: "Maintenance (Bảo trì)" }
+  { value: "1", label: "Sẵn sàng" },
+  { value: "2", label: "Đang chơi" },
+  { value: "3", label: "Đã đặt" },
+  { value: "4", label: "Bảo trì" }
 ];
 
 export default function VenueTablesPage() {
@@ -28,11 +29,11 @@ export default function VenueTablesPage() {
 
   const getStatusBadge = (status: number) => {
     switch (status) {
-      case 1: return <Badge tone="green">Available</Badge>;
-      case 2: return <Badge tone="blue">In Use</Badge>;
-      case 3: return <Badge tone="yellow">Reserved</Badge>;
-      case 4: return <Badge tone="red">Maintenance</Badge>;
-      default: return <Badge tone="neutral">Unknown</Badge>;
+      case 1: return <Badge tone="green">Sẵn sàng</Badge>;
+      case 2: return <Badge tone="blue">Đang chơi</Badge>;
+      case 3: return <Badge tone="yellow">Đã đặt</Badge>;
+      case 4: return <Badge tone="red">Bảo trì</Badge>;
+      default: return <Badge tone="neutral">Không xác định</Badge>;
     }
   };
 
@@ -87,7 +88,7 @@ export default function VenueTablesPage() {
       
       <Pagination 
         pageNumber={params.pageNumber} 
-        totalPages={(data?.tables as any)?.totalCount ? Math.ceil((data?.tables as any).totalCount / params.pageSize) : 102}
+        totalPages={getTotalPages(data?.tables, params.pageSize)}
         onChange={(page) => setParams(prev => ({ ...prev, pageNumber: page }))} 
       />
     </>

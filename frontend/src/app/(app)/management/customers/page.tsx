@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { customerApi } from "@/lib/api/endpoints";
+import { getTotalPages } from "@/lib/api/client";
 import { Badge, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { dateTime } from "@/lib/status";
 import type { CustomerDto } from "@/types";
@@ -67,7 +68,7 @@ export default function CustomersPage() {
       />
       <Pagination 
         pageNumber={params.pageNumber} 
-        totalPages={(data as any)?.totalCount ? Math.ceil((data as any).totalCount / params.pageSize) : 102}
+        totalPages={getTotalPages(data, params.pageSize)}
         onChange={(page) => setParams(prev => ({ ...prev, pageNumber: page }))} 
       />
     </>

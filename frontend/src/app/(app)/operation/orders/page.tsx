@@ -87,12 +87,12 @@ export default function OrdersPage() {
     <>
       <PageHeader
         title="Order POS"
-        description="Tạo order theo session và thêm sản phẩm."
+        description="Tạo đơn hàng theo phiên chơi và thêm sản phẩm."
         action={
           <select value={sessionId || ""} onChange={(e) => {
             setSessionId(Number(e.target.value) || null);
           }}>
-            <option value="">Chọn session</option>
+            <option value="">Chọn phiên chơi</option>
             {sessions.map((item) => (
               <option key={item.sessionId} value={item.sessionId}>
                 {item.sessionCode || item.sessionId}

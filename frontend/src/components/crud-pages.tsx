@@ -24,7 +24,7 @@ export function CrudPage<T extends Record<string, unknown>>(config: CrudConfig<T
       <ListControls search={params.search} pageNumber={params.pageNumber} pageSize={params.pageSize} onChange={setParams} />
       <SmartForm<T> title={`Tạo ${config.title}`} initial={{}} fields={config.fields} onSubmit={async (value) => { await config.create(value); reload(); }} />
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
-      <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={config.columns.map((column) => ({ ...column, key: String(column.key) }))} actions={config.remove ? (row) => <button className="danger-btn" onClick={() => config.remove?.(Number(row[String(config.idKey)])).then(() => reload())}>Delete</button> : undefined} />
+      <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={config.columns.map((column) => ({ ...column, key: String(column.key) }))} actions={config.remove ? (row) => <button className="danger-btn" onClick={() => config.remove?.(Number(row[String(config.idKey)])).then(() => reload())}>Xóa</button> : undefined} />
     </>
   );
 }
