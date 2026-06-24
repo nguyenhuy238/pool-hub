@@ -31,6 +31,18 @@
   - `PoolHub_Week3_Backend_Architecture.docx`
   - `PoolHub_Week4_Auth_JWT.docx`
 
+## AI context docs generated from current repo state
+- `docs/ai/AI_CONTEXT_HUB.md`
+- `docs/ai/PROJECT_CONTEXT_OVERVIEW.md`
+- `docs/ai/SYSTEM_ARCHITECTURE.md`
+- `docs/ai/TECHNICAL_SPECIFICATION.md`
+- `docs/ai/API_DOCUMENTATION.md`
+- `docs/ai/USER_FLOWS.md`
+- `docs/ai/ROADMAP_AND_PROGRESS.md`
+- `docs/ai/BACKLOG_BLOCKERS.md`
+- `docs/ai/ENVIRONMENT_SETUP.md`
+- `docs/ai/CODING_CONVENTIONS_WORKFLOW.md`
+
 ## Notes
 - Backend code trong `pool-hub/` hiện chưa triển khai theo đặc tả ở trên.
 - Khi phát triển mới, phải đối chiếu `swagger_poolhub.yaml` và SQL/ERD trước khi tạo model/API.

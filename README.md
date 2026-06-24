@@ -3,6 +3,19 @@
 ## Overview
 Backend cho hệ thống quản lý trung tâm giải trí/bida PoolHub (checkpoint Week 4), gồm Auth JWT, phân quyền role-based, core domain APIs và EF Core schema 27 bảng.
 
+## Documentation Index
+Tài liệu ngữ cảnh đầy đủ cho AI và người mới được gom tại [docs/ai/AI_CONTEXT_HUB.md](docs/ai/AI_CONTEXT_HUB.md).
+
+- [Tổng quan sản phẩm](docs/ai/PROJECT_CONTEXT_OVERVIEW.md)
+- [Kiến trúc hệ thống](docs/ai/SYSTEM_ARCHITECTURE.md)
+- [Đặc tả kỹ thuật](docs/ai/TECHNICAL_SPECIFICATION.md)
+- [API documentation](docs/ai/API_DOCUMENTATION.md)
+- [User flows](docs/ai/USER_FLOWS.md)
+- [Tiến độ và roadmap](docs/ai/ROADMAP_AND_PROGRESS.md)
+- [Backlog, blockers và rủi ro](docs/ai/BACKLOG_BLOCKERS.md)
+- [Environment setup](docs/ai/ENVIRONMENT_SETUP.md)
+- [Coding conventions và workflow](docs/ai/CODING_CONVENTIONS_WORKFLOW.md)
+
 ## Tech Stack
 - ASP.NET Core Web API (.NET 10 SDK)
 - Entity Framework Core + SQL Server
