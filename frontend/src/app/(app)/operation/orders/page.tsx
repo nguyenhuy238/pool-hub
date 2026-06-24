@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { orderApi, productApi, sessionApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
-import { DataTable, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
+import { ConfirmDialog, DataTable, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Order, OrderItem, Product, Session } from "@/types";
 
@@ -17,6 +17,8 @@ export default function OrdersPage() {
   const toast = useToast();
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState<Order | null>(null);
+  const [removingItem, setRemovingItem] = useState<OrderItem | null>(null);
   const [itemQuantities, setItemQuantities] = useState<Record<number, number>>({});
   const { data, loading, error, reload } = useLoad(async () => {
     const [sessions, products, orders] = await Promise.all([sessionApi.list(), productApi.list(), sessionId ? orderApi.bySession(sessionId) : Promise.resolve([])]);
@@ -83,6 +85,18 @@ export default function OrdersPage() {
     }
   }
 
+  async function cancelOrder(order: Order) {
+    try {
+      await orderApi.cancel(order.orderId);
+      if (selectedOrderId === order.orderId) setSelectedOrderId(null);
+      setCancellingOrder(null);
+      toast("Đã hủy order.", "success");
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể hủy order.", "error");
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -122,9 +136,9 @@ export default function OrdersPage() {
         <div className="card">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
             <div>
-              <h2>Orders</h2>
+              <h2>Đơn hàng</h2>
               <div style={{ color: "#555", marginTop: 4 }}>
-                {currentOrder ? `Đã chọn: ${currentOrder.orderCode}` : "Chưa chọn order."}
+                {currentOrder ? `Đã chọn: ${currentOrder.orderCode}` : "Chưa chọn đơn hàng."}
               </div>
             </div>
             <button
@@ -140,34 +154,28 @@ export default function OrdersPage() {
                 }
               }}
             >
-              Tạo / Chọn order
+              Tạo / Chọn đơn hàng
             </button>
           </div>
 
           <DataTable
             rows={orders as unknown as Record<string, unknown>[]}
             columns={[
-              { key: "orderCode", label: "Order" },
+              { key: "orderCode", label: "Đơn hàng" },
               { key: "status", label: "Trạng thái", render: (row) => statusText(Number(row.status)) },
               { key: "subtotalAmount", label: "Tổng", render: (row) => money(Number(row.subtotalAmount || 0)) }
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={() => setSelectedOrderId(Number(row.orderId))}>Chọn</button>
-                <button className="danger-btn" onClick={async () => {
-                  await orderApi.cancel(Number(row.orderId));
-                  if (selectedOrderId === Number(row.orderId)) {
-                    setSelectedOrderId(null);
-                  }
-                  await reload();
-                }}>Cancel</button>
+                <button className="danger-btn" onClick={() => setCancellingOrder(row as unknown as Order)}>Hủy</button>
               </div>
             )}
           />
 
           {currentOrder ? (
             <section style={{ marginTop: 24 }}>
-              <h3>Chi tiết order</h3>
+              <h3>Chi tiết đơn hàng</h3>
               {currentOrder.items?.length ? (
                 <div className="table-wrap">
                   <table>
@@ -206,7 +214,7 @@ export default function OrdersPage() {
                               >
                                 Cập nhật
                               </button>
-                              <button className="danger-btn" onClick={() => deleteItem(item)}>
+                              <button className="danger-btn" onClick={() => setRemovingItem(item)}>
                                 Xóa
                               </button>
                             </td>
@@ -223,6 +231,8 @@ export default function OrdersPage() {
           ) : null}
         </div>
       </div>
+      {cancellingOrder ? <ConfirmDialog title="Hủy đơn hàng" message={`Xác nhận hủy đơn hàng ${cancellingOrder.orderCode || cancellingOrder.orderId}?`} confirmLabel="Hủy đơn hàng" danger onCancel={() => setCancellingOrder(null)} onConfirm={() => cancelOrder(cancellingOrder)} /> : null}
+      {removingItem ? <ConfirmDialog title="Xóa sản phẩm khỏi đơn hàng" message={`Xóa “${removingItem.productNameSnapshot || removingItem.productId}” khỏi đơn hàng?`} confirmLabel="Xóa" danger onCancel={() => setRemovingItem(null)} onConfirm={async () => { await deleteItem(removingItem); setRemovingItem(null); }} /> : null}
     </>
   );
 }

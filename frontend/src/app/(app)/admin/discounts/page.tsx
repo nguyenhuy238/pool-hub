@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
+import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
 import { discountApi } from "@/lib/api/endpoints";
+import { useToast } from "@/components/toast";
 import type { Discount } from "@/types";
 
 export default function DiscountsPage() {
+  const toast = useToast();
   const [query, setQuery] = useState({ search: "", pageNumber: 1, pageSize: 20 });
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [statusAction, setStatusAction] = useState<Discount | null>(null);
   const { data, loading, error, reload } = useLoad(() => discountApi.list({ Search: query.search, PageNumber: query.pageNumber, PageSize: query.pageSize }), [query]);
   const rows = useList(data);
   return <>
@@ -34,7 +37,7 @@ export default function DiscountsPage() {
     ]} actions={row => (
       <div style={{ display: "flex", gap: "8px", minWidth: "120px" }}>
         <button className="ghost-btn" style={{ minWidth: "55px", textAlign: "center" }} onClick={() => setEditingDiscount(row)}>Sửa</button>
-        <button className="ghost-btn" style={{ minWidth: "55px", textAlign: "center" }} onClick={async () => { await discountApi.status(row.discountId, !row.isActive); reload(); }}>{row.isActive ? "Tắt" : "Bật"}</button>
+        <button className="ghost-btn" style={{ minWidth: "55px", textAlign: "center" }} onClick={() => setStatusAction(row as Discount)}>{row.isActive ? "Tắt" : "Bật"}</button>
       </div>
     )} />
     {editingDiscount && (
@@ -49,5 +52,15 @@ export default function DiscountsPage() {
           ]} onSubmit={async value => { await discountApi.update(editingDiscount.discountId, value); setEditingDiscount(null); reload(); }} />
       </Modal>
     )}
+    {statusAction ? <ConfirmDialog title={statusAction.isActive ? "Tắt mã giảm giá" : "Bật mã giảm giá"} message={`${statusAction.isActive ? "Tắt" : "Bật"} mã giảm giá “${statusAction.discountCode}”?`} confirmLabel="Xác nhận" danger={statusAction.isActive} onCancel={() => setStatusAction(null)} onConfirm={async () => {
+      try {
+        await discountApi.status(statusAction.discountId, !statusAction.isActive);
+        toast("Đã cập nhật trạng thái mã giảm giá.", "success");
+        setStatusAction(null);
+        reload();
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Không thể cập nhật mã giảm giá.", "error");
+      }
+    }} /> : null}
   </>;
 }

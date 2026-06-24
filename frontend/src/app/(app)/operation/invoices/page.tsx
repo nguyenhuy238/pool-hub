@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { invoiceApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
-import { DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
+import { ConfirmDialog, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Invoice, PaymentMethod } from "@/types";
 
@@ -11,6 +11,11 @@ export default function InvoicesPage() {
   const toast = useToast();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState<number | "">("");
+  const [confirmPayment, setConfirmPayment] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
   const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20 });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods] = await Promise.all([
@@ -37,6 +42,38 @@ export default function InvoicesPage() {
       .catch((err) => toast(err.message, "error"));
     await loadDetail(invoice.invoiceId);
     reload();
+  }
+
+  async function cancelInvoice() {
+    if (!invoice || !cancelReason.trim()) {
+      toast("Vui lòng nhập lý do hủy hóa đơn.", "error");
+      return;
+    }
+    await invoiceApi.cancel(invoice.invoiceId, cancelReason.trim())
+      .then(async () => {
+        toast("Hóa đơn đã bị hủy.", "success");
+        setCancelOpen(false);
+        setCancelReason("");
+        await loadDetail(invoice.invoiceId);
+        reload();
+      })
+      .catch(err => toast(err.message, "error"));
+  }
+
+  async function applyDiscount() {
+    if (!invoice || !discountCode.trim()) {
+      toast("Vui lòng nhập mã giảm giá.", "error");
+      return;
+    }
+    await invoiceApi.discount(invoice.invoiceId, discountCode.trim())
+      .then(async () => {
+        toast("Đã áp dụng mã giảm giá.", "success");
+        setDiscountOpen(false);
+        setDiscountCode("");
+        await loadDetail(invoice.invoiceId);
+        reload();
+      })
+      .catch(err => toast(err.message, "error"));
   }
 
   return (
@@ -113,21 +150,9 @@ export default function InvoicesPage() {
                 <option value="">-- Chọn phương thức thanh toán --</option>
                 {methods.map((method) => <option key={method.paymentMethodId} value={method.paymentMethodId}>{method.name}</option>)}
               </select>
-              <button className="primary-btn" onClick={pay}>Thanh toán ngay</button>
-              <button className="ghost-btn" onClick={() => {
-                const code = window.prompt("Nhập mã giảm giá");
-                if (code) invoiceApi.discount(invoice.invoiceId, code).then(async () => { toast("Đã áp dụng discount.", "success"); await loadDetail(invoice.invoiceId); reload(); }).catch((err) => toast(err.message, "error"));
-              }}>Áp dụng mã giảm giá</button>
-              <button className="danger-btn" style={{ marginLeft: "auto" }} onClick={() => {
-                const reason = window.prompt("Nhập lý do hủy hóa đơn:");
-                if (reason) {
-                  invoiceApi.cancel(invoice.invoiceId, reason).then(async () => {
-                    toast("Hóa đơn đã bị hủy.", "success");
-                    await loadDetail(invoice.invoiceId);
-                    reload();
-                  }).catch(err => toast(err.message, "error"));
-                }
-              }}>Hủy hóa đơn</button>
+              <button className="primary-btn" onClick={() => setConfirmPayment(true)}>Thanh toán ngay</button>
+              <button className="ghost-btn" onClick={() => setDiscountOpen(true)}>Áp dụng mã giảm giá</button>
+              <button className="danger-btn" style={{ marginLeft: "auto" }} onClick={() => setCancelOpen(true)}>Hủy hóa đơn</button>
             </div>
           ) : (
             <div className="state-card" style={{ background: '#e4f7ec', color: '#187344', border: '1px solid #c2ebd5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -136,6 +161,19 @@ export default function InvoicesPage() {
           )}
         </Modal>
       ) : null}
+      {confirmPayment && invoice ? <ConfirmDialog title="Ghi nhận thanh toán" message={`Xác nhận thanh toán ${money(invoice.grandTotalAmount || 0)} cho hóa đơn này?`} confirmLabel="Thanh toán" onCancel={() => setConfirmPayment(false)} onConfirm={async () => { setConfirmPayment(false); await pay(); }} /> : null}
+      {discountOpen && invoice ? <Modal title="Áp dụng mã giảm giá" onClose={() => setDiscountOpen(false)}>
+        <div className="form-stack">
+          <label><span>Mã giảm giá</span><input value={discountCode} onChange={(event) => setDiscountCode(event.target.value)} /></label>
+          <div className="modal-actions"><button className="ghost-btn" onClick={() => setDiscountOpen(false)}>Hủy</button><button className="primary-btn" onClick={applyDiscount}>Áp dụng</button></div>
+        </div>
+      </Modal> : null}
+      {cancelOpen && invoice ? <Modal title="Hủy hóa đơn" onClose={() => setCancelOpen(false)}>
+        <div className="form-stack">
+          <label><span>Lý do hủy</span><textarea rows={4} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} /></label>
+          <div className="modal-actions"><button className="ghost-btn" onClick={() => setCancelOpen(false)}>Hủy</button><button className="danger-btn" onClick={cancelInvoice}>Xác nhận hủy hóa đơn</button></div>
+        </div>
+      </Modal> : null}
     </>
   );
 }
