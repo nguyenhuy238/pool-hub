@@ -108,10 +108,9 @@ export default function InvoicesPage() {
               {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ THANH TOÁN</span> : Number(invoice.status) === 3 ? <span className="badge red" style={{ fontSize: '14px', padding: '6px 12px' }}>ĐÃ HỦY</span> : <span className="badge yellow" style={{ fontSize: '14px', padding: '6px 12px' }}>CHƯA THANH TOÁN</span>}
             </div>
             <button className="ghost-btn" onClick={() => {
-              invoiceApi.exportPdf(invoice.invoiceId).then(res => { 
-                const printWindow = window.open("", "_blank");
-                if (printWindow) {
-                  printWindow.document.write(`<html><head><title>Hoa don ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
+              const printWindow = window.open("", "_blank");
+              if (printWindow) {
+                printWindow.document.write(`<html><head><title>Hoa don ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto;">
                     <h1 style="text-align:center;">HÓA ĐƠN THANH TOÁN</h1>
                     <h3 style="text-align:center; color: #555;">Mã: ${invoice.invoiceCode || invoice.invoiceId}</h3>
                     <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
@@ -123,10 +122,9 @@ export default function InvoicesPage() {
                     <p style="text-align:center; margin-top: 40px; font-style: italic;">Cảm ơn quý khách và hẹn gặp lại!</p>
                     <script>setTimeout(() => window.print(), 500);</script>
                   </body></html>`);
-                  printWindow.document.close();
-                }
-              }).catch(err => toast(err.message, "error"));
-            }}>In PDF / Xuất Bill</button>
+                printWindow.document.close();
+              }
+            }}>In bill</button>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>

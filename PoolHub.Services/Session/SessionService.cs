@@ -100,8 +100,12 @@ public class SessionService(PoolHubDbContext db) : ISessionService
             throw new BusinessRuleException("Table already has an active session.");
         }
 
-        // 2. Find table and set OperationalStatus to 2 (Occupied)
+        // 2. Find an available table and set OperationalStatus to 2 (Occupied)
         var table = await db.VenueTables.FindAsync([request.TableId], ct) ?? throw new NotFoundException("Table not found.");
+        if (!table.IsActive || table.OperationalStatus != 1)
+        {
+            throw new BusinessRuleException("Table is not available for a new session.");
+        }
         table.OperationalStatus = 2; // Occupied
 
         var session = new EntitySession
@@ -324,6 +328,10 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
         // 2. Find new table
         var newTable = await db.VenueTables.FindAsync([newTableId], ct) ?? throw new NotFoundException("New table not found.");
+        if (!newTable.IsActive || newTable.OperationalStatus != 1)
+        {
+            throw new BusinessRuleException("New table is not available.");
+        }
 
         // 3. Find current active assignment
         var currentAssignment = await db.SessionTableAssignments

@@ -3,6 +3,8 @@ using PoolHub.Core.DTOs.Invoice;
 using PoolHub.Core.Entities;
 using PoolHub.Services.Invoice;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared.Constants;
+using PoolHub.Shared.Exceptions;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -161,5 +163,43 @@ public class InvoiceServiceTests
         // Assert
         Assert.NotNull(result);
         Assert.Equal(45000, result.GrandTotalAmount);
+    }
+
+    [Fact]
+    public async Task CreatePaymentAsync_WhenAmountIsNotPositive_ThrowsValidationException()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        db.Invoices.Add(new Invoice { InvoiceId = 1, SessionId = 1, InvoiceCode = "INV1", GrandTotalAmount = 100000, PaymentStatus = InvoicePaymentStatuses.Unpaid, Status = 1 });
+        db.PaymentMethods.Add(new PaymentMethod { PaymentMethodId = 1, Name = "Cash", Code = "CASH", IsActive = true });
+        await db.SaveChangesAsync();
+
+        var service = new InvoiceService(db);
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            service.CreatePaymentAsync(new CreatePaymentRequest { InvoiceId = 1, PaymentMethodId = 1, Amount = 0 }, 99, CancellationToken.None));
+
+        Assert.Equal("Payment amount must be greater than zero.", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreatePaymentAsync_WhenInvoiceIsCancelled_ThrowsBusinessRuleException()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        db.Invoices.Add(new Invoice { InvoiceId = 1, SessionId = 1, InvoiceCode = "INV1", GrandTotalAmount = 100000, PaymentStatus = InvoicePaymentStatuses.Unpaid, Status = 3 });
+        db.PaymentMethods.Add(new PaymentMethod { PaymentMethodId = 1, Name = "Cash", Code = "CASH", IsActive = true });
+        await db.SaveChangesAsync();
+
+        var service = new InvoiceService(db);
+        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreatePaymentAsync(new CreatePaymentRequest { InvoiceId = 1, PaymentMethodId = 1, Amount = 50000 }, 99, CancellationToken.None));
+
+        Assert.Equal("Cannot pay a cancelled invoice.", exception.Message);
     }
 }

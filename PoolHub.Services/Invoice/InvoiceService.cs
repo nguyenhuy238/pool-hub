@@ -150,10 +150,25 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
 
     public async Task CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct)
     {
+        if (request.Amount <= 0)
+        {
+            throw new ValidationException("Payment amount must be greater than zero.");
+        }
+
         var invoice = await db.Invoices.FindAsync([request.InvoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.Status == 3)
+        {
+            throw new BusinessRuleException("Cannot pay a cancelled invoice.");
+        }
+
         if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid || invoice.PaidAmount >= invoice.GrandTotalAmount)
         {
             throw new BusinessRuleException("Invoice is already fully paid.");
+        }
+
+        if (!await db.PaymentMethods.AnyAsync(x => x.PaymentMethodId == request.PaymentMethodId && x.IsActive, ct))
+        {
+            throw new ValidationException("Payment method is invalid or inactive.");
         }
 
         if (invoice.PaidAmount + request.Amount > invoice.GrandTotalAmount)
@@ -271,6 +286,10 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
     public async Task ApplyDiscountAsync(long invoiceId, ApplyDiscountRequest request, long userId, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.Status == 3)
+        {
+            throw new BusinessRuleException("Cannot apply discounts to a cancelled invoice.");
+        }
         if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
         {
             throw new BusinessRuleException("Cannot apply discounts to a fully paid invoice.");
@@ -453,9 +472,8 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
 
     public async Task<string> ExportPdfAsync(long invoiceId, CancellationToken ct)
     {
-        var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
-        // For now, return a mock URL. In a real scenario, we generate a PDF and return the URL.
-        return $"/exports/invoices/{invoice.InvoiceCode ?? invoice.InvoiceId.ToString()}.pdf";
+        _ = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        throw new BusinessRuleException("PDF export is not supported by the backend yet.");
     }
 
     public async Task RefundPaymentAsync(long paymentId, string reason, long userId, CancellationToken ct)
@@ -468,7 +486,7 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
         var invoice = await db.Invoices.FindAsync([payment.InvoiceId], ct);
         if (invoice != null)
         {
-            invoice.PaidAmount -= payment.Amount;
+            invoice.PaidAmount = Math.Max(0, invoice.PaidAmount - payment.Amount);
             if (invoice.PaidAmount < invoice.GrandTotalAmount)
             {
                 invoice.PaymentStatus = invoice.PaidAmount <= 0 ? InvoicePaymentStatuses.Unpaid : InvoicePaymentStatuses.PartiallyPaid;

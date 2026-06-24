@@ -12,7 +12,7 @@ const nav = [
   { href: "/dashboard", label: "Tổng quan vận hành", roles: OPERATION_ROLES },
   { href: "/operation/floor-map", label: "Sơ đồ bàn", roles: OPERATION_ROLES },
   { href: "/operation/bookings", label: "Đặt bàn", roles: OPERATION_ROLES },
-  { href: "/management/customers", label: "Khách hàng", roles: OPERATION_ROLES },
+  { href: "/management/customers", label: "Khách hàng", roles: MANAGEMENT_READ_ROLES },
   { href: "/operation/sessions", label: "Phiên chơi", roles: OPERATION_ROLES },
   { href: "/operation/orders", label: "Đơn hàng", roles: OPERATION_ROLES },
   { href: "/operation/invoices", label: "Hóa đơn", roles: OPERATION_ROLES },

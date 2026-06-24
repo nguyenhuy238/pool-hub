@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PageHeader, StateBlock } from "@/components/ui";
+import { ConfirmDialog, PageHeader, StateBlock } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { defaultLandingSettings, landingSettingsApi, type LandingPageSettings } from "@/lib/api/landingSettingsApi";
 import { GoogleMapPicker, validateMap } from "@/components/admin/settings/GoogleMapPicker";
@@ -33,6 +33,7 @@ export default function LandingSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   useEffect(() => {
     landingSettingsApi.admin()
@@ -109,11 +110,11 @@ export default function LandingSettingsPage() {
   }
 
   async function resetDefault() {
-    if (!window.confirm("Khôi phục cấu hình trang chủ về dữ liệu mặc định?")) return;
     setSaving(true);
     try {
       setSettings(await landingSettingsApi.resetDefault());
       toast("Đã reset cấu hình mặc định.", "success");
+      setResetOpen(false);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Reset thất bại.", "error");
     } finally {
@@ -126,7 +127,7 @@ export default function LandingSettingsPage() {
       <PageHeader
         title="Cấu hình trang chủ"
         description="Quản lý toàn bộ nội dung hiển thị trên trang chủ dành cho khách hàng."
-        action={<div className="actions"><a className="ghost-btn" href="/" target="_blank">Xem trước</a><button className="secondary-btn" onClick={resetDefault} disabled={saving}>Khôi phục mặc định</button><button className="primary-btn" onClick={save} disabled={saving}>{saving ? "Đang lưu..." : "Lưu cấu hình"}</button></div>}
+        action={<div className="actions"><a className="ghost-btn" href="/" target="_blank">Xem trước</a><button className="secondary-btn" onClick={() => setResetOpen(true)} disabled={saving}>Khôi phục mặc định</button><button className="primary-btn" onClick={save} disabled={saving}>{saving ? "Đang lưu..." : "Lưu cấu hình"}</button></div>}
       />
       <StateBlock loading={loading} error={error} />
       {!loading ? (
@@ -222,6 +223,7 @@ export default function LandingSettingsPage() {
           </div>
         </div>
       ) : null}
+      {resetOpen ? <ConfirmDialog title="Khôi phục cấu hình" message="Khôi phục cấu hình trang chủ về dữ liệu mặc định?" confirmLabel="Khôi phục" danger busy={saving} onCancel={() => setResetOpen(false)} onConfirm={resetDefault} /> : null}
     </>
   );
 }
