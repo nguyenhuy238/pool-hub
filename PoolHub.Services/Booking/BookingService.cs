@@ -38,13 +38,23 @@ public class BookingService(PoolHubDbContext db) : IBookingService
 
         if (request.CustomerId.HasValue && request.CustomerId > 0)
         {
-            customerId = request.CustomerId.Value;
+            var customer = await db.Customers.FirstOrDefaultAsync(c => c.CustomerId == request.CustomerId.Value, ct)
+                ?? throw new NotFoundException("Customer not found.");
+            if (!customer.Status)
+            {
+                throw new BusinessRuleException("Customer is blocked or inactive.");
+            }
+            customerId = customer.CustomerId;
         }
         else if (!string.IsNullOrEmpty(request.PhoneNumber))
         {
             var customer = await db.Customers.FirstOrDefaultAsync(c => c.PhoneNumber == request.PhoneNumber, ct);
             if (customer != null)
             {
+                if (!customer.Status)
+                {
+                    throw new BusinessRuleException("Customer is blocked or inactive.");
+                }
                 customerId = customer.CustomerId;
             }
             else

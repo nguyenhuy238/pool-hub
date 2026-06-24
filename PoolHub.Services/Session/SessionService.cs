@@ -92,6 +92,8 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
     public async Task<SessionDto> StartAsync(long userId, StartSessionRequest request, CancellationToken ct)
     {
+        await EnsureCustomerCanStartSessionAsync(request.CustomerId, request.BookingId, ct);
+
         // 1. Active session guard: a table cannot have 2 active sessions at the same time
         var hasActiveSession = await db.SessionTableAssignments
             .AnyAsync(sta => sta.TableId == request.TableId && sta.EndedAtUtc == null && db.Sessions.Any(s => s.SessionId == sta.SessionId && s.Status == 1), ct);
@@ -137,6 +139,40 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         await db.SaveChangesAsync(ct);
 
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
+    }
+
+    private async Task EnsureCustomerCanStartSessionAsync(long? customerId, long? bookingId, CancellationToken ct)
+    {
+        if (bookingId.HasValue)
+        {
+            var bookingCustomer = await db.Bookings
+                .Where(x => x.BookingId == bookingId.Value)
+                .Select(x => x.CustomerId)
+                .FirstOrDefaultAsync(ct);
+
+            if (bookingCustomer == 0)
+            {
+                throw new NotFoundException("Booking not found.");
+            }
+
+            customerId ??= bookingCustomer;
+        }
+
+        if (!customerId.HasValue)
+        {
+            return;
+        }
+
+        var customer = await db.Customers
+            .Where(x => x.CustomerId == customerId.Value)
+            .Select(x => new { x.Status })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("Customer not found.");
+
+        if (!customer.Status)
+        {
+            throw new BusinessRuleException("Customer is blocked or inactive.");
+        }
     }
 
     public async Task<SessionDto> CloseAsync(long sessionId, long? closedByUserId, CancellationToken ct)
