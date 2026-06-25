@@ -50,6 +50,15 @@ function groupRules(rules: PricingPlanRule[]) {
   });
 }
 
+function getTableTypeColor(name: string) {
+  const n = name.toLowerCase();
+  if (n.includes('vip')) return '#8b5cf6'; // Purple
+  if (n.includes('standard')) return '#10b981'; // Green
+  if (n.includes('carom')) return '#f59e0b'; // Orange
+  if (n.includes('snooker')) return '#ef4444'; // Red
+  return '#111827'; // Default
+}
+
 export function PricingSection() {
   const [tableTypes, setTableTypes] = useState<TableType[]>([]);
   const [rules, setRules] = useState<PricingPlanRule[]>([]);
@@ -100,8 +109,8 @@ export function PricingSection() {
             const groupedRules = groupRules(typeRules);
             
             return (
-              <article className="price-card" key={tableType.tableTypeId} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <span style={{ display: 'inline-block', marginBottom: '8px', fontWeight: 'bold', fontSize: '1.2rem', color: '#111827' }}>
+              <article className="price-card" key={tableType.tableTypeId} style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderTop: `4px solid ${getTableTypeColor(tableType.name)}` }}>
+                <span style={{ display: 'inline-block', marginBottom: '8px', fontWeight: 'bold', fontSize: '1.2rem', color: getTableTypeColor(tableType.name) }}>
                   {tableType.name}
                 </span>
                 

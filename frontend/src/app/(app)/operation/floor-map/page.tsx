@@ -1,18 +1,41 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { venueApi, sessionApi, invoiceApi } from "@/lib/api/endpoints";
+import { venueApi } from "@/lib/api/endpoints";
 import { label, tableStatus } from "@/lib/status";
 import { Badge, ConfirmDialog, PageHeader, StateBlock, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { VenueTableLayoutItem } from "@/types";
+import type { VenueTableLayoutItem, Zone, TableType } from "@/types";
+import { TableFormModal } from "../../management/venue-tables/page";
 import "./floor-map.css";
+
+function getTableTypeColors(name: string) {
+  const n = name.toLowerCase();
+  if (n.includes('vip')) return { color: '#8b5cf6', background: '#ede9fe' };
+  if (n.includes('standard')) return { color: '#10b981', background: '#d1fae5' };
+  if (n.includes('carom')) return { color: '#f59e0b', background: '#fef3c7' };
+  if (n.includes('snooker')) return { color: '#ef4444', background: '#fee2e2' };
+  return { color: '#6b7280', background: '#f3f4f6' };
+}
 
 export default function FloorMapPage() {
   const toast = useToast();
   const [selected, setSelected] = useState<(VenueTableLayoutItem & { zoneName?: string }) | null>(null);
-  const [endingSessionId, setEndingSessionId] = useState<number | null>(null);
   const [activeFloorId, setActiveFloorId] = useState<number | null>(null);
+  
+  const [editingTable, setEditingTable] = useState<any | "new" | null>(null);
+  const [deletingTable, setDeletingTable] = useState<any | null>(null);
+  const [tableTypes, setTableTypes] = useState<TableType[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  
+  useEffect(() => {
+    venueApi.tableTypes({ PageSize: 200 }).then(res => {
+      setTableTypes(Array.isArray(res) ? res : res.items || []);
+    });
+    venueApi.zones({ PageSize: 200 }).then(res => {
+      setZones(Array.isArray(res) ? res : res.items || []);
+    });
+  }, []);
 
   const { data: layoutRes, loading, error, reload } = useLoad(async () => {
     return await venueApi.layout();
@@ -28,41 +51,22 @@ export default function FloorMapPage() {
 
   const activeFloor = floors.find(f => f.floorId === activeFloorId) || floors[0];
 
-  async function startSession(table: VenueTableLayoutItem) {
-    if (table.operationalStatus !== 1) {
-      toast("Chỉ có thể mở phiên trên bàn đang sẵn sàng.", "error");
-      return;
+  async function removeTable() {
+    if (!deletingTable) return;
+    try {
+      await venueApi.deleteTable(deletingTable.tableId);
+      toast("Đã xóa bàn chơi.", "success");
+      setDeletingTable(null);
+      setSelected(null);
+      reload();
+    } catch (err: any) {
+      toast(err.message || "Không thể xóa bàn.", "error");
     }
-    await sessionApi.start({ tableId: table.tableId }).then(() => toast("Đã mở phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
-    reload();
-    setSelected(null);
   }
-
-  async function endSession(sessionId: number) {
-    await sessionApi.end(sessionId).then(() => toast("Đã đóng phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
-    reload();
-    setSelected(null);
-    setEndingSessionId(null);
-  }
-
-  async function generateInvoice(sessionId: number) {
-    await invoiceApi.generate(sessionId).then(() => toast("Đã tạo hóa đơn.", "success")).catch((err) => toast(err.message, "error"));
-    reload();
-  }
-
-  const getTone = (status: number) => {
-    switch(status) {
-      case 1: return "green";
-      case 2: return "blue";
-      case 3: return "yellow";
-      case 4: return "red";
-      default: return "neutral";
-    }
-  };
 
   return (
     <div className="layout-container">
-      <PageHeader title="Sơ đồ cơ sở" description="Theo dõi trạng thái bàn và phiên chơi theo thời gian thực." />
+      <PageHeader title="Sơ đồ cơ sở" description="Theo dõi và quản lý bàn chơi." action={<button className="primary-btn" onClick={() => setEditingTable("new")}>Tạo bàn mới</button>} />
       
       <StateBlock loading={loading} error={error} empty={!loading && (!floors.length || !layoutRes?.totalTables)} />
 
@@ -71,14 +75,6 @@ export default function FloorMapPage() {
           <div className="stat-item">
             <span className="stat-label">Tổng số bàn</span>
             <span className="stat-value">{layoutRes.totalTables}</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-label">Đang trống</span>
-            <span className="stat-value available">{layoutRes.availableTables}</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-label">Đang có khách</span>
-            <span className="stat-value occupied">{layoutRes.occupiedTables}</span>
           </div>
         </div>
       )}
@@ -110,24 +106,25 @@ export default function FloorMapPage() {
                 {zone.tables.map(table => (
                   <div 
                     key={table.tableId} 
-                    className={`venue-table-card status-${table.operationalStatus}`}
-                    onClick={() => setSelected({ ...table, zoneName: zone.zoneName })}
+                    className="venue-table-card"
+                    onClick={() => setSelected({ ...table, zoneId: zone.zoneId, zoneName: zone.zoneName } as any)}
+                    style={{ borderLeftColor: getTableTypeColors(table.tableTypeName).color }}
                   >
                     <div className="table-header">
                       <div>
                         <h4 className="table-code">{table.tableCode}</h4>
                         <p className="table-name">{table.tableName}</p>
                       </div>
-                      <Badge tone={getTone(table.operationalStatus)}>
-                        {label(tableStatus, table.operationalStatus)}
-                      </Badge>
                     </div>
                     
                     <div className="table-footer">
-                      <span className="table-type">{table.tableTypeName} • {table.capacity} khách</span>
-                      {table.activeSessionId && (
-                        <span className="active-session-badge">Phiên #{table.activeSessionId}</span>
-                      )}
+                      <span className="table-type" style={{ 
+                        ...getTableTypeColors(table.tableTypeName), 
+                        padding: '2px 8px', borderRadius: '12px', fontWeight: 600 
+                      }}>
+                        {table.tableTypeName}
+                      </span>
+                      <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{table.capacity} khách</span>
                     </div>
                   </div>
                 ))}
@@ -162,19 +159,14 @@ export default function FloorMapPage() {
           </div>
 
           <div className="actions">
-            {selected.activeSessionId ? (
-              <>
-                <button className="danger-btn" style={{flex: 1}} onClick={() => setEndingSessionId(selected.activeSessionId!)}>Đóng phiên</button>
-                <button className="secondary-btn" onClick={() => generateInvoice(selected.activeSessionId!)}>Tạo hóa đơn</button>
-              </>
-            ) : (
-              <button className="primary-btn" style={{flex: 1}} disabled={selected.operationalStatus !== 1} onClick={() => startSession(selected)}>Bắt đầu phiên chơi</button>
-            )}
+            <button className="secondary-btn" style={{flex: 1}} onClick={() => setEditingTable(selected)}>Chỉnh sửa</button>
+            <button className="danger-btn" onClick={() => setDeletingTable(selected)}>Xóa</button>
             <button className="ghost-btn" onClick={() => setSelected(null)}>Đóng</button>
           </div>
         </div>
       ) : null}
-      {endingSessionId ? <ConfirmDialog title="Đóng phiên chơi" message="Xác nhận đóng phiên chơi này?" confirmLabel="Đóng phiên" danger onCancel={() => setEndingSessionId(null)} onConfirm={() => endSession(endingSessionId)} /> : null}
+      {editingTable ? <TableFormModal table={editingTable === "new" ? null : editingTable} zones={zones} tableTypes={tableTypes} onClose={() => setEditingTable(null)} onSaved={async () => { setEditingTable(null); await reload(); }} /> : null}
+      {deletingTable ? <ConfirmDialog title="Xóa bàn chơi" message={`Xóa bàn “${deletingTable.tableName}”?`} confirmLabel="Xóa" danger onCancel={() => setDeletingTable(null)} onConfirm={removeTable} /> : null}
     </div>
   );
 }

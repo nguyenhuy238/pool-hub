@@ -116,66 +116,6 @@
   box-shadow: 0 8px 24px rgba(16, 32, 28, 0.08);
 }
 
-/* Status Colors */
-.venue-table-card.status-1 { /* Available */
-  border-left-color: #27a35f;
-}
-.venue-table-card.status-1:hover {
-  background: #f4fbf7;
-}
-
-.venue-table-card.status-2 { /* Occupied */
-  border-left-color: #2d6cdf;
-}
-.venue-table-card.status-2:hover {
-  background: #f5f8fd;
-}
-
-.venue-table-card.status-3 { /* Reserved */
-  border-left-color: #d99c1f;
-}
-.venue-table-card.status-3:hover {
-  background: #fffdf5;
-}
-
-.venue-table-card.status-4 { /* Maintenance */
-  border-left-color: #c94646;
-}
-
-.table-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.table-code {
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--ink);
-  margin: 0;
-}
-
-.table-name {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 2px 0 0 0;
-}
-
-.table-footer {
-  margin-top: auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: 8px;
-  border-top: 1px dashed var(--line);
-}
-
-.table-type {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 500;
-}
-
 .active-session-badge {
   display: inline-flex;
   align-items: center;

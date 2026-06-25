@@ -7,10 +7,27 @@ import { useAuth } from "@/components/auth-provider";
 import { MANAGEMENT_READ_ROLES, OPERATION_ROLES, ROLES } from "@/lib/auth/constants";
 import { NotificationDropdown } from "./notification-dropdown";
 
-const nav = [
+type NavItem = {
+  href?: string;
+  label: string;
+  roles: string[];
+  children?: { href: string; label: string; roles: string[] }[];
+};
+
+const nav: NavItem[] = [
   { href: "/admin/dashboard", label: "Tổng quan quản trị", roles: [ROLES.ADMIN] },
   { href: "/dashboard", label: "Tổng quan vận hành", roles: OPERATION_ROLES },
-  { href: "/operation/floor-map", label: "Sơ đồ bàn", roles: OPERATION_ROLES },
+  {
+    label: "Sơ đồ & Cơ sở",
+    roles: OPERATION_ROLES,
+    children: [
+      { href: "/operation/floor-map", label: "Sơ đồ bàn", roles: OPERATION_ROLES },
+      { href: "/management/floors", label: "Tầng", roles: MANAGEMENT_READ_ROLES },
+      { href: "/management/zones", label: "Khu vực", roles: MANAGEMENT_READ_ROLES },
+      { href: "/management/table-types", label: "Loại bàn", roles: MANAGEMENT_READ_ROLES },
+      { href: "/management/venue-tables", label: "Bàn chơi", roles: MANAGEMENT_READ_ROLES },
+    ]
+  },
   { href: "/operation/bookings", label: "Đặt bàn", roles: OPERATION_ROLES },
   { href: "/management/customers", label: "Khách hàng", roles: MANAGEMENT_READ_ROLES },
   { href: "/operation/sessions", label: "Phiên chơi", roles: OPERATION_ROLES },
@@ -18,10 +35,6 @@ const nav = [
   { href: "/operation/invoices", label: "Hóa đơn", roles: OPERATION_ROLES },
   { href: "/management/products", label: "Sản phẩm", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/product-categories", label: "Danh mục sản phẩm", roles: MANAGEMENT_READ_ROLES },
-  { href: "/management/floors", label: "Tầng", roles: MANAGEMENT_READ_ROLES },
-  { href: "/management/zones", label: "Khu vực", roles: MANAGEMENT_READ_ROLES },
-  { href: "/management/table-types", label: "Loại bàn", roles: MANAGEMENT_READ_ROLES },
-  { href: "/management/venue-tables", label: "Bàn chơi", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/pricing-plans", label: "Bảng giá", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/pricing-rules", label: "Quy tắc tính giá", roles: MANAGEMENT_READ_ROLES },
   { href: "/admin/users", label: "Người dùng", roles: [ROLES.ADMIN] },
@@ -35,6 +48,36 @@ const nav = [
   { href: "/change-password", label: "Đổi mật khẩu", roles: OPERATION_ROLES },
   { href: "/notifications", label: "Thông báo", roles: OPERATION_ROLES }
 ];
+
+function NavDropdown({ item, pathname, roles }: { item: NavItem; pathname: string; roles: string[] }) {
+  const allowedChildren = item.children?.filter((child) => child.roles.some((role) => roles.includes(role))) || [];
+  const isActive = allowedChildren.some((child) => pathname === child.href);
+  const [open, setOpen] = useState(isActive);
+
+  useEffect(() => {
+    if (isActive) setOpen(true);
+  }, [isActive]);
+
+  if (allowedChildren.length === 0) return null;
+
+  return (
+    <div className={`nav-dropdown ${open ? "open" : ""}`}>
+      <button className="nav-dropdown-trigger" onClick={() => setOpen(!open)}>
+        <span>{item.label}</span>
+        <svg style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      <div className="nav-dropdown-content" style={{ display: open ? "flex" : "none", flexDirection: "column", paddingLeft: "12px", borderLeft: "2px solid var(--line)", marginLeft: "12px", marginTop: "4px" }}>
+        {allowedChildren.map((child) => (
+          <Link key={child.href} className={pathname === child.href ? "active" : ""} href={child.href} style={{ padding: "8px 12px", fontSize: "14px" }}>
+            {child.label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "/";
@@ -62,7 +105,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link className="brand" href="/dashboard"><span>PH</span>PoolHub</Link>
         <nav>
           {allowed.map((item) => (
-            <Link key={item.href} className={pathname === item.href ? "active" : ""} href={item.href}>{item.label}</Link>
+            item.children ? (
+              <NavDropdown key={item.label} item={item} pathname={pathname} roles={roles} />
+            ) : (
+              <Link key={item.href} className={pathname === item.href ? "active" : ""} href={item.href as string}>{item.label}</Link>
+            )
           ))}
         </nav>
       </aside>
@@ -83,7 +130,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <nav className="bottom-nav">
         {allowed.slice(0, 5).map((item) => (
-          <Link key={item.href} className={pathname === item.href ? "active" : ""} href={item.href}>{item.label}</Link>
+          <Link key={item.label} className={pathname === item.href ? "active" : ""} href={(item.href || item.children?.[0].href) as string}>{item.label}</Link>
         ))}
       </nav>
     </div>
