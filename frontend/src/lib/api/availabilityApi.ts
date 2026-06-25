@@ -25,7 +25,7 @@ export const availabilityApi = {
   async getPricing() {
     const [plans, rules] = await Promise.all([
       apiFetch<PricingPlan[] | { items?: PricingPlan[] }>("/api/pricing-plans", { skipAuth: true }),
-      apiFetch<PricingPlanRule[] | { items?: PricingPlanRule[] }>("/api/pricing-plans/rules", { skipAuth: true })
+      apiFetch<PricingPlanRule[] | { items?: PricingPlanRule[] }>("/api/pricing-plans/rules?pageSize=500", { skipAuth: true })
     ]);
     return { plans: unwrapList(plans), rules: unwrapList(rules), usingMock: false } satisfies LandingPricing;
   }
