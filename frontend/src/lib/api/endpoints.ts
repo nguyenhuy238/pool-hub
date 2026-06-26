@@ -58,8 +58,11 @@ export const bookingApi = {
   calendar: (from: string, to: string, params: Record<string, string | number | undefined> = {}) => 
     apiFetch<BookingCalendarItem[] | { items?: BookingCalendarItem[] }>(`/api/bookings/calendar${toQuery({ from, to, ...params })}`),
   create: (body: Partial<Booking>) => apiFetch<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
+  update: (id: number, body: Partial<Booking>) => apiFetch<Booking>(`/api/bookings/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   confirm: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/confirm`, { method: "PUT" }),
   cancel: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/cancel`, { method: "PUT" }),
+  noShow: (id: number, reason?: string) => apiFetch<Booking>(`/api/bookings/${id}/no-show`, { method: "PUT", body: JSON.stringify({ reason }) }),
+  startSession: (id: number, tableId?: number) => apiFetch<Session>(`/api/bookings/${id}/start-session`, { method: "POST", body: JSON.stringify(tableId ? { tableId } : {}) }),
   delete: (id: number) => apiFetch(`/api/bookings/${id}`, { method: "DELETE" })
 };
 
@@ -76,9 +79,11 @@ export const customerApi = {
 
 export const sessionApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Session[] | { items?: Session[] }>(`/api/sessions${toQuery(params)}`),
+  active: (params: Record<string, string | number | undefined> = {}) => apiFetch<Session[] | { items?: Session[] }>(`/api/sessions/active${toQuery(params)}`),
   detail: (id: number) => apiFetch<Session>(`/api/sessions/${id}`),
+  summary: (id: number) => apiFetch<any>(`/api/sessions/${id}/summary`),
   start: (body: { tableId: number; bookingId?: number; customerId?: number }) => apiFetch<Session>("/api/sessions/start", { method: "POST", body: JSON.stringify(body) }),
-  end: (id: number) => apiFetch<Session>(`/api/sessions/${id}/close`, { method: "POST" }),
+  end: (id: number) => apiFetch<any>(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ endedAtUtc: null, generateInvoice: true }) }),
   switchTable: (id: number, newTableId: number) => apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify({ newTableId }) })
 };
 

@@ -7,6 +7,7 @@ namespace PoolHub.Core.Interfaces.Services;
 public interface IBookingService
 {
     Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct);
+    Task<BookingDto> GetByIdAsync(long id, CancellationToken ct);
     Task<BookingDto> CreateAsync(CreateBookingRequest request, CancellationToken ct);
     Task<BookingDto> UpdateAsync(long id, UpdateBookingRequest request, CancellationToken ct);
     Task<BookingDto> ConfirmAsync(long id, long? confirmedByUserId, CancellationToken ct);

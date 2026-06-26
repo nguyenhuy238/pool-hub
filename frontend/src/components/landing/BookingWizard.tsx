@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './BookingWizard.css';
 import { availabilityApi, type LandingAvailability, type LandingPricing } from "@/lib/api/availabilityApi";
 import { publicBookingApi } from "@/lib/api/publicBookingApi";
+import { addDaysToVietnamDateInput, getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamDayOfWeek, getVietnamHourOfDay, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
 import type { VenueFloorLayoutItem, VenueZoneLayoutItem, VenueTableLayoutItem, PricingPlan, PricingPlanRule } from '@/types';
@@ -36,7 +37,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   // Form State
   const [selectedTable, setSelectedTable] = useState<VenueTableLayoutItem | null>(null);
   
-  const [bookingDate, setBookingDate] = useState(new Date().toISOString().slice(0, 10));
+  const [bookingDate, setBookingDate] = useState(getVietnamDateInputValue());
   const [selectedSlotIndexes, setSelectedSlotIndexes] = useState<number[]>([]);
   const [bookedSlots, setBookedSlots] = useState<Set<number>>(new Set());
   const [pastSlots, setPastSlots] = useState<Set<number>>(new Set());
@@ -88,21 +89,16 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
       const booked = new Set<number>();
       dataArray.forEach((b: any) => {
         if (b.status === 3) return;
-        const startStr = b.startTimeUtc.endsWith('Z') ? b.startTimeUtc : b.startTimeUtc + 'Z';
-        const endStr = b.endTimeUtc.endsWith('Z') ? b.endTimeUtc : b.endTimeUtc + 'Z';
-        const start = new Date(startStr);
-        const end = new Date(endStr);
-        
-        const targetDate = new Date(bookingDate);
-        targetDate.setHours(0,0,0,0);
-        const nextDay = new Date(targetDate);
-        nextDay.setDate(nextDay.getDate() + 1);
+        const start = new Date(b.startTimeUtc);
+        const end = new Date(b.endTimeUtc);
+        const targetStart = new Date(vietnamDateTimeToUtcIso(bookingDate, "00:00"));
+        const targetEnd = new Date(vietnamDateTimeToUtcIso(bookingDate, "23:59:59"));
 
-        let startHours = start.getHours() + start.getMinutes() / 60;
-        let endHours = end.getHours() + end.getMinutes() / 60;
+        let startHours = getVietnamHourOfDay(b.startTimeUtc);
+        let endHours = getVietnamHourOfDay(b.endTimeUtc);
 
-        if (start < targetDate) startHours = 0;
-        if (end > nextDay || (end.getTime() === nextDay.getTime())) endHours = 24;
+        if (start < targetStart) startHours = 0;
+        if (end > targetEnd || end.getTime() === targetEnd.getTime()) endHours = 24;
         else if (endHours === 0 && end.getMinutes() === 0 && end > start) endHours = 24;
 
         for (let i = 0; i < TOTAL_SLOTS; i++) {
@@ -124,14 +120,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
 
   useEffect(() => {
     const calculatePast = () => {
-      const todayStr = new Date().toISOString().split("T")[0];
+      const todayStr = getVietnamDateInputValue();
       const past = new Set<number>();
       
       if (bookingDate < todayStr) {
         for (let i = 0; i < TOTAL_SLOTS; i++) past.add(i);
       } else if (bookingDate === todayStr) {
-        const now = new Date();
-        const currentHour = now.getHours() + now.getMinutes() / 60;
+        const currentHour = getCurrentVietnamHourOfDay();
         for (let i = 0; i < TOTAL_SLOTS; i++) {
           if (START_HOUR + i * 0.5 <= currentHour) {
             past.add(i);
@@ -324,7 +319,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     
     if (rulesForTableType.length === 0) return 0;
     
-    const dayOfWeek = new Date(bookingDate).getDay();
+    const dayOfWeek = getVietnamDayOfWeek(bookingDate);
     const timeStr = TIME_SLOTS[index] + ":00";
     
     let rule = rulesForTableType.find(r => {
@@ -371,8 +366,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
         
         <div className="bw-form-grid" style={{ marginBottom: '16px' }}>
           <label><span>Ngày đặt *</span>
-            <input type="date" min={new Date().toISOString().slice(0, 10)} 
-                   max={new Date(Date.now() + policy.advanceBookingDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)} 
+            <input type="date" min={getVietnamDateInputValue()} 
+                   max={addDaysToVietnamDateInput(getVietnamDateInputValue(), policy.advanceBookingDays)} 
                    value={bookingDate} onChange={e => {
                      setBookingDate(e.target.value);
                      setSelectedSlotIndexes([]);

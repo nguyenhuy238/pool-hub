@@ -29,7 +29,7 @@ public class BookingsController(IBookingService bookingService, ISessionService 
     /// <param name="id">ID của lịch đặt bàn.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Chi tiết lịch đặt bàn.</returns>
-    [HttpGet("{id:int}")] [Authorize] public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await crud.GetBookingAsync(id, ct)));
+    [HttpGet("{id:int}")] [Authorize] public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.GetByIdAsync(id, ct)));
 
     /// <summary>
     /// Lấy danh sách booking theo khoảng thời gian — dùng cho Calendar View.

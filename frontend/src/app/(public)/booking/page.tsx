@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { unwrapList } from "@/lib/api/client";
+import { vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
 import { useToast } from "@/components/toast";
 import type { TableType, VenueTable } from "@/types";
 
@@ -26,8 +27,8 @@ export default function PublicBookingPage() {
       phoneNumber: form.phoneNumber,
       tableId: form.tableId ? Number(form.tableId) : undefined,
       tableTypeId: form.tableTypeId ? Number(form.tableTypeId) : undefined,
-      startTimeUtc: new Date(form.startTimeUtc).toISOString(),
-      endTimeUtc: new Date(form.endTimeUtc).toISOString(),
+      startTimeUtc: vietnamDatetimeLocalToUtcIso(form.startTimeUtc),
+      endTimeUtc: vietnamDatetimeLocalToUtcIso(form.endTimeUtc),
       numberOfGuests: Number(form.numberOfGuests)
     }).then(() => toast("Đặt bàn thành công. Nhân viên sẽ xác nhận sớm.", "success"))
       .catch((err) => toast(err instanceof Error ? err.message : "Đặt bàn thất bại.", "error"));

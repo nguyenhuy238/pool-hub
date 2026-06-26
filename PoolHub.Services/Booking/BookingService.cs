@@ -15,6 +15,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
 {
     public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
     {
+        await AutoCancelExpiredPendingBookingsAsync(ct);
+
         var query = db.Bookings.AsQueryable();
 
         if (request.Status.HasValue)
@@ -29,6 +31,13 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.BookingId).Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).Select(x => new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status }).ToListAsync(ct);
         return new PagedResult<BookingDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
+    }
+
+    public async Task<BookingDto> GetByIdAsync(long id, CancellationToken ct)
+    {
+        var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        await AutoCancelIfExpiredPendingAsync(booking, DateTime.UtcNow, ct);
+        return Map(booking);
     }
 
     public async Task<BookingDto> CreateAsync(CreateBookingRequest request, CancellationToken ct)
@@ -125,15 +134,30 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> UpdateAsync(long id, UpdateBookingRequest request, CancellationToken ct)
     {
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
+        if (request.EndTimeUtc <= DateTime.UtcNow)
+        {
+            throw new BusinessRuleException("Booking end time must be in the future.");
+        }
+
         if (request.NumberOfGuests < 1 || request.NumberOfGuests > 20)
         {
             throw new ValidationException("Number of guests must be between 1 and 20.");
         }
 
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        await AutoCancelIfExpiredPendingAsync(booking, DateTime.UtcNow, ct);
         if (booking.Status is BookingStatuses.Cancelled or BookingStatuses.NoShow or BookingStatuses.Completed)
         {
             throw new BusinessRuleException("Booking cannot be updated.");
+        }
+
+        var hasSession = await db.Sessions.AnyAsync(x => x.BookingId == id, ct);
+        var changesTableOrTime = booking.TableId != request.TableId ||
+            booking.StartTimeUtc != request.StartTimeUtc ||
+            booking.EndTimeUtc != request.EndTimeUtc;
+        if (hasSession && changesTableOrTime)
+        {
+            throw new ConflictException("Booking already has a session and cannot change table or time.");
         }
 
         if (request.StartTimeUtc.Minute % 30 != 0 || request.StartTimeUtc.Second != 0 || request.StartTimeUtc.Millisecond != 0 ||
@@ -162,6 +186,12 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> ConfirmAsync(long id, long? confirmedByUserId, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        var expired = await AutoCancelIfExpiredPendingAsync(booking, DateTime.UtcNow, ct);
+        if (expired)
+        {
+            throw new ConflictException("Booking has expired and was cancelled automatically.");
+        }
+
         if (booking.Status != BookingStatuses.Pending) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
         if (booking.TableId.HasValue && await HasConflictAsync(booking, ct))
             throw new ConflictException("Table is already booked for the selected time.");
@@ -264,6 +294,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     /// <inheritdoc/>
     public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)
     {
+        await AutoCancelExpiredPendingBookingsAsync(ct);
+
         // Validate khoảng thời gian
         if (request.From > request.To)
             throw new ValidationException("'from' must be earlier than 'to'.");
@@ -370,5 +402,47 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             throw new ValidationException("Booking times must use UTC.");
         if (endTimeUtc <= startTimeUtc)
             throw new ValidationException("End time must be after start time.");
+    }
+
+    private async Task AutoCancelExpiredPendingBookingsAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var expiredBookings = await db.Bookings
+            .Where(x => x.Status == BookingStatuses.Pending && x.EndTimeUtc <= now)
+            .ToListAsync(ct);
+
+        if (expiredBookings.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var booking in expiredBookings)
+        {
+            MarkExpiredPendingAsCancelled(booking, now);
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<bool> AutoCancelIfExpiredPendingAsync(EntityBooking booking, DateTime now, CancellationToken ct)
+    {
+        if (booking.Status != BookingStatuses.Pending || booking.EndTimeUtc > now)
+        {
+            return false;
+        }
+
+        MarkExpiredPendingAsCancelled(booking, now);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private static void MarkExpiredPendingAsCancelled(EntityBooking booking, DateTime now)
+    {
+        booking.Status = BookingStatuses.Cancelled;
+        booking.CancelledAtUtc = now;
+        booking.Note = string.IsNullOrWhiteSpace(booking.Note)
+            ? "Auto-cancelled because booking expired before confirmation"
+            : $"{booking.Note} | Auto-cancelled because booking expired before confirmation";
+        booking.UpdatedAtUtc = now;
     }
 }
