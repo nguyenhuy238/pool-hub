@@ -182,12 +182,12 @@ export function DataTable<T extends Record<string, unknown>>({ rows, columns, ac
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr>{columns.map((column) => <th key={String(column.key)}>{column.label}</th>)}{actions ? <th>Thao tác</th> : null}</tr></thead>
+        <thead><tr>{columns.map((column) => <th key={String(column.key)}>{column.label}</th>)}{actions ? <th style={{ width: 160, minWidth: 160 }}>Thao tác</th> : null}</tr></thead>
         <tbody>
           {rows.map((row, index) => (
             <tr key={String(row.id || row[columns[0].key] || index)}>
               {columns.map((column) => <td key={String(column.key)}>{column.render ? column.render(row) : String(row[column.key] ?? "-")}</td>)}
-              {actions ? <td className="actions">{actions(row)}</td> : null}
+              {actions ? <td style={{ width: 160, minWidth: 160, verticalAlign: "middle" }}>{actions(row)}</td> : null}
             </tr>
           ))}
         </tbody>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
+import { formatVietnamTime, getVietnamDateInputValue, getVietnamHourOfDay, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { PageHeader, StateBlock, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { BookingCalendarItem } from "@/types";
@@ -14,10 +15,7 @@ const TOTAL_HOURS = END_HOUR - START_HOUR;
 
 export default function BookingCalendarPage() {
   // Mặc định chọn ngày hôm nay
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split("T")[0];
-  });
+  const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
 
   const [statusFilter, setStatusFilter] = useState("");
   
@@ -30,14 +28,13 @@ export default function BookingCalendarPage() {
     
     // Tính khoảng thời gian từ 00:00:00 đến 23:59:59 của ngày được chọn theo UTC
     // (Trong thực tế cần convert local timezone sang UTC cho chính xác)
-    const fromDate = new Date(`${selectedDate}T00:00:00Z`);
-    const toDate = new Date(`${selectedDate}T23:59:59Z`);
+    const { startUtc, endUtc } = vietnamDateRangeToUtcIso(selectedDate);
     
     const params: Record<string, string> = {};
     if (statusFilter) params.status = statusFilter;
     
     const [bookingsRes, tablesRes] = await Promise.all([
-      bookingApi.calendar(fromDate.toISOString(), toDate.toISOString(), params),
+      bookingApi.calendar(startUtc, endUtc, params),
       venueApi.tables({ pageSize: 500 }) // Fetch up to 500 tables to populate Y-axis
     ]);
     

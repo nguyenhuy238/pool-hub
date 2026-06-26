@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
+import { vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import type { Booking } from "@/types";
 
 export type PublicBookingRequest = {
@@ -15,7 +16,7 @@ export type PublicBookingRequest = {
 };
 
 function toBookingPayload(request: PublicBookingRequest) {
-  const start = new Date(`${request.bookingDate}T${request.startTime}`);
+  const start = new Date(vietnamDateTimeToUtcIso(request.bookingDate, request.startTime));
   const end = new Date(start.getTime() + request.durationHours * 60 * 60 * 1000);
 
   return {

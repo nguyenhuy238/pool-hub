@@ -43,6 +43,6 @@ export function money(value?: number) {
 }
 
 export function dateTime(value?: string) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  return formatVietnamDateTime(value);
 }
+import { formatVietnamDateTime } from "@/lib/dateTime";
