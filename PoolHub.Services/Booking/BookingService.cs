@@ -122,7 +122,44 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         return new BookingDto { BookingId = entity.BookingId, BookingCode = entity.BookingCode, CustomerId = entity.CustomerId, TableId = entity.TableId, StartTimeUtc = entity.StartTimeUtc, EndTimeUtc = entity.EndTimeUtc, Status = entity.Status };
     }
 
-    public async Task<BookingDto> ConfirmAsync(long id, CancellationToken ct)
+    public async Task<BookingDto> UpdateAsync(long id, UpdateBookingRequest request, CancellationToken ct)
+    {
+        ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
+        if (request.NumberOfGuests < 1 || request.NumberOfGuests > 20)
+        {
+            throw new ValidationException("Number of guests must be between 1 and 20.");
+        }
+
+        var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        if (booking.Status is BookingStatuses.Cancelled or BookingStatuses.NoShow or BookingStatuses.Completed)
+        {
+            throw new BusinessRuleException("Booking cannot be updated.");
+        }
+
+        if (request.StartTimeUtc.Minute % 30 != 0 || request.StartTimeUtc.Second != 0 || request.StartTimeUtc.Millisecond != 0 ||
+            request.EndTimeUtc.Minute % 30 != 0 || request.EndTimeUtc.Second != 0 || request.EndTimeUtc.Millisecond != 0)
+        {
+            throw new BusinessRuleException("Thá»i gian Ä‘áº·t bĂ n pháº£i lĂ  cĂ¡c má»‘c cháºµn 30 phĂºt (VD: 10:00, 10:30).");
+        }
+
+        if (request.TableId.HasValue)
+        {
+            await EnsureTableCanBeBookedAsync(request.TableId.Value, id, request.StartTimeUtc, request.EndTimeUtc, ct);
+        }
+
+        booking.TableId = request.TableId;
+        booking.TableTypeId = request.TableTypeId;
+        booking.StartTimeUtc = request.StartTimeUtc;
+        booking.EndTimeUtc = request.EndTimeUtc;
+        booking.NumberOfGuests = request.NumberOfGuests;
+        booking.Note = request.Note?.Trim();
+        booking.UpdatedAtUtc = DateTime.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return Map(booking);
+    }
+
+    public async Task<BookingDto> ConfirmAsync(long id, long? confirmedByUserId, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
         if (booking.Status != BookingStatuses.Pending) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
@@ -130,7 +167,8 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             throw new ConflictException("Table is already booked for the selected time.");
 
         booking.Status = BookingStatuses.Confirmed;
-        booking.ConfirmedAtUtc = DateTime.UtcNow;
+        booking.ConfirmedByUserId = confirmedByUserId;
+        booking.ConfirmedAtUtc ??= DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
     }
@@ -187,6 +225,36 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         db.Bookings.AnyAsync(x => x.BookingId != booking.BookingId && x.TableId == booking.TableId &&
             (x.Status == BookingStatuses.Pending || x.Status == BookingStatuses.Confirmed)
             && x.StartTimeUtc < booking.EndTimeUtc && x.EndTimeUtc > booking.StartTimeUtc, ct);
+
+    private async Task EnsureTableCanBeBookedAsync(long tableId, long bookingId, DateTime startTimeUtc, DateTime endTimeUtc, CancellationToken ct)
+    {
+        var table = await db.VenueTables.FindAsync([tableId], ct)
+            ?? throw new NotFoundException("Table not found.");
+        if (!table.IsActive || table.OperationalStatus != 1)
+        {
+            throw new BusinessRuleException("Table is not available for booking.");
+        }
+
+        var isConflict = await db.Bookings.AnyAsync(b =>
+            b.BookingId != bookingId &&
+            b.TableId == tableId &&
+            b.Status == BookingStatuses.Confirmed &&
+            b.StartTimeUtc < endTimeUtc &&
+            startTimeUtc < b.EndTimeUtc, ct);
+        if (isConflict)
+        {
+            throw new ConflictException("Table is already booked and confirmed for the selected time.");
+        }
+
+        var hasActiveSession = await db.SessionTableAssignments.AnyAsync(a =>
+            a.TableId == tableId &&
+            a.EndedAtUtc == null &&
+            db.Sessions.Any(s => s.SessionId == a.SessionId && s.Status == 1), ct);
+        if (hasActiveSession)
+        {
+            throw new ConflictException("Table currently has an active session.");
+        }
+    }
 
     private static BookingDto Map(EntityBooking booking) => new() {
         BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId,

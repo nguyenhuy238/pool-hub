@@ -69,17 +69,17 @@ export const customerApi = {
   detail: (id: number) => apiFetch<CustomerDto>(`/api/customers/${id}`),
   update: (id: number, body: Partial<CustomerDto>) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  bookingHistory: (id: number) => apiFetch<{ items?: CustomerBookingHistory[] }>(`/api/customers/${id}/booking-history`),
-  sessionHistory: (id: number) => apiFetch<{ items?: CustomerSessionHistory[] }>(`/api/customers/${id}/session-history`),
-  invoiceHistory: (id: number) => apiFetch<{ items?: CustomerInvoiceHistory[] }>(`/api/customers/${id}/invoice-history`)
+  bookingHistory: (id: number) => apiFetch<{ items?: CustomerBookingHistory[] }>(`/api/customers/${id}/bookings`),
+  sessionHistory: (id: number) => apiFetch<{ items?: CustomerSessionHistory[] }>(`/api/customers/${id}/sessions`),
+  invoiceHistory: (id: number) => apiFetch<{ items?: CustomerInvoiceHistory[] }>(`/api/customers/${id}/invoices`)
 };
 
 export const sessionApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Session[] | { items?: Session[] }>(`/api/sessions${toQuery(params)}`),
   detail: (id: number) => apiFetch<Session>(`/api/sessions/${id}`),
   start: (body: { tableId: number; bookingId?: number; customerId?: number }) => apiFetch<Session>("/api/sessions/start", { method: "POST", body: JSON.stringify(body) }),
-  end: (id: number) => apiFetch<Session>(`/api/sessions/${id}/end`, { method: "POST" }),
-  switchTable: (id: number, newTableId: number) => apiFetch(`/api/sessions/${id}/switch`, { method: "POST", body: JSON.stringify({ newTableId }) })
+  end: (id: number) => apiFetch<Session>(`/api/sessions/${id}/close`, { method: "POST" }),
+  switchTable: (id: number, newTableId: number) => apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify({ newTableId }) })
 };
 
 export const orderApi = {

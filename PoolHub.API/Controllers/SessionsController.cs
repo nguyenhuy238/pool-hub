@@ -17,6 +17,18 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
     public async Task<ActionResult<ApiResponse<PagedResult<SessionDto>>>> GetSessions([FromQuery] SessionQueryRequest request, CancellationToken ct) => 
         Ok(ApiResponse<PagedResult<SessionDto>>.Ok(await sessionService.GetSessionsAsync(request, ct)));
 
+    [HttpGet("active")]
+    public async Task<ActionResult<ApiResponse<List<ActiveSessionResponse>>>> GetActiveSessions(
+        [FromQuery] long? floorId,
+        [FromQuery] long? zoneId,
+        [FromQuery] long? tableId,
+        CancellationToken ct) =>
+        Ok(ApiResponse<List<ActiveSessionResponse>>.Ok(await sessionService.GetActiveSessionsAsync(floorId, zoneId, tableId, ct)));
+
+    [HttpGet("by-table/{tableId:long}")]
+    public async Task<ActionResult<ApiResponse<SessionDetailDto>>> GetActiveSessionByTable(long tableId, CancellationToken ct) =>
+        Ok(ApiResponse<SessionDetailDto>.Ok(await sessionService.GetActiveSessionByTableAsync(tableId, ct)));
+
     [HttpGet("{id:long}")]
     public async Task<ActionResult<ApiResponse<SessionDetailDto>>> GetSessionById(long id, CancellationToken ct) => 
         Ok(ApiResponse<SessionDetailDto>.Ok(await sessionService.GetSessionByIdAsync(id, ct)));
@@ -25,13 +37,13 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
     public async Task<ActionResult<ApiResponse<SessionSummaryResponse>>> GetSummary(long id, CancellationToken ct) =>
         Ok(ApiResponse<SessionSummaryResponse>.Ok(await sessionService.GetSummaryAsync(id, ct)));
 
+    [HttpGet("{id:long}/time-charges")]
+    public async Task<ActionResult<ApiResponse<SessionTimeChargesResponse>>> GetTimeCharges(long id, CancellationToken ct) =>
+        Ok(ApiResponse<SessionTimeChargesResponse>.Ok(await sessionService.GetTimeChargesAsync(id, ct)));
+
     [HttpPost("start")] 
     public async Task<ActionResult<ApiResponse<SessionDto>>> Start([FromBody] StartSessionRequest request, CancellationToken ct) => 
         Ok(ApiResponse<SessionDto>.Ok(await sessionService.StartAsync(User.GetUserId(), request, ct)));
-
-    [HttpPost("{sessionId:long}/end")] 
-    public async Task<ActionResult<ApiResponse<SessionDto>>> Close(long sessionId, CancellationToken ct) => 
-        Ok(ApiResponse<SessionDto>.Ok(await sessionService.CloseAsync(sessionId, User.GetUserId(), ct)));
 
     [HttpPost("{id:long}/close")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
@@ -43,15 +55,18 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
             await sessionService.CloseWithSummaryAsync(id, User.GetUserId(), request, ct),
             "Session closed"));
 
-    [HttpPost("{sessionId:long}/switch")] 
-    public async Task<ActionResult<ApiResponse<object>>> Transfer(long sessionId, [FromBody] TransferTableRequest request, CancellationToken ct) 
-    { 
-        await sessionService.TransferTableAsync(sessionId, request.NewTableId, User.GetUserId(), ct); 
-        return Ok(ApiResponse<object>.Ok(new { }, "Switched")); 
-    }
+    [HttpPost("{id:long}/cancel")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+    public async Task<ActionResult<ApiResponse<SessionDto>>> Cancel(
+        long id,
+        [FromBody] CancelSessionRequest request,
+        CancellationToken ct) =>
+        Ok(ApiResponse<SessionDto>.Ok(
+            await sessionService.CancelAsync(id, User.GetUserId(), request, ct),
+            "Session cancelled"));
 
     [HttpPost("{id:long}/transfer")]
-    public async Task<ActionResult<ApiResponse<object>>> TransferAlias(long id, [FromBody] TransferTableRequest request, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<object>>> Transfer(long id, [FromBody] TransferTableRequest request, CancellationToken ct)
     {
         await sessionService.TransferTableAsync(id, request.NewTableId, User.GetUserId(), ct);
         return Ok(ApiResponse<object>.Ok(new { }, "Transferred"));

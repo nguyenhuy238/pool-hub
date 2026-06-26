@@ -22,8 +22,8 @@
 ## 4. Flow mở session và chuyển bàn
 1. Staff bắt đầu session từ table hoặc booking.
 2. Session được lưu với người thao tác.
-3. Khi cần đổi bàn, gọi switch table.
-4. Khi kết thúc, gọi end hoặc close with summary.
+3. Khi cần đổi bàn, gọi transfer table.
+4. Khi kết thúc, gọi close with summary.
 
 ## 5. Flow order -> invoice -> payment
 1. Tạo order gắn với session.

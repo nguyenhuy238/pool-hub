@@ -506,7 +506,7 @@ paths:
         '400':
           description: Bàn bi-a đang được sử dụng hoặc đang trong trạng thái bảo trì
 
-  /sessions/{sessionId}/end:
+  /sessions/{sessionId}/close:
     post:
       tags:
         - Table & Session
@@ -529,7 +529,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionEndResponse'
 
-  /sessions/{sessionId}/switch:
+  /sessions/{sessionId}/transfer:
     post:
       tags:
         - Table & Session

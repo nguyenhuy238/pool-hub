@@ -1,7 +1,7 @@
 # PoolHub API Documentation
 
 ## 1. Nguồn kiểm tra API
-Ưu tiên kiểm tra controller trong `PoolHub.API/Controllers` và service map ở `frontend/src/lib/api/endpoints.ts`, sau đó mới tham chiếu `swagger_poolhub.yaml` nếu cần đối chiếu legacy.
+Ưu tiên kiểm tra controller trong `PoolHub.API/Controllers` và service map ở `frontend/src/lib/api/endpoints.ts`, sau đó đối chiếu `swagger_poolhub.yaml`.
 
 ## 2. Nhóm endpoint chính
 - Auth: `/api/auth/*`
@@ -26,8 +26,8 @@
 - `GET /api/bookings/public/calendar`
 - `POST /api/bookings/public`
 - `POST /api/sessions/start`
-- `POST /api/sessions/{id}/end`
 - `POST /api/sessions/{id}/close`
+- `POST /api/sessions/{id}/transfer`
 - `POST /api/invoices/generate/{sessionId}`
 - `POST /api/invoices/payments`
 - `POST /api/invoices/{id}/discounts`
@@ -42,7 +42,7 @@
 ## 5. Ghi chú cho frontend
 - Frontend hiện có nhiều service module đã map trực tiếp tới API thật.
 - Nếu service gọi 404, ưu tiên kiểm tra controller thực tế trước khi sửa frontend.
-- Một số service vẫn còn path legacy cần đối chiếu với controller mới.
+- Service frontend cần bám theo route chuẩn trong controller.
 
 ## 6. Cách dùng thực tế
 1. Login bằng seed account.
