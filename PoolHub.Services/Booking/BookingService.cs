@@ -78,6 +78,13 @@ public class BookingService(PoolHubDbContext db) : IBookingService
 
         if (request.TableId.HasValue)
         {
+            var table = await db.VenueTables.FindAsync([request.TableId.Value], ct)
+                ?? throw new NotFoundException("Table not found.");
+            if (!table.IsActive || table.OperationalStatus != 1)
+            {
+                throw new BusinessRuleException("Table is not available for booking.");
+            }
+
             var isConflict = await db.Bookings.AnyAsync(b => 
                 b.TableId == request.TableId.Value && 
                 b.Status == BookingStatuses.Confirmed &&
@@ -87,6 +94,15 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             if (isConflict)
             {
                 throw new ConflictException("Table is already booked and confirmed for the selected time.");
+            }
+
+            var hasActiveSession = await db.SessionTableAssignments.AnyAsync(a =>
+                a.TableId == request.TableId.Value &&
+                a.EndedAtUtc == null &&
+                db.Sessions.Any(s => s.SessionId == a.SessionId && s.Status == 1), ct);
+            if (hasActiveSession)
+            {
+                throw new ConflictException("Table currently has an active session.");
             }
         }
 
