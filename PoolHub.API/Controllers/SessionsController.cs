@@ -21,6 +21,10 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
     public async Task<ActionResult<ApiResponse<SessionDetailDto>>> GetSessionById(long id, CancellationToken ct) => 
         Ok(ApiResponse<SessionDetailDto>.Ok(await sessionService.GetSessionByIdAsync(id, ct)));
 
+    [HttpGet("{id:long}/summary")]
+    public async Task<ActionResult<ApiResponse<SessionSummaryResponse>>> GetSummary(long id, CancellationToken ct) =>
+        Ok(ApiResponse<SessionSummaryResponse>.Ok(await sessionService.GetSummaryAsync(id, ct)));
+
     [HttpPost("start")] 
     public async Task<ActionResult<ApiResponse<SessionDto>>> Start([FromBody] StartSessionRequest request, CancellationToken ct) => 
         Ok(ApiResponse<SessionDto>.Ok(await sessionService.StartAsync(User.GetUserId(), request, ct)));
@@ -44,5 +48,12 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
     { 
         await sessionService.TransferTableAsync(sessionId, request.NewTableId, User.GetUserId(), ct); 
         return Ok(ApiResponse<object>.Ok(new { }, "Switched")); 
+    }
+
+    [HttpPost("{id:long}/transfer")]
+    public async Task<ActionResult<ApiResponse<object>>> TransferAlias(long id, [FromBody] TransferTableRequest request, CancellationToken ct)
+    {
+        await sessionService.TransferTableAsync(id, request.NewTableId, User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(new { }, "Transferred"));
     }
 }

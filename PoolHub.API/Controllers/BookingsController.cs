@@ -2,16 +2,18 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Common;
+using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Interfaces;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Extensions;
 
 namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/bookings")]
-public class BookingsController(IBookingService bookingService, ICrudService crud) : ControllerBase
+public class BookingsController(IBookingService bookingService, ISessionService sessionService, ICrudService crud) : ControllerBase
 {
     /// <summary>
     /// Lấy danh sách lịch đặt bàn có phân trang và lọc.
@@ -145,6 +147,17 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<object>>> Completed(int id, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await bookingService.MarkCompletedAsync(id, ct)));
+
+    [HttpPost("{id:long}/start-session")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> StartSession(
+        long id,
+        [FromBody] StartSessionRequest? request,
+        CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created,
+            ApiResponse<object>.Ok(
+                await sessionService.StartFromBookingAsync(id, request?.TableId, User.GetUserId(), ct),
+                "Session started from booking."));
 
     [HttpGet("availability")]
     [AllowAnonymous]
