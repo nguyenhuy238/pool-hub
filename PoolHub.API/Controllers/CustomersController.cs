@@ -183,18 +183,18 @@ public class CustomersController(ICustomerService customerService) : ControllerB
         return Ok(ApiResponse<object>.Ok(new { }, "Customer soft-deleted."));
     }
 
-    [HttpGet("{id:long}/booking-history")]
-    public async Task<ActionResult<ApiResponse<object>>> BookingHistory(
+    [HttpGet("{id:long}/bookings")]
+    public async Task<ActionResult<ApiResponse<object>>> Bookings(
         long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await customerService.GetBookingHistoryAsync(id, request, ct)));
 
-    [HttpGet("{id:long}/session-history")]
-    public async Task<ActionResult<ApiResponse<object>>> SessionHistory(
+    [HttpGet("{id:long}/sessions")]
+    public async Task<ActionResult<ApiResponse<object>>> Sessions(
         long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await customerService.GetSessionHistoryAsync(id, request, ct)));
 
-    [HttpGet("{id:long}/invoice-history")]
-    public async Task<ActionResult<ApiResponse<object>>> InvoiceHistory(
+    [HttpGet("{id:long}/invoices")]
+    public async Task<ActionResult<ApiResponse<object>>> Invoices(
         long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await customerService.GetInvoiceHistoryAsync(id, request, ct)));
 }

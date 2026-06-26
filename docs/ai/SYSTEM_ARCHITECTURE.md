@@ -34,7 +34,7 @@ flowchart LR
 - IAM: auth, users, roles, permissions, refresh token, password reset.
 - Venue: floors, zones, table types, venue tables, pricing plans.
 - Booking: booking calendar, public availability, confirm/cancel/no-show.
-- Session: start, end, close with summary, switch table.
+- Session: start, close with summary, transfer table.
 - Sales: products, orders, invoices, payments, discounts.
 - Ops: notifications, audit logs, dashboard, reports.
 
@@ -43,5 +43,5 @@ Frontend đang map vào API qua các service module như `auth-service`, `dashbo
 
 ## 6. Kiến trúc thực tế cần lưu ý
 - Code backend đã có controller/service/repository thật, không chỉ là mẫu khung.
-- Một số endpoint legacy trong tài liệu cũ có thể lệch tên so với controller hiện tại.
+- API contract cần bám theo controller hiện tại và route chuẩn trong tài liệu.
 - Nhiều feature vận hành quan trọng đã có nhưng coverage test và chuẩn hóa contract vẫn còn cần hoàn thiện.
