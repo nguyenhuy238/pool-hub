@@ -29,7 +29,26 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             query = query.Where(x => x.TableId == request.TableId.Value);
 
         var total = await query.CountAsync(ct);
-        var items = await query.OrderByDescending(x => x.BookingId).Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).Select(x => new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status }).ToListAsync(ct);
+        var items = await query
+            .OrderByDescending(x => x.BookingId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new BookingDto
+            {
+                BookingId = x.BookingId,
+                BookingCode = x.BookingCode,
+                CustomerId = x.CustomerId,
+                CustomerName = db.Customers.Where(c => c.CustomerId == x.CustomerId).Select(c => c.FullName).FirstOrDefault() ?? string.Empty,
+                PhoneNumber = db.Customers.Where(c => c.CustomerId == x.CustomerId).Select(c => c.PhoneNumber).FirstOrDefault() ?? string.Empty,
+                TableId = x.TableId,
+                TableTypeId = x.TableTypeId,
+                StartTimeUtc = x.StartTimeUtc,
+                EndTimeUtc = x.EndTimeUtc,
+                NumberOfGuests = x.NumberOfGuests,
+                Note = x.Note,
+                Status = x.Status
+            })
+            .ToListAsync(ct);
         return new PagedResult<BookingDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
     }
 

@@ -6,8 +6,8 @@ import { addDaysToVietnamDateInput, getCurrentVietnamHourOfDay, getVietnamDateIn
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
 import type { VenueFloorLayoutItem, VenueZoneLayoutItem, VenueTableLayoutItem, PricingPlan, PricingPlanRule } from '@/types';
-const TOTAL_SLOTS = 32;
-const START_HOUR = 8;
+const START_HOUR = 7;
+const TOTAL_SLOTS = (24 - START_HOUR) * 2;
 const TIME_SLOTS = Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
   const totalMins = START_HOUR * 60 + i * 30;
   return `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
@@ -150,7 +150,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   };
 
   const handleNextStep2 = () => {
-    if (selectedSlotIndexes.length === 0) {
+    if (selectedSlotIndexes.length !== 2 || selectedSlotIndexes[1] <= selectedSlotIndexes[0]) {
       toast("Vui lòng chọn khung giờ.", "error");
       return;
     }
@@ -273,11 +273,11 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
       const start = selectedSlotIndexes[0];
       const end = index;
       
-      if (end < start) {
+      if (end <= start) {
         setSelectedSlotIndexes([end]);
       } else {
         let hasBooked = false;
-        for (let i = start; i <= end; i++) {
+        for (let i = start; i < end; i++) {
           if (bookedSlots.has(i)) hasBooked = true;
         }
         
@@ -340,20 +340,20 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   };
 
   const estimatedPrice = React.useMemo(() => {
-    if (selectedSlotIndexes.length < 1 || !selectedTable) return 0;
+    if (selectedSlotIndexes.length !== 2 || !selectedTable) return 0;
     const s = selectedSlotIndexes[0];
-    const e = selectedSlotIndexes.length === 2 ? selectedSlotIndexes[1] : s;
+    const e = selectedSlotIndexes[1] - 1;
     let total = 0;
     for (let i = s; i <= e; i++) total += getSlotPrice(i);
     return total;
   }, [selectedSlotIndexes, selectedTable, pricing, bookingDate]);
 
   const getCalculatedTimeAndDuration = () => {
-    if (selectedSlotIndexes.length === 0) return { startTime: "00:00", durationHours: 0 };
+    if (selectedSlotIndexes.length !== 2) return { startTime: "00:00", durationHours: 0 };
     const s = selectedSlotIndexes[0];
-    const e = selectedSlotIndexes.length === 2 ? selectedSlotIndexes[1] : s;
+    const e = selectedSlotIndexes[1];
     const startHourNum = START_HOUR + s * 0.5;
-    const endHourNum = START_HOUR + e * 0.5 + 0.5;
+    const endHourNum = START_HOUR + e * 0.5;
     const durationHours = endHourNum - startHourNum;
     return { startTime: TIME_SLOTS[s], durationHours };
   };

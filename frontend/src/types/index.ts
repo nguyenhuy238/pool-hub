@@ -99,6 +99,7 @@ export type Booking = {
   startTimeUtc: string;
   endTimeUtc: string;
   numberOfGuests?: number;
+  note?: string;
   status: number;
   note?: string;
 };

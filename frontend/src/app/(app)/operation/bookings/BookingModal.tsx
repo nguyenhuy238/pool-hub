@@ -7,9 +7,9 @@ import { useToast } from "@/components/toast";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
 import "./booking-modal.css";
 
-// 08:00 to 24:00 (16 hours) -> 32 slots of 30 mins
-const TOTAL_SLOTS = 32;
-const START_HOUR = 8;
+// 07:00 to 24:00, in 30-minute boundaries.
+const START_HOUR = 7;
+const TOTAL_SLOTS = (24 - START_HOUR) * 2;
 
 function generateTimeSlots() {
   const slots = [];
@@ -39,7 +39,7 @@ export function BookingModal({
   const [customerName, setCustomerName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [numberOfGuests, setNumberOfGuests] = useState("2");
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
   const [selectedTableId, setSelectedTableId] = useState("");
   
   // Selection can be 1 or 2 slots. If 1, it's the start. If 2, it's start and end.
@@ -151,12 +151,12 @@ export function BookingModal({
       const start = selectedSlotIndexes[0];
       const end = index;
       
-      if (end < start) {
+      if (end <= start) {
         setSelectedSlotIndexes([end]);
       } else {
         // Check if there are booked slots in between
         let hasBooked = false;
-        for (let i = start; i <= end; i++) {
+        for (let i = start; i < end; i++) {
           if (bookedSlots.has(i)) hasBooked = true;
         }
         
@@ -219,10 +219,10 @@ export function BookingModal({
 
   // Calculate estimated price by summing all selected slots
   const estimatedPrice = useMemo(() => {
-    if (selectedSlotIndexes.length < 1 || !selectedTable) return 0;
+    if (selectedSlotIndexes.length !== 2 || !selectedTable) return 0;
     
     const s = selectedSlotIndexes[0];
-    const e = selectedSlotIndexes.length === 2 ? selectedSlotIndexes[1] : s;
+    const e = selectedSlotIndexes[1] - 1;
     
     let total = 0;
     for (let i = s; i <= e; i++) {
@@ -241,7 +241,7 @@ export function BookingModal({
       toast("Vui lòng chọn bàn.", "error");
       return;
     }
-    if (selectedSlotIndexes.length === 0) {
+    if (selectedSlotIndexes.length !== 2 || selectedSlotIndexes[1] <= selectedSlotIndexes[0]) {
       toast("Vui lòng chọn khung giờ trên lịch.", "error");
       return;
     }
@@ -249,11 +249,10 @@ export function BookingModal({
     setSaving(true);
     try {
       const s = selectedSlotIndexes[0];
-      // If only 1 slot selected, the end is exactly that slot's end (+30 mins)
-      const e = selectedSlotIndexes.length === 2 ? selectedSlotIndexes[1] : s;
+      const e = selectedSlotIndexes[1];
       
       const startHour = START_HOUR + s * 0.5;
-      const endHour = START_HOUR + e * 0.5 + 0.5; // Add 0.5 because end slot concludes 30 mins later
+      const endHour = START_HOUR + e * 0.5;
       const startTime = `${Math.floor(startHour).toString().padStart(2, "0")}:${((startHour % 1) * 60).toString().padStart(2, "0")}`;
       const endTime = `${Math.floor(endHour).toString().padStart(2, "0")}:${((endHour % 1) * 60).toString().padStart(2, "0")}`;
 
@@ -363,7 +362,7 @@ export function BookingModal({
           </div>
           <div className="booking-modal-actions">
             <button className="ghost-btn" onClick={onClose} disabled={saving}>Hủy</button>
-            <button className="primary-btn" onClick={handleSubmit} disabled={saving || selectedSlotIndexes.length === 0}>
+            <button className="primary-btn" onClick={handleSubmit} disabled={saving || selectedSlotIndexes.length !== 2}>
               {saving ? "Đang xử lý..." : "Lưu Booking"}
             </button>
           </div>
