@@ -31,6 +31,11 @@ export default function OrdersPage() {
   const currentOrder = selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : orders[0] ?? null;
 
   useEffect(() => {
+    const initialSessionId = Number(new URLSearchParams(window.location.search).get("sessionId") || 0) || null;
+    if (initialSessionId) setSessionId(initialSessionId);
+  }, []);
+
+  useEffect(() => {
     setSelectedOrderId(null);
     setItemQuantities({});
   }, [sessionId]);
