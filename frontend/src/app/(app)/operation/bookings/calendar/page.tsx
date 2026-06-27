@@ -9,7 +9,7 @@ import type { BookingCalendarItem } from "@/types";
 import "./calendar.css";
 
 // Giờ hoạt động: 08:00 - 24:00 (16 tiếng)
-const START_HOUR = 8;
+const START_HOUR = 7;
 const END_HOUR = 24;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 
@@ -83,8 +83,9 @@ export default function BookingCalendarPage() {
     const end = new Date(endTimeStr);
     
     // Chuyển về giờ local
-    const startHours = start.getHours() + start.getMinutes() / 60;
-    const endHours = end.getHours() + end.getMinutes() / 60;
+    const startHours = getVietnamHourOfDay(startTimeStr);
+    const rawEndHours = getVietnamHourOfDay(endTimeStr);
+    const endHours = rawEndHours === 0 && end > start ? 24 : rawEndHours;
     
     // Nếu booking ngoài giờ hoạt động (trước 8h sáng)
     const effectiveStart = Math.max(START_HOUR, startHours);
@@ -103,10 +104,7 @@ export default function BookingCalendarPage() {
     };
   };
 
-  const formatTime = (isoString: string) => {
-    const d = new Date(isoString);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  const formatTime = formatVietnamTime;
 
   const handleAction = async (action: 'confirm' | 'cancel') => {
     if (!selectedBooking) return;

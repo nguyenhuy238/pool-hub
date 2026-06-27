@@ -31,6 +31,26 @@ function hasStartedSession(row: Record<string, unknown>) {
   return Boolean(row.sessionId || row.hasSession);
 }
 
+function getBookingCustomerDisplay(row: Record<string, unknown>) {
+  const customer = row.customer && typeof row.customer === "object"
+    ? row.customer as Record<string, unknown>
+    : undefined;
+  const candidates = [
+    row.customerName,
+    row.customerFullName,
+    customer?.fullName,
+    row.walkInCustomerName,
+    row.guestName,
+    row.contactName
+  ];
+  const placeholders = new Set(["anonymous", "guest", "khách vãng lai"]);
+  const name = candidates
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .find((value) => value && !placeholders.has(value.toLocaleLowerCase("vi-VN")));
+
+  return name || "Khách vãng lai";
+}
+
 export default function BookingsPage() {
   const toast = useToast();
   const [status, setStatus] = useState("");
@@ -117,7 +137,8 @@ export default function BookingsPage() {
           { key: "bookingCode", label: "Ma Booking" },
           { key: "customerName", label: "Khách hàng", render: (row) => (
             <div>
-              <strong style={{ color: "var(--ink)" }}>{String(row.customerName || "Khách vãng lai")}</strong><br />
+              <strong style={{ color: "var(--ink)" }}>{getBookingCustomerDisplay(row)}</strong>
+              {getBookingCustomerDisplay(row) !== "Khách vãng lai" ? <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}> (Khách vãng lai)</span> : null}<br />
               <span style={{ fontSize: "13px", color: "var(--muted)" }}>{String(row.phoneNumber || "-")}</span>
             </div>
           ) },
@@ -302,7 +323,7 @@ function EditBookingModal({
           </button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
-          <BookingEditField label="Khách hàng"><input style={bookingInputStyle} value={booking.customerName || booking.phoneNumber || `Customer #${booking.customerId || "-"}`} readOnly /></BookingEditField>
+          <BookingEditField label="Khách hàng"><input style={bookingInputStyle} value={booking.customerName || booking.phoneNumber || "Khách vãng lai"} readOnly /></BookingEditField>
           <BookingEditField label="Trạng thái"><input style={bookingInputStyle} value={label(bookingStatus, booking.status)} readOnly /></BookingEditField>
           <BookingEditField label="Bàn"><select style={bookingInputStyle} value={tableId} onChange={(e) => setTableId(e.target.value)}>
             <option value="">Chưa xếp bàn</option>
