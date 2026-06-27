@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Entities;
 using PoolHub.Services.Session;
@@ -14,7 +15,7 @@ namespace PoolHub.UnitTests;
 public class SessionServiceTests
 {
     [Fact]
-    public async Task StartAsync_WhenTableAlreadyHasActiveSession_ThrowsBusinessRuleException()
+    public async Task StartAsync_WhenTableAlreadyHasActiveSession_ThrowsConflictException()
     {
         // Arrange
         var options = new DbContextOptionsBuilder<PoolHubDbContext>()
@@ -43,7 +44,7 @@ public class SessionServiceTests
         var request = new StartSessionRequest { TableId = 1 };
 
         // Act & Assert
-        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() => service.StartAsync(99, request, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.StartAsync(99, request, CancellationToken.None));
         Assert.Equal("Table already has an active session.", exception.Message);
     }
 
@@ -85,11 +86,12 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task TransferTableAsync_WhenNewTableAlreadyHasActiveSession_ThrowsBusinessRuleException()
+    public async Task TransferTableAsync_WhenNewTableAlreadyHasActiveSession_ThrowsConflictException()
     {
         // Arrange
         var options = new DbContextOptionsBuilder<PoolHubDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         
         using var db = new PoolHubDbContext(options);
@@ -113,7 +115,7 @@ public class SessionServiceTests
         var service = new SessionService(db);
 
         // Act & Assert: Transfer Session 1 to Table 2 (which is active under Session 2)
-        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() => service.TransferTableAsync(1, 2, 99, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.TransferTableAsync(1, 2, 99, CancellationToken.None));
         Assert.Equal("New table already has an active session.", exception.Message);
     }
 }

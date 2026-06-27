@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { orderApi, productApi, sessionApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
 import { ConfirmDialog, DataTable, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
@@ -16,9 +15,7 @@ const statusText = (status?: number) => {
 
 export default function OrdersPage() {
   const toast = useToast();
-  const searchParams = useSearchParams();
-  const initialSessionId = Number(searchParams.get("sessionId") || 0) || null;
-  const [sessionId, setSessionId] = useState<number | null>(initialSessionId);
+  const [sessionId, setSessionId] = useState<number | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<Order | null>(null);
   const [removingItem, setRemovingItem] = useState<OrderItem | null>(null);
@@ -32,6 +29,11 @@ export default function OrdersPage() {
   const products = useList<Product>(data?.products);
   const orders = data?.orders || [] as Order[];
   const currentOrder = selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : orders[0] ?? null;
+
+  useEffect(() => {
+    const initialSessionId = Number(new URLSearchParams(window.location.search).get("sessionId") || 0) || null;
+    if (initialSessionId) setSessionId(initialSessionId);
+  }, []);
 
   useEffect(() => {
     setSelectedOrderId(null);

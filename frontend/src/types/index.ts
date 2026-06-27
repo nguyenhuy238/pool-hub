@@ -100,6 +100,7 @@ export type Booking = {
   endTimeUtc: string;
   numberOfGuests?: number;
   status: number;
+  note?: string;
 };
 
 export type BookingCalendarItem = {
