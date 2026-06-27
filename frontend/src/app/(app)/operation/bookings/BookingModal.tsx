@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { bookingApi, pricingApi } from "@/lib/api/endpoints";
+import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamDayOfWeek, getVietnamHourOfDay, vietnamDateRangeToUtcIso, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import { useToast } from "@/components/toast";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
 import "./booking-modal.css";
@@ -81,10 +82,9 @@ export function BookingModal({
     async function loadAvailability() {
       setLoading(true);
       try {
-        const fromDate = new Date(`${selectedDate}T00:00:00Z`);
-        const toDate = new Date(`${selectedDate}T23:59:59Z`);
+        const { startUtc, endUtc } = vietnamDateRangeToUtcIso(selectedDate);
         
-        const res = await bookingApi.calendar(fromDate.toISOString(), toDate.toISOString(), { tableId: selectedTableId });
+        const res = await bookingApi.calendar(startUtc, endUtc, { tableId: selectedTableId });
         const items = Array.isArray(res) ? res : (res as any).items || [];
         
         const booked = new Set<number>();
@@ -93,11 +93,8 @@ export function BookingModal({
         items.forEach((b: any) => {
           if (b.status === 3) return; // Cancelled doesn't count
           
-          const start = new Date(b.startTimeUtc);
-          const end = new Date(b.endTimeUtc);
-          
-          const startHours = start.getHours() + start.getMinutes() / 60;
-          const endHours = end.getHours() + end.getMinutes() / 60;
+          const startHours = getVietnamHourOfDay(b.startTimeUtc);
+          const endHours = getVietnamHourOfDay(b.endTimeUtc);
           
           for (let i = 0; i < TOTAL_SLOTS; i++) {
             const slotHour = START_HOUR + i * 0.5;
@@ -123,15 +120,14 @@ export function BookingModal({
   // Calculate past slots
   useEffect(() => {
     const calculatePast = () => {
-      const todayStr = new Date().toISOString().split("T")[0];
+      const todayStr = getVietnamDateInputValue();
       const past = new Set<number>();
       
       if (selectedDate < todayStr) {
         // All past
         for (let i = 0; i < TOTAL_SLOTS; i++) past.add(i);
       } else if (selectedDate === todayStr) {
-        const now = new Date();
-        const currentHour = now.getHours() + now.getMinutes() / 60;
+        const currentHour = getCurrentVietnamHourOfDay();
         for (let i = 0; i < TOTAL_SLOTS; i++) {
           if (START_HOUR + i * 0.5 <= currentHour) {
             past.add(i);
@@ -198,8 +194,7 @@ export function BookingModal({
     if (!activePlans.length) return 25000; // fallback 50k/hour = 25k/30m
     
     const plan = activePlans.find(p => p.isDefault) || activePlans[0];
-    const dateObj = new Date(selectedDate);
-    const dayOfWeek = dateObj.getDay();
+    const dayOfWeek = getVietnamDayOfWeek(selectedDate);
     
     const startHour = START_HOUR + index * 0.5;
     const hoursStr = Math.floor(startHour).toString().padStart(2, '0');
@@ -259,14 +254,8 @@ export function BookingModal({
       
       const startHour = START_HOUR + s * 0.5;
       const endHour = START_HOUR + e * 0.5 + 0.5; // Add 0.5 because end slot concludes 30 mins later
-      
-      const tzOffset = new Date().getTimezoneOffset() * 60000;
-      
-      const startDate = new Date(selectedDate);
-      startDate.setHours(Math.floor(startHour), (startHour % 1) * 60, 0, 0);
-      
-      const endDate = new Date(selectedDate);
-      endDate.setHours(Math.floor(endHour), (endHour % 1) * 60, 0, 0);
+      const startTime = `${Math.floor(startHour).toString().padStart(2, "0")}:${((startHour % 1) * 60).toString().padStart(2, "0")}`;
+      const endTime = `${Math.floor(endHour).toString().padStart(2, "0")}:${((endHour % 1) * 60).toString().padStart(2, "0")}`;
 
       // Create booking payload
       const payload: Partial<Booking> = {
@@ -275,15 +264,9 @@ export function BookingModal({
         numberOfGuests: Number(numberOfGuests) || 2,
         tableId: Number(selectedTableId),
         tableTypeId: selectedTable?.tableTypeId,
-        startTimeUtc: new Date(startDate.getTime() - startDate.getTimezoneOffset() * 60000).toISOString(), // Wait, no, startHour is local time.
-        // JS setHours on a local date sets it locally. So startDate IS local.
-        // We just need to toISOString() it, but wait! toISOString uses UTC! So it's perfect.
+        startTimeUtc: vietnamDateTimeToUtcIso(selectedDate, startTime),
+        endTimeUtc: vietnamDateTimeToUtcIso(selectedDate, endTime)
       };
-      
-      // Let's fix timezone properly.
-      // If we do startDate.setHours(10, 30), then startDate.toISOString() is correct UTC representation of 10:30 local.
-      payload.startTimeUtc = startDate.toISOString();
-      payload.endTimeUtc = endDate.toISOString();
 
       await bookingApi.create(payload);
       toast("Tạo đặt bàn thành công!", "success");

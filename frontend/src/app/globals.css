@@ -912,3 +912,30 @@ input:focus, select:focus, textarea:focus {
   .page-header { display: grid; }
   .hero { min-height: 560px; }
 }
+
+.nav-dropdown-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.nav-dropdown-trigger:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.nav-dropdown.open > .nav-dropdown-trigger {
+  color: var(--ink);
+  font-weight: 600;
+}

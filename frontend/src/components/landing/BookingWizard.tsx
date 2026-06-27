@@ -2,10 +2,25 @@ import React, { useState, useEffect } from 'react';
 import './BookingWizard.css';
 import { availabilityApi, type LandingAvailability, type LandingPricing } from "@/lib/api/availabilityApi";
 import { publicBookingApi } from "@/lib/api/publicBookingApi";
+import { addDaysToVietnamDateInput, getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamDayOfWeek, getVietnamHourOfDay, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
 import type { VenueFloorLayoutItem, VenueZoneLayoutItem, VenueTableLayoutItem, PricingPlan, PricingPlanRule } from '@/types';
-import { TableTimelinePicker, type TimelineBooking } from './TableTimelinePicker';
+const TOTAL_SLOTS = 32;
+const START_HOUR = 8;
+const TIME_SLOTS = Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
+  const totalMins = START_HOUR * 60 + i * 30;
+  return `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
+});
+
+function getTableTypeColors(name: string) {
+  const n = name.toLowerCase();
+  if (n.includes('vip')) return { color: '#8b5cf6', background: '#ede9fe' };
+  if (n.includes('standard')) return { color: '#10b981', background: '#d1fae5' };
+  if (n.includes('carom')) return { color: '#f59e0b', background: '#fef3c7' };
+  if (n.includes('snooker')) return { color: '#ef4444', background: '#fee2e2' };
+  return { color: '#6b7280', background: '#f3f4f6' };
+}
 
 export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const toast = useToast();
@@ -22,12 +37,11 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   // Form State
   const [selectedTable, setSelectedTable] = useState<VenueTableLayoutItem | null>(null);
   
-  const [bookingDate, setBookingDate] = useState(new Date().toISOString().slice(0, 10));
-  const [startTime, setStartTime] = useState('19:00');
-  const [durationHours, setDurationHours] = useState(Math.max(1, Math.round(policy.defaultDurationMinutes / 60)));
-  const [existingBookings, setExistingBookings] = useState<TimelineBooking[]>([]);
+  const [bookingDate, setBookingDate] = useState(getVietnamDateInputValue());
+  const [selectedSlotIndexes, setSelectedSlotIndexes] = useState<number[]>([]);
+  const [bookedSlots, setBookedSlots] = useState<Set<number>>(new Set());
+  const [pastSlots, setPastSlots] = useState<Set<number>>(new Set());
   const [loadingBookings, setLoadingBookings] = useState(false);
-  const [isTimeValid, setIsTimeValid] = useState(true);
   
   const [customerInfo, setCustomerInfo] = useState({
     customerName: '',
@@ -69,77 +83,63 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     if (!selectedTable) return;
     setLoadingBookings(true);
     try {
-      // Gọi API thật để lấy danh sách các khung giờ bị đặt
       const res = await publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate);
-      
-      // apiFetch trả về mảng trực tiếp, không bọc trong .data nữa
       const dataArray = Array.isArray(res) ? res : ((res as any).data || []);
       
-      const targetDate = new Date(bookingDate);
-      targetDate.setHours(0, 0, 0, 0);
-      const nextDay = new Date(targetDate);
-      nextDay.setDate(nextDay.getDate() + 1);
+      const booked = new Set<number>();
+      dataArray.forEach((b: any) => {
+        if (b.status === 3) return;
+        const start = new Date(b.startTimeUtc);
+        const end = new Date(b.endTimeUtc);
+        const targetStart = new Date(vietnamDateTimeToUtcIso(bookingDate, "00:00"));
+        const targetEnd = new Date(vietnamDateTimeToUtcIso(bookingDate, "23:59:59"));
 
-      // Map UTC về Local string (HH:mm)
-      const mapped = dataArray.map((slot: any) => {
-        const startStr = slot.startTimeUtc.endsWith('Z') ? slot.startTimeUtc : slot.startTimeUtc + 'Z';
-        const endStr = slot.endTimeUtc.endsWith('Z') ? slot.endTimeUtc : slot.endTimeUtc + 'Z';
-        
-        const dStart = new Date(startStr);
-        const dEnd = new Date(endStr);
-        
-        let hStart = dStart.getHours();
-        let mStart = dStart.getMinutes();
-        let hEnd = dEnd.getHours();
-        let mEnd = dEnd.getMinutes();
+        let startHours = getVietnamHourOfDay(b.startTimeUtc);
+        let endHours = getVietnamHourOfDay(b.endTimeUtc);
 
-        // Xử lý nếu booking vắt từ ngày hôm trước sang
-        if (dStart < targetDate) {
-          hStart = 0; mStart = 0;
+        if (start < targetStart) startHours = 0;
+        if (end > targetEnd || end.getTime() === targetEnd.getTime()) endHours = 24;
+        else if (endHours === 0 && end.getMinutes() === 0 && end > start) endHours = 24;
+
+        for (let i = 0; i < TOTAL_SLOTS; i++) {
+          const slotHour = START_HOUR + i * 0.5;
+          if (slotHour >= startHours && slotHour < endHours) {
+            booked.add(i);
+          }
         }
-
-        // Xử lý nếu booking kéo dài qua ngày hôm sau hoặc kết thúc đúng 00:00 ngày hôm sau
-        if (dEnd > nextDay || (dEnd.getTime() === nextDay.getTime())) {
-          hEnd = 24; mEnd = 0;
-        } else if (hEnd === 0 && mEnd === 0 && dEnd > dStart) {
-          hEnd = 24; mEnd = 0;
-        }
-
-        return {
-          startTime: `${hStart.toString().padStart(2, '0')}:${mStart.toString().padStart(2, '0')}`,
-          endTime: `${hEnd.toString().padStart(2, '0')}:${mEnd.toString().padStart(2, '0')}`
-        };
       });
-      
-      setExistingBookings(mapped);
+      setBookedSlots(booked);
+      setSelectedSlotIndexes([]);
     } catch (err) {
       console.error(err);
-      setExistingBookings([]);
+      setBookedSlots(new Set());
     } finally {
       setLoadingBookings(false);
     }
   };
 
-  // Pricing Calculation
-  const calculateEstimatedPrice = () => {
-    if (!selectedTable || !pricing || !bookingDate || !startTime) return 0;
+  useEffect(() => {
+    const calculatePast = () => {
+      const todayStr = getVietnamDateInputValue();
+      const past = new Set<number>();
+      
+      if (bookingDate < todayStr) {
+        for (let i = 0; i < TOTAL_SLOTS; i++) past.add(i);
+      } else if (bookingDate === todayStr) {
+        const currentHour = getCurrentVietnamHourOfDay();
+        for (let i = 0; i < TOTAL_SLOTS; i++) {
+          if (START_HOUR + i * 0.5 <= currentHour) {
+            past.add(i);
+          }
+        }
+      }
+      setPastSlots(past);
+    };
     
-    // Find rules for this TableType
-    const rulesForTableType = pricing.rules.filter(r => r.tableTypeId === selectedTable.tableTypeId);
-    if (rulesForTableType.length === 0) return 0;
-    
-    const dayOfWeek = new Date(bookingDate).getDay(); // 0 is Sunday
-    // Adjust dayOfWeek if backend expects 1-7 or 0-6. Let's assume standard JS getDay().
-    
-    // Simplistic match: find rule that matches day and time.
-    // In a real app, logic would consider overlap between rule times and booking times.
-    // We'll just take the first matching rule or the default rule.
-    let applicableRule = rulesForTableType.find(r => r.dayOfWeek === dayOfWeek || r.dayOfWeek === -1); 
-    if (!applicableRule) applicableRule = rulesForTableType[0];
-
-    const hourlyRate = applicableRule?.hourlyRate || 0;
-    return hourlyRate * durationHours;
-  };
+    calculatePast();
+    const timer = setInterval(calculatePast, 60000);
+    return () => clearInterval(timer);
+  }, [bookingDate]);
 
   const handleNextStep1 = () => {
     if (!selectedTable) {
@@ -150,52 +150,49 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   };
 
   const handleNextStep2 = () => {
-    if (!bookingDate || !startTime) {
-      toast("Vui lòng chọn ngày và giờ.", "error");
+    if (selectedSlotIndexes.length === 0) {
+      toast("Vui lòng chọn khung giờ.", "error");
       return;
     }
-    const start = new Date(`${bookingDate}T${startTime}`);
-    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
-      toast("Không thể chọn ngày/giờ trong quá khứ.", "error");
-      return;
-    }
-    
-    // Check overlap one more time
-    const timeToMinutes = (timeStr: string) => {
-      const [h, m] = timeStr.split(':').map(Number);
-      return h * 60 + (m || 0);
-    };
-    const startMins = timeToMinutes(startTime);
-    const endMins = startMins + durationHours * 60;
-    const isOverlap = existingBookings.some(b => {
-      const bStart = timeToMinutes(b.startTime);
-      const bEnd = timeToMinutes(b.endTime);
-      return (startMins < bEnd && endMins > bStart);
-    });
-
-    if (isOverlap) {
-      toast("Khoảng thời gian này đã có người đặt.", "error");
-      return;
-    }
-
     setStep(3);
   };
+
 
   const handleNextStep3 = () => {
     if (!customerInfo.customerName.trim()) {
       toast("Vui lòng nhập họ tên khách.", "error");
       return;
     }
+
+    const phoneRegex = /^(0|\+84)[3|5|7|8|9][0-9]{8}$/;
     if (!customerInfo.phoneNumber.trim()) {
       toast("Vui lòng nhập số điện thoại.", "error");
       return;
+    } else if (!phoneRegex.test(customerInfo.phoneNumber.trim())) {
+      toast("Số điện thoại không hợp lệ (Ví dụ: 0987654321).", "error");
+      return;
     }
+
+    if (customerInfo.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(customerInfo.email.trim())) {
+        toast("Địa chỉ email không hợp lệ.", "error");
+        return;
+      }
+    }
+
+    if (!customerInfo.numberOfGuests || customerInfo.numberOfGuests < 1) {
+      toast("Số lượng người phải lớn hơn 0.", "error");
+      return;
+    }
+
     setStep(4);
   };
 
   const handleSubmit = async () => {
     setSaving(true);
     try {
+      const { startTime, durationHours } = getCalculatedTimeAndDuration();
       await publicBookingApi.create({
         customerName: customerInfo.customerName.trim(),
         phoneNumber: customerInfo.phoneNumber.trim(),
@@ -247,15 +244,11 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
                   {zone.tables.map(table => (
                     <button 
                       key={table.tableId}
-                      className={`bw-table-card ${table.operationalStatus === 1 ? 'available' : 'unavailable'} ${selectedTable?.tableId === table.tableId ? 'selected' : ''}`}
-                      onClick={() => table.operationalStatus === 1 ? setSelectedTable(table) : toast("Bàn này hiện không trống.", "error")}
-                      disabled={table.operationalStatus !== 1}
+                      className={`bw-table-card available ${selectedTable?.tableId === table.tableId ? 'selected' : ''}`}
+                      onClick={() => setSelectedTable(table)}
                     >
                       <span className="bw-table-name">{table.tableName}</span>
-                      <span className="bw-table-type">{table.tableTypeName}</span>
-                      <span className="bw-table-status">
-                        {table.operationalStatus === 1 ? "Trống" : table.operationalStatus === 2 ? "Đang chơi" : "Đã đặt"}
-                      </span>
+                      <span className="bw-table-type" style={getTableTypeColors(table.tableTypeName)}>{table.tableTypeName}</span>
                     </button>
                   ))}
                 </div>
@@ -271,8 +264,101 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     );
   };
 
+  const handleSlotClick = (index: number) => {
+    if (bookedSlots.has(index) || pastSlots.has(index)) return;
+    
+    if (selectedSlotIndexes.length === 0 || selectedSlotIndexes.length === 2) {
+      setSelectedSlotIndexes([index]);
+    } else if (selectedSlotIndexes.length === 1) {
+      const start = selectedSlotIndexes[0];
+      const end = index;
+      
+      if (end < start) {
+        setSelectedSlotIndexes([end]);
+      } else {
+        let hasBooked = false;
+        for (let i = start; i <= end; i++) {
+          if (bookedSlots.has(i)) hasBooked = true;
+        }
+        
+        if (hasBooked) {
+          toast("Khoảng thời gian chọn bị vướng lịch đã đặt. Vui lòng chọn lại.", "error");
+          setSelectedSlotIndexes([index]);
+        } else {
+          setSelectedSlotIndexes([start, end]);
+        }
+      }
+    }
+  };
+
+  const getSlotClass = (index: number) => {
+    if (pastSlots.has(index)) return "disabled";
+    if (bookedSlots.has(index)) return "booked";
+    
+    if (selectedSlotIndexes.length === 1 && selectedSlotIndexes[0] === index) return "selected";
+    if (selectedSlotIndexes.length === 2) {
+      const [s, e] = selectedSlotIndexes;
+      if (index === s || index === e) return "selected";
+      if (index > s && index < e) return "in-range";
+    }
+    return "";
+  };
+
+  const getSlotPrice = (index: number) => {
+    if (!selectedTable || !pricing || !pricing.plans || !pricing.rules) return 0;
+    
+    const activePlans = pricing.plans.filter(p => p.isActive);
+    if (!activePlans.length) return 25000;
+    const plan = activePlans.find(p => p.isDefault) || activePlans[0];
+    
+    const rulesForTableType = pricing.rules.filter(r => 
+      r.pricingPlanId === plan.pricingPlanId && 
+      r.tableTypeId === selectedTable.tableTypeId && 
+      r.isActive !== false
+    );
+    
+    if (rulesForTableType.length === 0) return 0;
+    
+    const dayOfWeek = getVietnamDayOfWeek(bookingDate);
+    const timeStr = TIME_SLOTS[index] + ":00";
+    
+    let rule = rulesForTableType.find(r => {
+      if (!r.startTime || !r.endTime) return false;
+      const ruleDay = r.dayOfWeek !== undefined ? r.dayOfWeek : -1;
+      return (ruleDay === dayOfWeek || ruleDay === -1) && r.startTime <= timeStr && r.endTime > timeStr;
+    });
+    
+    if (!rule) {
+      rule = rulesForTableType.find(r => {
+        const ruleDay = r.dayOfWeek !== undefined ? r.dayOfWeek : -1;
+        return ruleDay === dayOfWeek || ruleDay === -1;
+      }) || rulesForTableType[0];
+    }
+    
+    const rate = rule ? (rule.hourlyRate || 0) : 0;
+    return rate * 0.5;
+  };
+
+  const estimatedPrice = React.useMemo(() => {
+    if (selectedSlotIndexes.length < 1 || !selectedTable) return 0;
+    const s = selectedSlotIndexes[0];
+    const e = selectedSlotIndexes.length === 2 ? selectedSlotIndexes[1] : s;
+    let total = 0;
+    for (let i = s; i <= e; i++) total += getSlotPrice(i);
+    return total;
+  }, [selectedSlotIndexes, selectedTable, pricing, bookingDate]);
+
+  const getCalculatedTimeAndDuration = () => {
+    if (selectedSlotIndexes.length === 0) return { startTime: "00:00", durationHours: 0 };
+    const s = selectedSlotIndexes[0];
+    const e = selectedSlotIndexes.length === 2 ? selectedSlotIndexes[1] : s;
+    const startHourNum = START_HOUR + s * 0.5;
+    const endHourNum = START_HOUR + e * 0.5 + 0.5;
+    const durationHours = endHourNum - startHourNum;
+    return { startTime: TIME_SLOTS[s], durationHours };
+  };
+
   const renderStep2 = () => {
-    const estimatedPrice = calculateEstimatedPrice();
     return (
       <div className="bw-step bw-step-2">
         <h3>2. Chọn Thời gian & Xem giá</h3>
@@ -280,42 +366,56 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
         
         <div className="bw-form-grid" style={{ marginBottom: '16px' }}>
           <label><span>Ngày đặt *</span>
-            <input type="date" min={new Date().toISOString().slice(0, 10)} 
-                   max={new Date(Date.now() + policy.advanceBookingDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)} 
-                   value={bookingDate} onChange={e => setBookingDate(e.target.value)} />
+            <input type="date" min={getVietnamDateInputValue()} 
+                   max={addDaysToVietnamDateInput(getVietnamDateInputValue(), policy.advanceBookingDays)} 
+                   value={bookingDate} onChange={e => {
+                     setBookingDate(e.target.value);
+                     setSelectedSlotIndexes([]);
+                   }} />
           </label>
         </div>
 
         <div className="bw-timeline-container" style={{ marginBottom: '32px' }}>
+          <div className="legend" style={{ display: 'flex', gap: '12px', fontSize: '13px', marginBottom: '12px', flexWrap: 'wrap' }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}><div style={{width: '16px', height: '16px', border: '1px solid #e5e7eb', background: 'white'}}></div> Trống</div>
+            <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}><div style={{width: '16px', height: '16px', background: '#eff6ff', border: '1px solid #3b82f6'}}></div> Đang chọn</div>
+            <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}><div style={{width: '16px', height: '16px', background: '#fee2e2'}}></div> Đã đặt</div>
+            <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}><div style={{width: '16px', height: '16px', background: '#f3f4f6'}}></div> Đã qua</div>
+          </div>
           <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
-            Chọn giờ bắt đầu trên Timeline (Màu đỏ: Đã đặt, Xanh: Đang chọn)
+            Nhấp vào 1 ô để chọn giờ bắt đầu, nhấp ô tiếp theo để chọn giờ kết thúc.
           </p>
           {loadingBookings ? (
             <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>Đang tải lịch đặt...</div>
           ) : (
-            <TableTimelinePicker 
-              existingBookings={existingBookings}
-              selectedDate={bookingDate}
-              startTime={startTime}
-              durationHours={durationHours}
-              onTimeChange={(newStartTime, newDuration) => {
-                setStartTime(newStartTime);
-                setDurationHours(newDuration);
-              }}
-            />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(65px, 1fr))', gap: '6px' }}>
+              {TIME_SLOTS.map((timeStr, index) => {
+                const cls = getSlotClass(index);
+                const isDisabled = cls === "disabled" || cls === "booked";
+                const price = getSlotPrice(index);
+                return (
+                  <button 
+                    key={index} 
+                    className={`bw-time-slot-btn ${cls}`}
+                    disabled={isDisabled}
+                    onClick={() => handleSlotClick(index)}
+                    style={{ 
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 2px',
+                      border: '1px solid #e5e7eb', borderRadius: '4px', cursor: isDisabled ? 'not-allowed' : 'pointer',
+                      background: cls === 'disabled' ? '#f3f4f6' : cls === 'booked' ? '#fee2e2' : cls === 'selected' || cls === 'in-range' ? '#eff6ff' : 'white',
+                      borderColor: cls === 'selected' || cls === 'in-range' ? '#3b82f6' : cls === 'booked' ? '#fca5a5' : '#e5e7eb',
+                      color: cls === 'disabled' ? '#9ca3af' : cls === 'booked' ? '#b91c1c' : '#111827'
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', fontWeight: cls.includes('selected') ? 600 : 400 }}>{timeStr}</span>
+                    {!isDisabled && price > 0 && (
+                      <span style={{ fontSize: '11px', color: cls.includes('selected') ? '#2563eb' : '#6b7280' }}>{(price / 1000)}k</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           )}
-        </div>
-
-        <div className="bw-form-grid">
-          <label><span>Giờ bắt đầu * (Chọn trên timeline hoặc nhập)</span>
-            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
-          </label>
-          <label><span>Thời lượng *</span>
-            <select value={durationHours} onChange={e => setDurationHours(Number(e.target.value))}>
-              {[1, 2, 3, 4, 5, 6].filter(hour => hour * 60 >= policy.minDurationMinutes && hour * 60 <= policy.maxDurationMinutes)
-                .map(hour => <option key={hour} value={hour}>{hour} giờ</option>)}
-            </select>
-          </label>
         </div>
 
         <div className="bw-pricing-box">
@@ -362,16 +462,19 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   );
 
   const renderStep4 = () => {
-    const estimatedPrice = calculateEstimatedPrice();
+    const { startTime, durationHours } = getCalculatedTimeAndDuration();
     return (
       <div className="bw-step bw-step-4">
         <h3>4. Xác nhận Đặt bàn</h3>
         
         <div className="bw-summary">
           <div className="bw-summary-row"><span>Khách hàng:</span> <strong>{customerInfo.customerName} - {customerInfo.phoneNumber}</strong></div>
+          {customerInfo.email && <div className="bw-summary-row"><span>Email:</span> <strong>{customerInfo.email}</strong></div>}
+          <div className="bw-summary-row"><span>Số người:</span> <strong>{customerInfo.numberOfGuests} người</strong></div>
           <div className="bw-summary-row"><span>Ngày giờ:</span> <strong>{startTime} ngày {bookingDate}</strong></div>
           <div className="bw-summary-row"><span>Thời lượng:</span> <strong>{durationHours} giờ</strong></div>
           <div className="bw-summary-row"><span>Khu vực/Bàn:</span> <strong>{selectedTable?.tableName} ({selectedTable?.tableTypeName})</strong></div>
+          {customerInfo.note && <div className="bw-summary-row"><span>Ghi chú:</span> <strong>{customerInfo.note}</strong></div>}
           <div className="bw-summary-row"><span>Tạm tính:</span> <strong className="highlight-price">{estimatedPrice.toLocaleString('vi-VN')} đ</strong></div>
         </div>
         

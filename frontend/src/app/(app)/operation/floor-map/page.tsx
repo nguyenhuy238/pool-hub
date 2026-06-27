@@ -125,6 +125,7 @@ export default function FloorMapPage() {
       toast(err instanceof Error ? err.message : "Không thể tạo hóa đơn.", "error");
     }
   }
+  }
 
   return (
     <div className="floor-map-page">

@@ -2,16 +2,18 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Common;
+using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Interfaces;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Extensions;
 
 namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/bookings")]
-public class BookingsController(IBookingService bookingService, ICrudService crud) : ControllerBase
+public class BookingsController(IBookingService bookingService, ISessionService sessionService, ICrudService crud) : ControllerBase
 {
     /// <summary>
     /// Lấy danh sách lịch đặt bàn có phân trang và lọc.
@@ -27,7 +29,7 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     /// <param name="id">ID của lịch đặt bàn.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Chi tiết lịch đặt bàn.</returns>
-    [HttpGet("{id:int}")] [Authorize] public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await crud.GetBookingAsync(id, ct)));
+    [HttpGet("{id:int}")] [Authorize] public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.GetByIdAsync(id, ct)));
 
     /// <summary>
     /// Lấy danh sách booking theo khoảng thời gian — dùng cho Calendar View.
@@ -115,6 +117,11 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object>>> CreatePublic([FromBody] CreateBookingRequest request, CancellationToken ct) =>
         StatusCode(201, ApiResponse<object>.Ok(await bookingService.CreateAsync(request, ct)));
+
+    [HttpPut("{id:long}")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> Update(long id, [FromBody] UpdateBookingRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.UpdateAsync(id, request, ct)));
     
     /// <summary>
     /// Xac nhan mot lich dat ban dang o trang thai Pending.
@@ -124,7 +131,7 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     /// <returns>Lich dat ban da duoc cap nhat.</returns>
     [HttpPut("{id:int}/confirm")] 
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + ",Staff")] 
-    public async Task<ActionResult<ApiResponse<object>>> Confirm(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.ConfirmAsync(id, ct)));
+    public async Task<ActionResult<ApiResponse<object>>> Confirm(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.ConfirmAsync(id, User.GetUserId(), ct)));
     
     /// <summary>
     /// Huy mot lich dat ban (Pending hoac Confirmed).
@@ -136,7 +143,7 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     [Authorize] 
     public async Task<ActionResult<ApiResponse<object>>> Cancel(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.CancelAsync(id, ct)));
 
-    [HttpPatch("{id:int}/no-show")]
+    [HttpPut("{id:int}/no-show")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<object>>> NoShow(int id, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await bookingService.MarkNoShowAsync(id, ct)));
@@ -145,6 +152,17 @@ public class BookingsController(IBookingService bookingService, ICrudService cru
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<object>>> Completed(int id, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await bookingService.MarkCompletedAsync(id, ct)));
+
+    [HttpPost("{id:long}/start-session")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> StartSession(
+        long id,
+        [FromBody] StartSessionRequest? request,
+        CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created,
+            ApiResponse<object>.Ok(
+                await sessionService.StartFromBookingAsync(id, request?.TableId, User.GetUserId(), ct),
+                "Session started from booking."));
 
     [HttpGet("availability")]
     [AllowAnonymous]

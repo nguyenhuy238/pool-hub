@@ -104,7 +104,7 @@ export default function VenueTablesPage() {
   </>;
 }
 
-function TableFormModal({ table, zones, tableTypes, onClose, onSaved }: { table: VenueTable | null; zones: Zone[]; tableTypes: TableType[]; onClose: () => void; onSaved: () => Promise<void> }) {
+export function TableFormModal({ table, zones, tableTypes, onClose, onSaved }: { table: VenueTable | null; zones: Zone[]; tableTypes: TableType[]; onClose: () => void; onSaved: () => Promise<void> }) {
   const toast = useToast();
   const [form, setForm] = useState<TableForm>(table ? {
     zoneId: table.zoneId,
