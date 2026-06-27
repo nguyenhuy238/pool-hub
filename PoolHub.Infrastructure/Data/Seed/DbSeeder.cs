@@ -16,17 +16,21 @@ public static class DbSeeder
 
         var userMap = await db.Users.ToDictionaryAsync(x => x.Email, x => x.UserId, ct);
 
-        if (await db.Floors.AnyAsync(ct)) return;
+        if (await db.Floors.AnyAsync(ct))
+        {
+            await EnsureDemoVenueLayoutAsync(db, ct);
+            return;
+        }
 
-        var floor = new Floor { Name = "Floor 1", DisplayOrder = 1, IsActive = true };
-        var floor2 = new Floor { Name = "Floor 2 - VIP", DisplayOrder = 2, IsActive = true };
+        var floor = new Floor { Name = "Tầng 1", DisplayOrder = 1, IsActive = true };
+        var floor2 = new Floor { Name = "Tầng 2 - VIP", DisplayOrder = 2, IsActive = true };
         db.Floors.AddRange(floor, floor2);
         await db.SaveChangesAsync(ct);
 
-        var zoneA = new Zone { FloorId = floor.FloorId, Name = "Zone A", DisplayOrder = 1, IsActive = true };
-        var zoneB = new Zone { FloorId = floor.FloorId, Name = "Zone B", DisplayOrder = 2, IsActive = true };
-        var zoneC = new Zone { FloorId = floor.FloorId, Name = "Zone C - Smoking", DisplayOrder = 3, IsActive = true };
-        var zoneD = new Zone { FloorId = floor2.FloorId, Name = "Zone D - Snooker", DisplayOrder = 1, IsActive = true };
+        var zoneA = new Zone { FloorId = floor.FloorId, Name = "Khu A", DisplayOrder = 1, IsActive = true };
+        var zoneB = new Zone { FloorId = floor.FloorId, Name = "Khu B", DisplayOrder = 2, IsActive = true };
+        var zoneC = new Zone { FloorId = floor.FloorId, Name = "Khu C - Hút thuốc", DisplayOrder = 3, IsActive = true };
+        var zoneD = new Zone { FloorId = floor2.FloorId, Name = "Khu D - Snooker", DisplayOrder = 1, IsActive = true };
         db.Zones.AddRange(zoneA, zoneB, zoneC, zoneD);
 
         var tt1 = new TableType { Name = "Pool Standard", Code = "POOL_STD", DefaultCapacity = 4 };
@@ -120,7 +124,7 @@ public static class DbSeeder
                 ZoneId = zoneId,
                 TableTypeId = tableTypeId,
                 TableCode = $"T{i:00}",
-                TableName = $"Table {i:00}",
+                TableName = $"Bàn {i:00}",
                 Capacity = i > 10 ? 6 : 4,
                 OperationalStatus = 1
             });
@@ -375,6 +379,63 @@ public static class DbSeeder
                 await db.SaveChangesAsync(ct);
             }
         }
+    }
+
+    private static async Task EnsureDemoVenueLayoutAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var floors = await db.Floors.OrderBy(x => x.FloorId).ToListAsync(ct);
+        if (floors.Count > 0)
+        {
+            floors[0].Name = "Tầng 1";
+            floors[0].IsActive = true;
+            floors[0].DisplayOrder = 1;
+        }
+        if (floors.Count > 1)
+        {
+            floors[1].Name = "Tầng 2 - VIP";
+            floors[1].IsActive = true;
+            floors[1].DisplayOrder = 2;
+        }
+
+        var zones = await db.Zones.OrderBy(x => x.ZoneId).ToListAsync(ct);
+        var zoneNames = new[] { "Khu A", "Khu B", "Khu VIP", "Khu D - Snooker" };
+        for (var index = 0; index < zones.Count && index < zoneNames.Length; index++)
+        {
+            zones[index].Name = zoneNames[index];
+            zones[index].IsActive = true;
+        }
+
+        var tableNameByCode = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["A01"] = "Bàn A01",
+            ["A02"] = "Bàn A02",
+            ["B01"] = "Bàn B01 Carom",
+            ["V01"] = "Bàn VIP 01",
+            ["V02"] = "Bàn VIP 02"
+        };
+
+        var tables = await db.VenueTables.ToListAsync(ct);
+        foreach (var table in tables)
+        {
+            if (tableNameByCode.TryGetValue(table.TableCode, out var name))
+            {
+                table.TableName = name;
+            }
+            else if (table.TableName.Contains("BÃ", StringComparison.OrdinalIgnoreCase))
+            {
+                table.TableName = table.TableCode.StartsWith("V", StringComparison.OrdinalIgnoreCase)
+                    ? $"Bàn VIP {table.TableCode.TrimStart('V')}"
+                    : $"Bàn {table.TableCode}";
+            }
+
+            table.IsActive = true;
+            if (table.OperationalStatus is < 1 or > 5)
+            {
+                table.OperationalStatus = 1;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task EnsurePermissionsAsync(PoolHubDbContext db, CancellationToken ct)

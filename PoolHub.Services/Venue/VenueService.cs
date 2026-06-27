@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Venue;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared.Constants;
 
 namespace PoolHub.Services.Venue;
 
@@ -33,7 +34,6 @@ public class VenueService(PoolHubDbContext db) : IVenueService
 
         var tables = await db.VenueTables
             .AsNoTracking()
-            .Where(t => t.IsActive)
             .OrderBy(t => t.TableCode)
             .ToListAsync(ct);
 
@@ -54,6 +54,20 @@ public class VenueService(PoolHubDbContext db) : IVenueService
         var activeSessionMap = activeAssignments
             .GroupBy(x => x.TableId)
             .ToDictionary(g => g.Key, g => g.First().SessionId);
+
+        var now = DateTime.UtcNow;
+        var nextBookings = await db.Bookings
+            .AsNoTracking()
+            .Where(b => b.TableId.HasValue &&
+                        b.EndTimeUtc > now &&
+                        (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.Confirmed))
+            .OrderBy(b => b.StartTimeUtc)
+            .Select(b => new { b.TableId, b.BookingId, b.BookingCode, b.StartTimeUtc })
+            .ToListAsync(ct);
+
+        var nextBookingMap = nextBookings
+            .GroupBy(x => x.TableId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
 
         var activeZoneIds = zones.Select(z => z.ZoneId).ToHashSet();
         var tablesByZone = tables
@@ -82,9 +96,16 @@ public class VenueService(PoolHubDbContext db) : IVenueService
                         Tables = tablesByZone.GetValueOrDefault(zone.ZoneId, [])
                             .Select(table =>
                             {
-                                // Ưu tiên lấy trạng thái từ session active, nếu không thì từ DB
+                                // Ưu tiên session active, rồi booking sắp tới, rồi trạng thái lưu trong DB.
                                 var activeSessionId = activeSessionMap.TryGetValue(table.TableId, out var sid) ? sid : (long?)null;
-                                var operationalStatus = activeSessionId.HasValue ? 2 : table.OperationalStatus; // 2=Occupied
+                                var nextBooking = nextBookingMap.GetValueOrDefault(table.TableId);
+                                var operationalStatus = !table.IsActive
+                                    ? 5
+                                    : activeSessionId.HasValue
+                                        ? 2
+                                        : nextBooking is not null && table.OperationalStatus == 1
+                                            ? 3
+                                            : table.OperationalStatus;
 
                                 return new VenueTableLayoutItem
                                 {
@@ -98,7 +119,10 @@ public class VenueService(PoolHubDbContext db) : IVenueService
                                     PositionX = table.PositionX,
                                     PositionY = table.PositionY,
                                     IsActive = table.IsActive,
-                                    ActiveSessionId = activeSessionId
+                                    ActiveSessionId = activeSessionId,
+                                    NextBookingId = nextBooking?.BookingId,
+                                    NextBookingCode = nextBooking?.BookingCode,
+                                    NextBookingStartTimeUtc = nextBooking?.StartTimeUtc
                                 };
                             })
                             .OrderBy(t => t.TableCode)
@@ -117,6 +141,9 @@ public class VenueService(PoolHubDbContext db) : IVenueService
             TotalTables = allTableItems.Count,
             AvailableTables = allTableItems.Count(t => t.OperationalStatus == 1),
             OccupiedTables = allTableItems.Count(t => t.OperationalStatus == 2),
+            ReservedTables = allTableItems.Count(t => t.OperationalStatus == 3),
+            MaintenanceTables = allTableItems.Count(t => t.OperationalStatus == 4),
+            InactiveTables = allTableItems.Count(t => t.OperationalStatus == 5),
             FetchedAtUtc = DateTime.UtcNow
         };
     }

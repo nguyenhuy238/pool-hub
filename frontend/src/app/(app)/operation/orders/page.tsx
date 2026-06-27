@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { orderApi, productApi, sessionApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
 import { ConfirmDialog, DataTable, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
@@ -15,7 +16,9 @@ const statusText = (status?: number) => {
 
 export default function OrdersPage() {
   const toast = useToast();
-  const [sessionId, setSessionId] = useState<number | null>(null);
+  const searchParams = useSearchParams();
+  const initialSessionId = Number(searchParams.get("sessionId") || 0) || null;
+  const [sessionId, setSessionId] = useState<number | null>(initialSessionId);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<Order | null>(null);
   const [removingItem, setRemovingItem] = useState<OrderItem | null>(null);

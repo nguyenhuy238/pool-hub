@@ -1,180 +1,319 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { venueApi, sessionApi, invoiceApi } from "@/lib/api/endpoints";
-import { label, tableStatus } from "@/lib/status";
-import { Badge, ConfirmDialog, PageHeader, StateBlock, useLoad } from "@/components/ui";
+import { invoiceApi, sessionApi, venueApi } from "@/lib/api/endpoints";
+import { dateTime, label, tableStatus } from "@/lib/status";
+import { Badge, ConfirmDialog, Modal, PageHeader, SearchFilterBar, StateBlock, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { VenueTableLayoutItem } from "@/types";
+import type { VenueFloorLayoutItem, VenueTableLayoutItem, VenueZoneLayoutItem } from "@/types";
 import "./floor-map.css";
+
+type SelectedTable = VenueTableLayoutItem & {
+  floorId: number;
+  floorName: string;
+  zoneId: number;
+  zoneName: string;
+};
+
+const statusOptions = [
+  { value: "", label: "Tất cả trạng thái" },
+  { value: "1", label: "Sẵn sàng" },
+  { value: "2", label: "Đang có khách" },
+  { value: "3", label: "Đã đặt trước" },
+  { value: "4", label: "Bảo trì" },
+  { value: "5", label: "Ngừng hoạt động" }
+];
+
+const statusTone = (status: number): "green" | "blue" | "yellow" | "red" | "neutral" => {
+  if (status === 1) return "green";
+  if (status === 2) return "blue";
+  if (status === 3) return "yellow";
+  if (status === 4) return "red";
+  return "neutral";
+};
 
 export default function FloorMapPage() {
   const toast = useToast();
-  const [selected, setSelected] = useState<(VenueTableLayoutItem & { zoneName?: string }) | null>(null);
+  const [selected, setSelected] = useState<SelectedTable | null>(null);
   const [endingSessionId, setEndingSessionId] = useState<number | null>(null);
   const [activeFloorId, setActiveFloorId] = useState<number | null>(null);
+  const [filters, setFilters] = useState({ zoneId: "", status: "", tableTypeId: "", search: "" });
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const { data: layoutRes, loading, error, reload } = useLoad(async () => {
-    return await venueApi.layout();
+  const { data: layout, loading, error, reload } = useLoad(async () => {
+    const response = await venueApi.layout();
+    setLastUpdated(new Date().toISOString());
+    return response;
   }, []);
 
-  const floors = useMemo(() => layoutRes?.floors ?? [], [layoutRes?.floors]);
-  
+  const floors = useMemo(() => layout?.floors ?? [], [layout?.floors]);
+
   useEffect(() => {
-    if (floors.length > 0 && activeFloorId === null) {
-      setActiveFloorId(floors[0].floorId);
-    }
+    if (floors.length > 0 && activeFloorId === null) setActiveFloorId(floors[0].floorId);
   }, [activeFloorId, floors]);
 
-  const activeFloor = floors.find(f => f.floorId === activeFloorId) || floors[0];
+  const activeFloor = floors.find((floor) => floor.floorId === activeFloorId) ?? floors[0] ?? null;
+  const allTables = useMemo(() => flattenTables(floors), [floors]);
+  const tableTypeOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    allTables.forEach((table) => map.set(table.tableTypeId, table.tableTypeName));
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [allTables]);
 
-  async function startSession(table: VenueTableLayoutItem) {
+  const visibleZones = useMemo(() => {
+    if (!activeFloor) return [];
+    const keyword = filters.search.trim().toLowerCase();
+    return activeFloor.zones
+      .filter((zone) => !filters.zoneId || zone.zoneId === Number(filters.zoneId))
+      .map((zone) => ({
+        ...zone,
+        tables: zone.tables.filter((table) => {
+          if (filters.status && table.operationalStatus !== Number(filters.status)) return false;
+          if (filters.tableTypeId && table.tableTypeId !== Number(filters.tableTypeId)) return false;
+          if (keyword && !`${table.tableCode} ${table.tableName}`.toLowerCase().includes(keyword)) return false;
+          return true;
+        })
+      }))
+      .filter((zone) => zone.tables.length > 0 || (!filters.status && !filters.tableTypeId && !keyword));
+  }, [activeFloor, filters]);
+
+  async function refresh() {
+    try {
+      await reload();
+      toast("Đã làm mới sơ đồ bàn.", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể làm mới sơ đồ bàn.", "error");
+    }
+  }
+
+  async function startSession(table: SelectedTable) {
     if (table.operationalStatus !== 1) {
       toast("Chỉ có thể mở phiên trên bàn đang sẵn sàng.", "error");
       return;
     }
-    await sessionApi.start({ tableId: table.tableId }).then(() => toast("Đã mở phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
-    reload();
-    setSelected(null);
+
+    try {
+      await sessionApi.start({ tableId: table.tableId });
+      toast("Đã mở phiên chơi.", "success");
+      await reload();
+      setSelected(null);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể mở phiên chơi.", "error");
+    }
   }
 
   async function endSession(sessionId: number) {
-    await sessionApi.end(sessionId).then(() => toast("Đã đóng phiên chơi.", "success")).catch((err) => toast(err.message, "error"));
-    reload();
-    setSelected(null);
-    setEndingSessionId(null);
+    try {
+      await sessionApi.end(sessionId);
+      toast("Đã kết thúc phiên chơi.", "success");
+      await reload();
+      setSelected(null);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể kết thúc phiên chơi.", "error");
+    } finally {
+      setEndingSessionId(null);
+    }
   }
 
   async function generateInvoice(sessionId: number) {
-    await invoiceApi.generate(sessionId).then(() => toast("Đã tạo hóa đơn.", "success")).catch((err) => toast(err.message, "error"));
-    reload();
+    try {
+      await invoiceApi.generate(sessionId);
+      toast("Đã tạo hóa đơn.", "success");
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể tạo hóa đơn.", "error");
+    }
   }
 
-  const getTone = (status: number) => {
-    switch(status) {
-      case 1: return "green";
-      case 2: return "blue";
-      case 3: return "yellow";
-      case 4: return "red";
-      default: return "neutral";
-    }
-  };
-
   return (
-    <div className="layout-container">
-      <PageHeader title="Sơ đồ cơ sở" description="Theo dõi trạng thái bàn và phiên chơi theo thời gian thực." />
-      
-      <StateBlock loading={loading} error={error} empty={!loading && (!floors.length || !layoutRes?.totalTables)} />
+    <div className="floor-map-page">
+      <PageHeader
+        title="Sơ đồ bàn vận hành"
+        description="Theo dõi trạng thái bàn, mở phiên chơi và xử lý phiên đang hoạt động."
+        action={<button className="primary-btn" type="button" onClick={refresh} disabled={loading}>{loading ? "Đang tải..." : "Làm mới"}</button>}
+      />
 
-      {!loading && layoutRes && (
-        <div className="stats-bar">
-          <div className="stat-item">
-            <span className="stat-label">Tổng số bàn</span>
-            <span className="stat-value">{layoutRes.totalTables}</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-label">Đang trống</span>
-            <span className="stat-value available">{layoutRes.availableTables}</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-label">Đang có khách</span>
-            <span className="stat-value occupied">{layoutRes.occupiedTables}</span>
-          </div>
-        </div>
-      )}
+      <StateBlock loading={loading} error={error} empty={!loading && !floors.length} />
 
-      {floors.length > 0 && (
-        <div className="floor-tabs">
-          {floors.map((floor) => (
-            <button 
-              key={floor.floorId} 
-              className={`floor-tab ${floor.floorId === activeFloorId ? 'active' : ''}`}
-              onClick={() => setActiveFloorId(floor.floorId)}
+      {layout ? (
+        <>
+          <div className="floor-map-summary">
+            <Metric label="Tổng số bàn" value={layout.totalTables} />
+            <Metric label="Sẵn sàng" value={layout.availableTables} tone="available" />
+            <Metric label="Đang có khách" value={layout.occupiedTables} tone="occupied" />
+            <Metric label="Đã đặt trước" value={layout.reservedTables ?? 0} tone="reserved" />
+            <Metric label="Bảo trì" value={layout.maintenanceTables ?? 0} tone="maintenance" />
+            <Metric label="Ngừng hoạt động" value={layout.inactiveTables ?? 0} tone="inactive" />
+            <div className="updated-at">Cập nhật: {lastUpdated ? dateTime(lastUpdated) : dateTime(layout.fetchedAtUtc)}</div>
+          </div>
+
+          <div className="status-legend">
+            {statusOptions.slice(1).map((item) => (
+              <span key={item.value} className={`legend-item status-${item.value}`}><i />{item.label}</span>
+            ))}
+          </div>
+
+          <div className="floor-tabs" role="tablist" aria-label="Tầng">
+            {floors.map((floor) => (
+              <button
+                key={floor.floorId}
+                className={`floor-tab ${floor.floorId === activeFloor?.floorId ? "active" : ""}`}
+                type="button"
+                onClick={() => {
+                  setActiveFloorId(floor.floorId);
+                  setFilters((current) => ({ ...current, zoneId: "" }));
+                }}
+              >
+                {floor.floorName}
+              </button>
+            ))}
+          </div>
+
+          <SearchFilterBar>
+            <label><span>Khu vực</span><select value={filters.zoneId} onChange={(event) => setFilters({ ...filters, zoneId: event.target.value })}><option value="">Tất cả khu vực</option>{activeFloor?.zones.map((zone) => <option key={zone.zoneId} value={zone.zoneId}>{zone.zoneName}</option>)}</select></label>
+            <label><span>Trạng thái</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>{statusOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <label><span>Loại bàn</span><select value={filters.tableTypeId} onChange={(event) => setFilters({ ...filters, tableTypeId: event.target.value })}><option value="">Tất cả loại bàn</option>{tableTypeOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+            <label><span>Tìm kiếm</span><input value={filters.search} placeholder="Mã hoặc tên bàn" onChange={(event) => setFilters({ ...filters, search: event.target.value })} /></label>
+          </SearchFilterBar>
+
+          {layout.totalTables === 0 ? <div className="state-card">Chưa có bàn nào trong sơ đồ. Kiểm tra dữ liệu bàn và khu vực trong hệ thống.</div> : null}
+          {activeFloor && visibleZones.length === 0 ? <div className="state-card">Không có bàn phù hợp với bộ lọc hiện tại.</div> : null}
+
+          {activeFloor ? (
+            <div className="zones-container">
+              {visibleZones.map((zone) => (
+                <ZoneSection key={zone.zoneId} floor={activeFloor} zone={zone} onSelect={setSelected} />
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {selected ? (
+        <TableDetailModal
+          table={selected}
+          onClose={() => setSelected(null)}
+          onStart={() => startSession(selected)}
+          onEnd={() => selected.activeSessionId && setEndingSessionId(selected.activeSessionId)}
+          onInvoice={() => selected.activeSessionId && generateInvoice(selected.activeSessionId)}
+        />
+      ) : null}
+
+      {endingSessionId ? (
+        <ConfirmDialog
+          title="Kết thúc phiên chơi"
+          message="Xác nhận kết thúc phiên chơi trên bàn này?"
+          confirmLabel="Kết thúc phiên"
+          danger
+          onCancel={() => setEndingSessionId(null)}
+          onConfirm={() => endSession(endingSessionId)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function flattenTables(floors: VenueFloorLayoutItem[]): SelectedTable[] {
+  return floors.flatMap((floor) =>
+    floor.zones.flatMap((zone) =>
+      zone.tables.map((table) => ({
+        ...table,
+        floorId: floor.floorId,
+        floorName: floor.floorName,
+        zoneId: zone.zoneId,
+        zoneName: zone.zoneName
+      }))
+    )
+  );
+}
+
+function Metric({ label: title, value, tone }: { label: string; value: number; tone?: string }) {
+  return <div className="metric-tile"><span>{title}</span><strong className={tone}>{value}</strong></div>;
+}
+
+function ZoneSection({ floor, zone, onSelect }: {
+  floor: VenueFloorLayoutItem;
+  zone: VenueZoneLayoutItem;
+  onSelect: (table: SelectedTable) => void;
+}) {
+  return (
+    <section className="zone-section">
+      <div className="zone-header">
+        <div><h2>{zone.zoneName}</h2>{zone.description ? <p>{zone.description}</p> : null}</div>
+        <span>{zone.tables.length} bàn</span>
+      </div>
+      {zone.tables.length ? (
+        <div className="tables-grid">
+          {zone.tables.map((table) => (
+            <button
+              key={table.tableId}
+              type="button"
+              className={`venue-table-card status-${table.operationalStatus}`}
+              onClick={() => onSelect({ ...table, floorId: floor.floorId, floorName: floor.floorName, zoneId: zone.zoneId, zoneName: zone.zoneName })}
             >
-              {floor.floorName}
+              <div className="table-card-head">
+                <div><strong>{table.tableCode}</strong><span>{table.tableName}</span></div>
+                <Badge tone={statusTone(table.operationalStatus)}>{label(tableStatus, table.operationalStatus)}</Badge>
+              </div>
+              <div className="table-card-meta">
+                <span>{table.tableTypeName}</span>
+                <span>{table.capacity} khách</span>
+              </div>
+              {table.activeSessionId ? <div className="table-card-note">Phiên #{table.activeSessionId}</div> : null}
+              {!table.activeSessionId && table.nextBookingId ? <div className="table-card-note">Booking {table.nextBookingCode ?? `#${table.nextBookingId}`} - {dateTime(table.nextBookingStartTimeUtc)}</div> : null}
             </button>
           ))}
         </div>
-      )}
+      ) : <div className="state-card">Khu vực này chưa có bàn.</div>}
+    </section>
+  );
+}
 
-      {activeFloor && (
-        <div className="zones-container">
-          {activeFloor.zones.map(zone => (
-            <div key={zone.zoneId} className="zone-section">
-              <div className="zone-header">
-                <h3>{zone.zoneName}</h3>
-                {zone.description && <span className="zone-desc">{zone.description}</span>}
-              </div>
-              
-              <div className="tables-grid">
-                {zone.tables.map(table => (
-                  <div 
-                    key={table.tableId} 
-                    className={`venue-table-card status-${table.operationalStatus}`}
-                    onClick={() => setSelected({ ...table, zoneName: zone.zoneName })}
-                  >
-                    <div className="table-header">
-                      <div>
-                        <h4 className="table-code">{table.tableCode}</h4>
-                        <p className="table-name">{table.tableName}</p>
-                      </div>
-                      <Badge tone={getTone(table.operationalStatus)}>
-                        {label(tableStatus, table.operationalStatus)}
-                      </Badge>
-                    </div>
-                    
-                    <div className="table-footer">
-                      <span className="table-type">{table.tableTypeName} • {table.capacity} khách</span>
-                      {table.activeSessionId && (
-                        <span className="active-session-badge">Phiên #{table.activeSessionId}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+function TableDetailModal({ table, onClose, onStart, onEnd, onInvoice }: {
+  table: SelectedTable;
+  onClose: () => void;
+  onStart: () => void;
+  onEnd: () => void;
+  onInvoice: () => void;
+}) {
+  const canStart = table.operationalStatus === 1;
+  const isOccupied = Boolean(table.activeSessionId);
 
-      {selected ? (
-        <div className="card" style={{ position: "fixed", right: 24, bottom: 24, width: "min(380px, calc(100vw - 48px))", zIndex: 100, boxShadow: "0 12px 40px rgba(0,0,0,0.15)" }}>
-          <h2 style={{margin: "0 0 4px 0", fontSize: 20}}>{selected.tableName}</h2>
-          <p style={{color: "var(--muted)", margin: "0 0 16px 0"}}>{selected.tableTypeName}</p>
-          
-          <div className="form-grid" style={{marginBottom: 20}}>
-            <div>
-              <label>Mã bàn</label>
-              <strong>{selected.tableCode}</strong>
-            </div>
-            <div>
-              <label>Sức chứa</label>
-              <strong>{selected.capacity} người</strong>
-            </div>
-            <div>
-              <label>Khu vực</label>
-              <strong>{selected.zoneName ?? "-"}</strong>
-            </div>
-            <div>
-              <label>Trạng thái</label>
-              <strong>{label(tableStatus, selected.operationalStatus)}</strong>
-            </div>
-          </div>
+  return (
+    <Modal title={`${table.tableCode} - ${table.tableName}`} onClose={onClose} size="medium">
+      <div className="detail-grid">
+        <div><span>Tầng</span><strong>{table.floorName}</strong></div>
+        <div><span>Khu vực</span><strong>{table.zoneName}</strong></div>
+        <div><span>Loại bàn</span><strong>{table.tableTypeName}</strong></div>
+        <div><span>Sức chứa</span><strong>{table.capacity} khách</strong></div>
+        <div><span>Trạng thái</span><strong>{label(tableStatus, table.operationalStatus)}</strong></div>
+        <div><span>Session</span><strong>{table.activeSessionId ? `#${table.activeSessionId}` : "-"}</strong></div>
+      </div>
 
-          <div className="actions">
-            {selected.activeSessionId ? (
-              <>
-                <button className="danger-btn" style={{flex: 1}} onClick={() => setEndingSessionId(selected.activeSessionId!)}>Đóng phiên</button>
-                <button className="secondary-btn" onClick={() => generateInvoice(selected.activeSessionId!)}>Tạo hóa đơn</button>
-              </>
-            ) : (
-              <button className="primary-btn" style={{flex: 1}} disabled={selected.operationalStatus !== 1} onClick={() => startSession(selected)}>Bắt đầu phiên chơi</button>
-            )}
-            <button className="ghost-btn" onClick={() => setSelected(null)}>Đóng</button>
-          </div>
+      {table.nextBookingId ? (
+        <div className="inline-note">
+          Booking gần nhất: {table.nextBookingCode ?? `#${table.nextBookingId}`} lúc {dateTime(table.nextBookingStartTimeUtc)}.
         </div>
       ) : null}
-      {endingSessionId ? <ConfirmDialog title="Đóng phiên chơi" message="Xác nhận đóng phiên chơi này?" confirmLabel="Đóng phiên" danger onCancel={() => setEndingSessionId(null)} onConfirm={() => endSession(endingSessionId)} /> : null}
-    </div>
+
+      {!canStart && !isOccupied ? (
+        <div className="inline-alert error">Không thể mở phiên trên bàn không sẵn sàng.</div>
+      ) : null}
+
+      <div className="modal-actions">
+        {isOccupied ? (
+          <>
+            <Link className="ghost-btn" href={`/operation/sessions?sessionId=${table.activeSessionId}`}>Xem session</Link>
+            <Link className="secondary-btn" href={`/operation/orders?sessionId=${table.activeSessionId}`}>Thêm order</Link>
+            <button className="ghost-btn" type="button" onClick={onInvoice}>Tạo hóa đơn</button>
+            <button className="danger-btn" type="button" onClick={onEnd}>Kết thúc phiên</button>
+          </>
+        ) : (
+          <button className="primary-btn" type="button" disabled={!canStart} onClick={onStart}>Mở phiên chơi</button>
+        )}
+        <button className="ghost-btn" type="button" onClick={onClose}>Đóng</button>
+      </div>
+    </Modal>
   );
 }

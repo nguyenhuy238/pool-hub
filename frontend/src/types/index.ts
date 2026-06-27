@@ -254,6 +254,9 @@ export type VenueTableLayoutItem = {
   operationalStatus: number;
   isActive: boolean;
   activeSessionId?: number;
+  nextBookingId?: number;
+  nextBookingCode?: string;
+  nextBookingStartTimeUtc?: string;
 };
 
 export type VenueZoneLayoutItem = {
@@ -277,6 +280,9 @@ export type VenueLayoutResponse = {
   totalTables: number;
   availableTables: number;
   occupiedTables: number;
+  reservedTables?: number;
+  maintenanceTables?: number;
+  inactiveTables?: number;
   fetchedAtUtc: string;
 };
 

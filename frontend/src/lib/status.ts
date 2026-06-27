@@ -13,10 +13,10 @@ export const sessionStatus: Record<number, string> = {
 };
 
 export const tableStatus: Record<number, string> = {
-  1: "Đang trống",
-  2: "Đang sử dụng",
+  1: "Sẵn sàng",
+  2: "Đang có khách",
   3: "Đã đặt trước",
-  4: "Đang bảo trì",
+  4: "Bảo trì",
   5: "Ngừng hoạt động"
 };
 

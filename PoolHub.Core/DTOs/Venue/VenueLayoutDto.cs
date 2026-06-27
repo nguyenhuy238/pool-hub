@@ -25,18 +25,19 @@ public class VenueTableLayoutItem
 
     /// <summary>
     /// Trạng thái vận hành lưu trong DB:
-    /// 1 = Available, 2 = Occupied, 3 = Reserved, 4 = Maintenance.
+    /// 1 = Available, 2 = Occupied, 3 = Reserved, 4 = Maintenance, 5 = Inactive.
     /// </summary>
     public int OperationalStatus { get; set; }
 
     /// <summary>Nhãn trạng thái dạng text.</summary>
     public string OperationalStatusLabel => OperationalStatus switch
     {
-        1 => "Available",
-        2 => "Occupied",
-        3 => "Reserved",
-        4 => "Maintenance",
-        _ => "Unknown"
+        1 => "Sẵn sàng",
+        2 => "Đang có khách",
+        3 => "Đã đặt trước",
+        4 => "Bảo trì",
+        5 => "Ngừng hoạt động",
+        _ => "Không xác định"
     };
 
     /// <summary>Tọa độ X trên sơ đồ (dùng cho frontend drag-drop layout).</summary>
@@ -50,6 +51,15 @@ public class VenueTableLayoutItem
 
     /// <summary>ID session đang chạy trên bàn này (null nếu bàn trống).</summary>
     public long? ActiveSessionId { get; set; }
+
+    /// <summary>ID booking gần nhất trên bàn này (null nếu không có booking sắp tới).</summary>
+    public long? NextBookingId { get; set; }
+
+    /// <summary>Mã booking gần nhất trên bàn này.</summary>
+    public string? NextBookingCode { get; set; }
+
+    /// <summary>Thời điểm bắt đầu booking gần nhất.</summary>
+    public DateTime? NextBookingStartTimeUtc { get; set; }
 }
 
 /// <summary>
@@ -110,6 +120,15 @@ public class VenueLayoutResponse
 
     /// <summary>Số bàn đang có người chơi (Occupied).</summary>
     public int OccupiedTables { get; set; }
+
+    /// <summary>Số bàn đã đặt trước.</summary>
+    public int ReservedTables { get; set; }
+
+    /// <summary>Số bàn đang bảo trì.</summary>
+    public int MaintenanceTables { get; set; }
+
+    /// <summary>Số bàn ngừng hoạt động.</summary>
+    public int InactiveTables { get; set; }
 
     /// <summary>Thời điểm dữ liệu được lấy (UTC).</summary>
     public DateTime FetchedAtUtc { get; set; } = DateTime.UtcNow;
