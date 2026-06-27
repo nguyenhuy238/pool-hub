@@ -101,7 +101,6 @@ export type Booking = {
   numberOfGuests?: number;
   note?: string;
   status: number;
-  note?: string;
 };
 
 export type BookingCalendarItem = {

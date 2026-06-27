@@ -19,6 +19,72 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
     public async Task<LandingPageSettingsDto> GetAdminSettingsAsync(CancellationToken ct)
         => await GetOrCreateSettingsAsync(ct);
 
+    public async Task<PublicPricingSummaryDto> GetPricingSummaryAsync(CancellationToken ct)
+    {
+        var plans = await db.PricingPlans
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.PricingPlanId)
+            .Select(x => new PricingPlanSummaryDto
+            {
+                PricingPlanId = x.PricingPlanId,
+                Name = x.Name,
+                IsDefault = x.IsDefault,
+                IsActive = x.IsActive
+            })
+            .ToListAsync(ct);
+
+        var tableTypes = await db.TableTypes
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => new TableTypePricingSummaryDto
+            {
+                TableTypeId = x.TableTypeId,
+                Name = x.Name,
+                Code = x.Code,
+                Description = x.Description,
+                DefaultCapacity = x.DefaultCapacity,
+                IsActive = x.IsActive
+            })
+            .ToListAsync(ct);
+
+        var activePlanIds = plans.Select(x => x.PricingPlanId).ToHashSet();
+        var activeTableTypeIds = tableTypes.Select(x => x.TableTypeId).ToHashSet();
+        var pricingRules = await db.PricingPlanRules
+            .AsNoTracking()
+            .Where(x => x.IsActive && activePlanIds.Contains(x.PricingPlanId) && activeTableTypeIds.Contains(x.TableTypeId))
+            .OrderBy(x => x.TableTypeId)
+            .ThenBy(x => x.DayOfWeek)
+            .ThenBy(x => x.StartTime)
+            .ToListAsync(ct);
+
+        var rules = pricingRules
+            .Select(x => new PricingRuleSummaryDto
+            {
+                PricingPlanRuleId = x.PricingPlanRuleId,
+                PricingPlanId = x.PricingPlanId,
+                TableTypeId = x.TableTypeId,
+                DayOfWeek = x.DayOfWeek,
+                StartTime = x.StartTime.ToString(@"hh\:mm\:ss"),
+                EndTime = x.EndTime.ToString(@"hh\:mm\:ss"),
+                HourlyRate = x.HourlyRate,
+                MinimumMinutes = x.MinimumMinutes,
+                BillingBlockMinutes = x.BillingBlockMinutes,
+                IsActive = x.IsActive
+            })
+            .ToList();
+
+        return new PublicPricingSummaryDto
+        {
+            Plans = plans,
+            Rules = rules,
+            TableTypes = tableTypes,
+            FetchedAtUtc = DateTime.UtcNow
+        };
+    }
+
     public async Task<LandingPageSettingsDto> UpdateSettingsAsync(LandingPageSettingsDto dto, long currentUserId, CancellationToken ct)
     {
         ValidateSettings(dto);
@@ -76,8 +142,13 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         if (string.IsNullOrWhiteSpace(dto.GeneralInfo.CenterName)) throw new ValidationException("Center name is required.");
         if (string.IsNullOrWhiteSpace(dto.Hero.Title)) throw new ValidationException("Hero title is required.");
         if (dto.BookingPolicy.MinDurationMinutes <= 0) throw new ValidationException("Minimum duration must be greater than zero.");
+        if (dto.BookingPolicy.DefaultDurationMinutes <= 0) throw new ValidationException("Default duration must be greater than zero.");
+        if (dto.BookingPolicy.HoldMinutes <= 0) throw new ValidationException("Hold minutes must be greater than zero.");
         if (dto.BookingPolicy.MaxDurationMinutes < dto.BookingPolicy.MinDurationMinutes) throw new ValidationException("Maximum duration must be greater than minimum duration.");
-        if (dto.BookingPolicy.AdvanceBookingDays < 0) throw new ValidationException("Advance booking days cannot be negative.");
+        if (dto.BookingPolicy.DefaultDurationMinutes < dto.BookingPolicy.MinDurationMinutes || dto.BookingPolicy.DefaultDurationMinutes > dto.BookingPolicy.MaxDurationMinutes) throw new ValidationException("Default duration must be between minimum and maximum duration.");
+        if (dto.BookingPolicy.AdvanceBookingDays <= 0) throw new ValidationException("Advance booking days must be greater than zero.");
+        ValidateHexColor(dto.Theme.PrimaryColor, nameof(dto.Theme.PrimaryColor));
+        ValidateHexColor(dto.Theme.AccentColor, nameof(dto.Theme.AccentColor));
         if (string.IsNullOrWhiteSpace(dto.Hero.BackgroundImageUrl)) throw new ValidationException("Hero background image is required.");
         ValidateUrl(dto.About.ImageUrl, nameof(dto.About.ImageUrl), allowRelative: true);
         ValidateUrl(dto.QrCode.ImageUrl, nameof(dto.QrCode.ImageUrl), allowRelative: true);
@@ -93,24 +164,24 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         ValidateUrl(dto.GeneralInfo.FaviconUrl, nameof(dto.GeneralInfo.FaviconUrl), allowRelative: true);
         ValidateGoogleMaps(dto.GeneralInfo);
         ValidateUrl(dto.Seo.OgImageUrl, nameof(dto.Seo.OgImageUrl), allowRelative: true);
-        ValidateMediaExtension(dto.GeneralInfo.LogoUrl, "Logo", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-        ValidateMediaExtension(dto.GeneralInfo.FaviconUrl, "Favicon", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-        ValidateMediaExtension(dto.Seo.OgImageUrl, "OG image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-        ValidateMediaExtension(dto.Hero.BackgroundImageUrl, "Hero background image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-        ValidateMediaExtension(dto.Hero.FallbackImageUrl, "Hero fallback image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+        ValidateMediaExtension(dto.GeneralInfo.LogoUrl, "Logo", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        ValidateMediaExtension(dto.GeneralInfo.FaviconUrl, "Favicon", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        ValidateMediaExtension(dto.Seo.OgImageUrl, "OG image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        ValidateMediaExtension(dto.Hero.BackgroundImageUrl, "Hero background image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        ValidateMediaExtension(dto.Hero.FallbackImageUrl, "Hero fallback image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         ValidateMediaExtension(dto.Hero.BackgroundVideoUrl, "Hero video", [".mp4", ".webm"]);
-        ValidateMediaExtension(dto.About.ImageUrl, "About image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-        ValidateMediaExtension(dto.QrCode.ImageUrl, "QR code", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+        ValidateMediaExtension(dto.About.ImageUrl, "About image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        ValidateMediaExtension(dto.QrCode.ImageUrl, "QR code", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         foreach (var item in dto.Gallery) ValidateUrl(item.ImageUrl, "Gallery image URL", allowRelative: true);
         foreach (var item in dto.Services) ValidateUrl(item.ImageUrl, "Service image URL", allowRelative: true);
-        foreach (var item in dto.Gallery) ValidateMediaExtension(item.ImageUrl, "Gallery image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-        foreach (var item in dto.Services) ValidateMediaExtension(item.ImageUrl, "Service image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+        foreach (var item in dto.Gallery) ValidateMediaExtension(item.ImageUrl, "Gallery image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        foreach (var item in dto.Services) ValidateMediaExtension(item.ImageUrl, "Service image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         foreach (var item in dto.Reviews)
         {
             ValidateUrl(item.AvatarUrl, "Review avatar URL", allowRelative: true);
             ValidateUrl(item.CheckInImageUrl, "Review check-in image URL", allowRelative: true);
-            ValidateMediaExtension(item.AvatarUrl, "Review avatar", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-            ValidateMediaExtension(item.CheckInImageUrl, "Review check-in image", [".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+            ValidateMediaExtension(item.AvatarUrl, "Review avatar", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+            ValidateMediaExtension(item.CheckInImageUrl, "Review check-in image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         }
         foreach (var item in dto.SocialLinks) ValidateSocialUrl(item);
         ValidateLink(dto.PromotionBanner.CtaLinkType, dto.PromotionBanner.CtaLink, "Promotion CTA");
@@ -155,10 +226,23 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
     private static void ValidateUrl(string? value, string fieldName, bool allowRelative)
     {
         if (string.IsNullOrWhiteSpace(value)) return;
+        if (value.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ValidationException($"{fieldName} cannot use an unsafe URL scheme.");
+        }
         if (allowRelative && value.StartsWith('/')) return;
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             throw new ValidationException($"{fieldName} must be a valid URL.");
+        }
+    }
+
+    private static void ValidateHexColor(string value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !System.Text.RegularExpressions.Regex.IsMatch(value, "^#[0-9a-fA-F]{6}$"))
+        {
+            throw new ValidationException($"{fieldName} must be a valid 6-digit hex color.");
         }
     }
 

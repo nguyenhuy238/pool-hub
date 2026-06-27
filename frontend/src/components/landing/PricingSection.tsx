@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { venueApi, pricingApi } from "@/lib/api/endpoints";
-import type { TableType, PricingPlanRule } from "@/types";
+import { landingSettingsApi, type PricingRuleSummary, type TableTypePricingSummary } from "@/lib/api/landingSettingsApi";
 
 function formatDays(days: number[]) {
   if (!days || days.length === 0) return "Mọi ngày";
@@ -19,7 +18,7 @@ function formatDays(days: number[]) {
   return sorted.map(d => d === 0 ? "CN" : `T${d + 1}`).join(", ");
 }
 
-function groupRules(rules: PricingPlanRule[]) {
+function groupRules(rules: PricingRuleSummary[]) {
   const groups = new Map<string, { days: number[], rate: number, start: string, end: string }>();
   
   for (const r of rules) {
@@ -60,24 +59,17 @@ function getTableTypeColor(name: string) {
 }
 
 export function PricingSection() {
-  const [tableTypes, setTableTypes] = useState<TableType[]>([]);
-  const [rules, setRules] = useState<PricingPlanRule[]>([]);
+  const [tableTypes, setTableTypes] = useState<TableTypePricingSummary[]>([]);
+  const [rules, setRules] = useState<PricingRuleSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [typesRes, rulesRes] = await Promise.all([
-          venueApi.tableTypes(),
-          pricingApi.rules({ pageSize: 500 })
-        ]);
-        
-        const types = Array.isArray(typesRes) ? typesRes : (typesRes as any).items || [];
-        const rls = Array.isArray(rulesRes) ? rulesRes : (rulesRes as any).items || [];
-        
-        setTableTypes(types);
-        setRules(rls);
+        const summary = await landingSettingsApi.pricingSummary();
+        setTableTypes(summary.tableTypes);
+        setRules(summary.rules);
       } catch (error) {
         console.error("Failed to load pricing data", error);
       } finally {

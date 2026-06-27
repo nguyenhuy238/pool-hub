@@ -10,7 +10,8 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/admin/media")]
-[Authorize(Roles = RoleConstants.Admin)]
+[Route("api/admin/media-assets")]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
 public class MediaController(IMediaService service, IWebHostEnvironment environment) : ControllerBase
 {
     [HttpPost("upload")]
