@@ -165,6 +165,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<EmailSettings>()
             .BindConfiguration("EmailSettings");
         services.AddHttpContextAccessor();
+        services.AddHttpClient();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuthService, AuthService>();

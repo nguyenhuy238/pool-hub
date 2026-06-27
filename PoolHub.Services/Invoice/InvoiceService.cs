@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using PoolHub.Core.DTOs.Invoice;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
@@ -9,13 +10,14 @@ using PoolHub.Shared.Exceptions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using EntityInvoice = PoolHub.Core.Entities.Invoice;
 
 namespace PoolHub.Services.Invoice;
 
-public class InvoiceService(PoolHubDbContext db) : IInvoiceService
+public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IInvoiceService
 {
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
@@ -295,25 +297,26 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             throw new BusinessRuleException("Cannot apply discounts to a fully paid invoice.");
         }
 
+        var code = request.DiscountCode.Trim().ToUpper();
+        var now = DateTime.UtcNow;
         var discount = await db.Discounts
-            .FirstOrDefaultAsync(d => d.DiscountCode == request.DiscountCode && d.IsActive && d.StartsAtUtc <= DateTime.UtcNow && (d.EndsAtUtc == null || d.EndsAtUtc >= DateTime.UtcNow), ct)
-            ?? throw new NotFoundException("Active discount code not found.");
-
-        var alreadyApplied = await db.InvoiceDiscounts
-            .AnyAsync(id => id.InvoiceId == invoiceId && id.DiscountId == discount.DiscountId, ct);
-        if (alreadyApplied)
-        {
-            throw new BusinessRuleException("Discount code already applied to this invoice.");
-        }
+            .FirstOrDefaultAsync(d => d.DiscountCode.ToUpper() == code && d.IsActive && d.StartsAtUtc <= now && (d.EndsAtUtc == null || d.EndsAtUtc >= now), ct)
+            ?? throw new NotFoundException("Mã giảm giá không tồn tại, đã hết hạn hoặc chưa kích hoạt.");
 
         if (discount.MinTimeSubtotal.HasValue && invoice.TimeSubtotalAmount < discount.MinTimeSubtotal.Value)
         {
-            throw new BusinessRuleException($"Minimum time subtotal of {discount.MinTimeSubtotal.Value:N0} VND is required to apply this discount.");
+            throw new BusinessRuleException($"Hóa đơn cần đạt tối thiểu {discount.MinTimeSubtotal.Value:N0} VND tiền giờ chơi để áp dụng mã này.");
         }
 
-        decimal baseAmount = discount.AppliesTo.Equals("ALL", StringComparison.OrdinalIgnoreCase) 
-            ? invoice.SubtotalAmount 
-            : invoice.TimeSubtotalAmount;
+        var existingDiscounts = await db.InvoiceDiscounts
+            .Where(id => id.InvoiceId == invoiceId)
+            .ToListAsync(ct);
+        if (existingDiscounts.Count > 0)
+        {
+            db.InvoiceDiscounts.RemoveRange(existingDiscounts);
+        }
+
+        decimal baseAmount = invoice.SubtotalAmount;
 
         decimal discountAmt = 0;
         if (discount.DiscountType.Equals(DiscountTypes.Percentage, StringComparison.OrdinalIgnoreCase))
@@ -331,9 +334,9 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             discountAmt = discount.MaxAmount.Value;
         }
 
-        if (discountAmt > invoice.TimeSubtotalAmount)
+        if (discountAmt > baseAmount)
         {
-            discountAmt = invoice.TimeSubtotalAmount;
+            discountAmt = baseAmount;
         }
 
         var invoiceDiscount = new InvoiceDiscount
@@ -346,13 +349,45 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
         };
         db.InvoiceDiscounts.Add(invoiceDiscount);
 
-        invoice.DiscountAmount += discountAmt;
+        invoice.DiscountAmount = discountAmt;
         invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount - invoice.DiscountAmount + invoice.TaxAmount);
 
         if (invoice.PaidAmount >= invoice.GrandTotalAmount)
         {
             invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
             invoice.Status = 2; // Completed
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveDiscountAsync(long invoiceId, long userId, CancellationToken ct)
+    {
+        var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.Status == 3) throw new BusinessRuleException("Cannot modify a cancelled invoice.");
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid) throw new BusinessRuleException("Cannot modify a fully paid invoice.");
+
+        var existingDiscounts = await db.InvoiceDiscounts.Where(id => id.InvoiceId == invoiceId).ToListAsync(ct);
+        if (existingDiscounts.Count > 0)
+        {
+            db.InvoiceDiscounts.RemoveRange(existingDiscounts);
+        }
+
+        invoice.DiscountAmount = 0;
+        invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount + invoice.TaxAmount);
+
+        if (invoice.PaidAmount >= invoice.GrandTotalAmount && invoice.GrandTotalAmount > 0)
+        {
+            invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
+            invoice.Status = 2; // Completed
+        }
+        else if (invoice.PaidAmount > 0)
+        {
+            invoice.PaymentStatus = 1; // Partial
+        }
+        else
+        {
+            invoice.PaymentStatus = 0; // Unpaid
         }
 
         await db.SaveChangesAsync(ct);
@@ -493,5 +528,70 @@ public class InvoiceService(PoolHubDbContext db) : IInvoiceService
             }
         }
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<string> GetVietQrUrlAsync(long invoiceId, CancellationToken ct)
+    {
+        var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        var bankMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "BANK" || x.Name.Contains("Chuyển") || x.Name.Contains("QR") || x.Name.Contains("Bank"), ct);
+        var desc = bankMethod?.Description ?? "";
+        
+        string bankCode = "MB";
+        string accountNo = "989420048989";
+        string accountName = "POOLHUB";
+
+        try {
+            using var doc = System.Text.Json.JsonDocument.Parse(desc);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("bankCode", out var bc) && !string.IsNullOrEmpty(bc.GetString())) bankCode = bc.GetString()!;
+            if (root.TryGetProperty("accountNo", out var ac) && !string.IsNullOrEmpty(ac.GetString())) accountNo = ac.GetString()!;
+            if (root.TryGetProperty("accountName", out var an) && !string.IsNullOrEmpty(an.GetString())) accountName = an.GetString()!;
+        } catch {}
+
+        var amount = (long)(invoice.GrandTotalAmount - invoice.PaidAmount);
+        if (amount <= 0) amount = (long)invoice.GrandTotalAmount;
+        var addInfo = $"HD{invoiceId}";
+
+        var clientId = config?["PayOSSettings:ClientId"];
+        var apiKey = config?["PayOSSettings:ApiKey"];
+        var checksumKey = config?["PayOSSettings:ChecksumKey"];
+        var baseUrl = config?["EmailSettings:FrontendBaseUrl"] ?? "http://localhost:3000";
+
+        if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(checksumKey) && httpClientFactory != null)
+        {
+            try
+            {
+                string cancelUrl = $"{baseUrl}/operation/invoices";
+                string returnUrl = $"{baseUrl}/operation/invoices";
+                string description = $"HD{invoiceId}";
+                long orderCode = invoiceId;
+
+                string rawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
+                using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
+                var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawData));
+                var signature = BitConverter.ToString(hash).Replace("-", "").ToLower();
+
+                var payosBody = new
+                {
+                    orderCode = orderCode,
+                    amount = amount,
+                    description = description,
+                    cancelUrl = cancelUrl,
+                    returnUrl = returnUrl,
+                    signature = signature
+                };
+
+                var client = httpClientFactory.CreateClient();
+                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "https://api.payos.vn/v2/payment-requests");
+                req.Headers.Add("x-client-id", clientId);
+                req.Headers.Add("x-api-key", apiKey);
+                req.Content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(payosBody), System.Text.Encoding.UTF8, "application/json");
+
+                await client.SendAsync(req, ct);
+            }
+            catch {}
+        }
+
+        return $"https://img.vietqr.io/image/{bankCode}-{accountNo}-compact2.png?amount={amount}&addInfo={Uri.EscapeDataString(addInfo)}&accountName={Uri.EscapeDataString(accountName)}";
     }
 }

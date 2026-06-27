@@ -180,6 +180,37 @@ export type OrderItem = {
   note?: string;
 };
 
+export type InvoiceLine = {
+  invoiceLineId: number;
+  invoiceId: number;
+  lineType: string;
+  referenceId?: number;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotalAmount: number;
+};
+
+export type InvoiceDiscount = {
+  invoiceDiscountId: number;
+  invoiceId: number;
+  discountId: number;
+  appliedByUserId?: number;
+  amountApplied: number;
+  descriptionSnapshot?: string;
+};
+
+export type InvoicePayment = {
+  paymentId: number;
+  invoiceId: number;
+  paymentMethodId: number;
+  amount: number;
+  paymentStatus: number;
+  transactionCode?: string;
+  paidAtUtc?: string;
+  note?: string;
+};
+
 export type Invoice = {
   invoiceId: number;
   invoiceCode?: string;
@@ -193,9 +224,9 @@ export type Invoice = {
   paidAmount?: number;
   paymentStatus?: number;
   status?: number;
-  lines?: unknown[];
-  discounts?: unknown[];
-  payments?: unknown[];
+  lines?: InvoiceLine[];
+  discounts?: InvoiceDiscount[];
+  payments?: InvoicePayment[];
 };
 
 export type PaymentMethod = {

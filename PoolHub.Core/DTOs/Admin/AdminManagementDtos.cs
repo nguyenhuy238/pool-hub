@@ -6,6 +6,8 @@ namespace PoolHub.Core.DTOs.Admin;
 public class DiscountQueryRequest : PaginationRequest
 {
     public bool? IsActive { get; set; }
+    public string? DiscountType { get; set; }
+    public string? AppliesTo { get; set; }
 }
 
 public class DiscountDto
