@@ -11,7 +11,7 @@ export default function PublicBookingPage() {
   const toast = useToast();
   const [tables, setTables] = useState<VenueTable[]>([]);
   const [types, setTypes] = useState<TableType[]>([]);
-  const [form, setForm] = useState({ customerName: "", phoneNumber: "", tableId: "", tableTypeId: "", startTimeUtc: "", endTimeUtc: "", numberOfGuests: 2 });
+  const [form, setForm] = useState({ customerName: "", phoneNumber: "", email: "", tableId: "", tableTypeId: "", startTimeUtc: "", endTimeUtc: "", numberOfGuests: 2 });
 
   useEffect(() => {
     Promise.all([venueApi.tables(), venueApi.tableTypes()]).then(([tableData, typeData]) => {
@@ -25,6 +25,7 @@ export default function PublicBookingPage() {
     await bookingApi.create({
       customerName: form.customerName,
       phoneNumber: form.phoneNumber,
+      email: form.email || undefined,
       tableId: form.tableId ? Number(form.tableId) : undefined,
       tableTypeId: form.tableTypeId ? Number(form.tableTypeId) : undefined,
       startTimeUtc: vietnamDatetimeLocalToUtcIso(form.startTimeUtc),
@@ -40,6 +41,7 @@ export default function PublicBookingPage() {
       <form className="card form-grid" onSubmit={submit}>
         <label><span>Tên khách</span><input required value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} /></label>
         <label><span>Số điện thoại</span><input required value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} /></label>
+        <label><span>Email (để nhận xác nhận)</span><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="khach@example.com" /></label>
         <label><span>Loại bàn</span><select value={form.tableTypeId} onChange={(e) => setForm({ ...form, tableTypeId: e.target.value })}><option value="">Theo gợi ý</option>{types.map((item) => <option key={item.tableTypeId} value={item.tableTypeId}>{item.name}</option>)}</select></label>
         <label><span>Bàn cụ thể</span><select value={form.tableId} onChange={(e) => setForm({ ...form, tableId: e.target.value })}><option value="">Không chọn</option>{tables.map((item) => <option key={item.tableId} value={item.tableId}>{item.tableName}</option>)}</select></label>
         <label><span>Bắt đầu</span><input type="datetime-local" required value={form.startTimeUtc} onChange={(e) => setForm({ ...form, startTimeUtc: e.target.value })} /></label>

@@ -20,11 +20,11 @@ type TableOption = { tableId: number; tableName?: string; tableCode?: string; ta
 type TableTypeOption = { tableTypeId: number; name?: string };
 
 function isExpired(row: Record<string, unknown>) {
-  return Number(row.status) === BOOKING_PENDING && new Date(String(row.endTimeUtc)).getTime() <= Date.now();
+  return false;
 }
 
 function effectiveStatus(row: Record<string, unknown>) {
-  return isExpired(row) ? BOOKING_CANCELLED : Number(row.status);
+  return Number(row.status);
 }
 
 function hasStartedSession(row: Record<string, unknown>) {
@@ -162,11 +162,11 @@ export default function BookingsPage() {
         ]}
         actions={(row) => {
           const statusValue = effectiveStatus(row);
-          const canConfirm = Number(row.status) === BOOKING_PENDING && !isExpired(row);
+          const canConfirm = statusValue === BOOKING_PENDING;
           const canEdit = (statusValue === BOOKING_PENDING || statusValue === BOOKING_CONFIRMED) && !hasStartedSession(row);
           const canCancel = (statusValue === BOOKING_PENDING || statusValue === BOOKING_CONFIRMED) && !hasStartedSession(row);
           return (
-            <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", alignItems: "center", justifyContent: "flex-start", width: 150 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", minWidth: 240 }}>
               {canConfirm && (
                 <button
                   className="primary-btn compact"

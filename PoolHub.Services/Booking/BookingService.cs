@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.Interfaces.Services;
@@ -11,12 +12,10 @@ using EntityCustomer = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Booking;
 
-public class BookingService(PoolHubDbContext db) : IBookingService
+public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger) : IBookingService
 {
     public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
     {
-        await AutoCancelExpiredPendingBookingsAsync(ct);
-
         var query = db.Bookings.AsQueryable();
 
         if (request.Status.HasValue)
@@ -55,7 +54,6 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> GetByIdAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        await AutoCancelIfExpiredPendingAsync(booking, DateTime.UtcNow, ct);
         return Map(booking);
     }
 
@@ -72,22 +70,51 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             {
                 throw new BusinessRuleException("Customer is blocked or inactive.");
             }
+            if (!string.IsNullOrWhiteSpace(request.Email) && customer.Email != request.Email)
+            {
+                var emailTaken = await db.Customers.AnyAsync(c => c.Email == request.Email && c.CustomerId != customer.CustomerId, ct);
+                if (!emailTaken)
+                {
+                    customer.Email = request.Email;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
             customerId = customer.CustomerId;
         }
-        else if (!string.IsNullOrEmpty(request.PhoneNumber))
+        else if (!string.IsNullOrEmpty(request.PhoneNumber) || !string.IsNullOrEmpty(request.Email))
         {
-            var customer = await db.Customers.FirstOrDefaultAsync(c => c.PhoneNumber == request.PhoneNumber, ct);
+            var customer = await db.Customers.FirstOrDefaultAsync(c =>
+                (!string.IsNullOrEmpty(request.PhoneNumber) && c.PhoneNumber == request.PhoneNumber) ||
+                (!string.IsNullOrEmpty(request.Email) && c.Email == request.Email), ct);
+
             if (customer != null)
             {
                 if (!customer.Status)
                 {
                     throw new BusinessRuleException("Customer is blocked or inactive.");
                 }
+                if (!string.IsNullOrWhiteSpace(request.Email) && customer.Email != request.Email)
+                {
+                    var emailTaken = await db.Customers.AnyAsync(c => c.Email == request.Email && c.CustomerId != customer.CustomerId, ct);
+                    if (!emailTaken)
+                    {
+                        customer.Email = request.Email;
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && customer.PhoneNumber != request.PhoneNumber)
+                {
+                    var phoneTaken = await db.Customers.AnyAsync(c => c.PhoneNumber == request.PhoneNumber && c.CustomerId != customer.CustomerId, ct);
+                    if (!phoneTaken)
+                    {
+                        customer.PhoneNumber = request.PhoneNumber;
+                    }
+                }
+                await db.SaveChangesAsync(ct);
                 customerId = customer.CustomerId;
             }
             else
             {
-                var newCustomer = new EntityCustomer { PhoneNumber = request.PhoneNumber, FullName = request.CustomerName ?? "Anonymous" };
+                var newCustomer = new EntityCustomer { PhoneNumber = request.PhoneNumber ?? "", FullName = request.CustomerName ?? "Anonymous", Email = request.Email };
                 db.Customers.Add(newCustomer);
                 await db.SaveChangesAsync(ct);
                 customerId = newCustomer.CustomerId;
@@ -164,7 +191,6 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         }
 
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        await AutoCancelIfExpiredPendingAsync(booking, DateTime.UtcNow, ct);
         if (booking.Status is BookingStatuses.Cancelled or BookingStatuses.NoShow or BookingStatuses.Completed)
         {
             throw new BusinessRuleException("Booking cannot be updated.");
@@ -205,11 +231,6 @@ public class BookingService(PoolHubDbContext db) : IBookingService
     public async Task<BookingDto> ConfirmAsync(long id, long? confirmedByUserId, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        var expired = await AutoCancelIfExpiredPendingAsync(booking, DateTime.UtcNow, ct);
-        if (expired)
-        {
-            throw new ConflictException("Booking has expired and was cancelled automatically.");
-        }
 
         if (booking.Status != BookingStatuses.Pending) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
         if (booking.TableId.HasValue && await HasConflictAsync(booking, ct))
@@ -219,6 +240,10 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         booking.ConfirmedByUserId = confirmedByUserId;
         booking.ConfirmedAtUtc ??= DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        // Gửi email xác nhận cho khách
+        await TrySendBookingConfirmedEmailAsync(booking, ct);
+
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
     }
 
@@ -231,6 +256,10 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         booking.Status = BookingStatuses.Cancelled;
         booking.CancelledAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        // Gửi email thông báo hủy cho khách
+        await TrySendBookingCancelledEmailAsync(booking, "Đặt bàn đã bị hủy theo yêu cầu.", ct);
+
         return new BookingDto { BookingId = booking.BookingId, BookingCode = booking.BookingCode, CustomerId = booking.CustomerId, TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status };
     }
 
@@ -310,11 +339,60 @@ public class BookingService(PoolHubDbContext db) : IBookingService
         TableId = booking.TableId, StartTimeUtc = booking.StartTimeUtc, EndTimeUtc = booking.EndTimeUtc, Status = booking.Status
     };
 
+    /// <summary>Lấy email khách trực tiếp từ Customer entity.</summary>
+    private async Task<(string? Email, string CustomerName, string PhoneNumber, string TableName)> GetEmailContextAsync(EntityBooking booking, CancellationToken ct)
+    {
+        var customer = await db.Customers.AsNoTracking()
+            .Where(c => c.CustomerId == booking.CustomerId)
+            .Select(c => new { c.FullName, c.Email, c.PhoneNumber })
+            .FirstOrDefaultAsync(ct);
+        if (customer == null) return (null, "Khách hàng", "N/A", "N/A");
+
+        var tableName = booking.TableId.HasValue
+            ? await db.VenueTables.AsNoTracking()
+                .Where(t => t.TableId == booking.TableId.Value)
+                .Select(t => t.TableName)
+                .FirstOrDefaultAsync(ct) ?? "N/A"
+            : "Chưa chỉ định bàn";
+
+        return (customer.Email, customer.FullName ?? "Khách hàng", customer.PhoneNumber ?? "N/A", tableName);
+    }
+
+    private async Task TrySendBookingConfirmedEmailAsync(EntityBooking booking, CancellationToken ct)
+    {
+        try
+        {
+            var (email, customerName, phoneNumber, tableName) = await GetEmailContextAsync(booking, ct);
+            if (string.IsNullOrWhiteSpace(email)) return;
+            await emailService.SendBookingConfirmedAsync(
+                email, customerName, phoneNumber, booking.BookingCode, tableName,
+                booking.StartTimeUtc, booking.EndTimeUtc, booking.NumberOfGuests, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send booking confirmed email for booking {BookingId}", booking.BookingId);
+        }
+    }
+
+    private async Task TrySendBookingCancelledEmailAsync(EntityBooking booking, string reason, CancellationToken ct)
+    {
+        try
+        {
+            var (email, customerName, phoneNumber, tableName) = await GetEmailContextAsync(booking, ct);
+            if (string.IsNullOrWhiteSpace(email)) return;
+            await emailService.SendBookingCancelledAsync(
+                email, customerName, phoneNumber, booking.BookingCode, tableName,
+                booking.StartTimeUtc, booking.EndTimeUtc, booking.NumberOfGuests, reason, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send booking cancelled email for booking {BookingId}", booking.BookingId);
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)
     {
-        await AutoCancelExpiredPendingBookingsAsync(ct);
-
         // Validate khoảng thời gian
         if (request.From > request.To)
             throw new ValidationException("'from' must be earlier than 'to'.");
@@ -421,47 +499,5 @@ public class BookingService(PoolHubDbContext db) : IBookingService
             throw new ValidationException("Booking times must use UTC.");
         if (endTimeUtc <= startTimeUtc)
             throw new ValidationException("End time must be after start time.");
-    }
-
-    private async Task AutoCancelExpiredPendingBookingsAsync(CancellationToken ct)
-    {
-        var now = DateTime.UtcNow;
-        var expiredBookings = await db.Bookings
-            .Where(x => x.Status == BookingStatuses.Pending && x.EndTimeUtc <= now)
-            .ToListAsync(ct);
-
-        if (expiredBookings.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var booking in expiredBookings)
-        {
-            MarkExpiredPendingAsCancelled(booking, now);
-        }
-
-        await db.SaveChangesAsync(ct);
-    }
-
-    private async Task<bool> AutoCancelIfExpiredPendingAsync(EntityBooking booking, DateTime now, CancellationToken ct)
-    {
-        if (booking.Status != BookingStatuses.Pending || booking.EndTimeUtc > now)
-        {
-            return false;
-        }
-
-        MarkExpiredPendingAsCancelled(booking, now);
-        await db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    private static void MarkExpiredPendingAsCancelled(EntityBooking booking, DateTime now)
-    {
-        booking.Status = BookingStatuses.Cancelled;
-        booking.CancelledAtUtc = now;
-        booking.Note = string.IsNullOrWhiteSpace(booking.Note)
-            ? "Auto-cancelled because booking expired before confirmation"
-            : $"{booking.Note} | Auto-cancelled because booking expired before confirmation";
-        booking.UpdatedAtUtc = now;
     }
 }

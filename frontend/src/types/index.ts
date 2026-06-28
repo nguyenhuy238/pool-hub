@@ -94,6 +94,7 @@ export type Booking = {
   customerId?: number;
   customerName?: string;
   phoneNumber?: string;
+  email?: string;
   tableId?: number;
   tableTypeId?: number;
   startTimeUtc: string;
@@ -101,7 +102,6 @@ export type Booking = {
   numberOfGuests?: number;
   note?: string;
   status: number;
-  note?: string;
 };
 
 export type BookingCalendarItem = {

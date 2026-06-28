@@ -95,5 +95,9 @@ public class AuthServiceTests
         public void EnsureConfigured() { }
         public Task SendPasswordResetAsync(string email, string resetToken, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+        public Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct) =>
+            Task.CompletedTask;
+        public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) =>
+            Task.CompletedTask;
     }
 }

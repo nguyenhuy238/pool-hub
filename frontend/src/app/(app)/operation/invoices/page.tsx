@@ -302,8 +302,8 @@ export default function InvoicesPage() {
                 <tr>
                   <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.lineType === 'TIME' ? 'Tiền giờ bàn' : 'Dịch vụ/Sản phẩm'}</td>
                   <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.description}</td>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${l.quantity}</td>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${money(l.unitPrice)}</td>
+                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${l.lineType === 'TIME' ? `${Math.round(Number(l.quantity) * 60)} phút` : l.quantity}</td>
+                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${l.lineType === 'TIME' ? `${money(l.unitPrice)}/giờ` : money(l.unitPrice)}</td>
                   <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${money(l.lineTotalAmount)}</td>
                 </tr>
               `).join('');
@@ -362,8 +362,8 @@ export default function InvoicesPage() {
                         </span>
                       </td>
                       <td style={{ padding: '10px 14px', fontWeight: 500 }}>{l.description}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{l.quantity}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--muted)' }}>{money(l.unitPrice)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{l.lineType === 'TIME' ? `${Math.round(Number(l.quantity) * 60)} phút` : l.quantity}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--muted)' }}>{l.lineType === 'TIME' ? `${money(l.unitPrice)}/giờ` : money(l.unitPrice)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>{money(l.lineTotalAmount)}</td>
                     </tr>
                   )) : (

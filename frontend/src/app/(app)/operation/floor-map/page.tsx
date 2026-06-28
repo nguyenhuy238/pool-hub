@@ -88,13 +88,13 @@ export default function FloorMapPage() {
   }
 
   async function startSession(table: SelectedTable) {
-    if (table.operationalStatus !== 1) {
-      toast("Chỉ có thể mở phiên trên bàn đang sẵn sàng.", "error");
+    if (table.operationalStatus !== 1 && table.operationalStatus !== 3) {
+      toast("Chỉ có thể mở phiên trên bàn sẵn sàng hoặc đã đặt trước.", "error");
       return;
     }
 
     try {
-      await sessionApi.start({ tableId: table.tableId });
+      await sessionApi.start({ tableId: table.tableId, bookingId: table.nextBookingId });
       toast("Đã mở phiên chơi.", "success");
       await reload();
       setSelected(null);
@@ -277,7 +277,7 @@ function TableDetailModal({ table, onClose, onStart, onEnd, onInvoice }: {
   onEnd: () => void;
   onInvoice: () => void;
 }) {
-  const canStart = table.operationalStatus === 1;
+  const canStart = table.operationalStatus === 1 || table.operationalStatus === 3;
   const isOccupied = Boolean(table.activeSessionId);
 
   return (
@@ -298,7 +298,7 @@ function TableDetailModal({ table, onClose, onStart, onEnd, onInvoice }: {
       ) : null}
 
       {!canStart && !isOccupied ? (
-        <div className="inline-alert error">Không thể mở phiên trên bàn không sẵn sàng.</div>
+        <div className="inline-alert error">Không thể mở phiên trên bàn đang bảo trì hoặc ngừng hoạt động.</div>
       ) : null}
 
       <div className="modal-actions">

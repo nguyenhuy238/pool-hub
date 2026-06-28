@@ -56,7 +56,7 @@ public class SessionServiceTests
             .Options;
 
         using var db = new PoolHubDbContext(options);
-        db.VenueTables.Add(new VenueTable { TableId = 1, TableName = "Table 1", TableTypeId = 1, OperationalStatus = 3, IsActive = true });
+        db.VenueTables.Add(new VenueTable { TableId = 1, TableName = "Table 1", TableTypeId = 1, OperationalStatus = 4, IsActive = true });
         await db.SaveChangesAsync();
 
         var service = new SessionService(db);

@@ -302,7 +302,7 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         await EnsureTableHasNoActiveSessionAsync(tableId, "Table already has an active session.", ct);
 
         var table = await db.VenueTables.FindAsync([tableId], ct) ?? throw new NotFoundException("Table not found.");
-        if (!table.IsActive || table.OperationalStatus != 1)
+        if (!table.IsActive || (table.OperationalStatus != 1 && table.OperationalStatus != 3))
         {
             throw new BusinessRuleException("Table is not available for a new session.");
         }
