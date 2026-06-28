@@ -4,6 +4,7 @@ public class BookingAvailabilityRequest
 {
     public DateTime StartTimeUtc { get; set; }
     public DateTime EndTimeUtc { get; set; }
+    public long? TableId { get; set; }
     public long? TableTypeId { get; set; }
 }
 

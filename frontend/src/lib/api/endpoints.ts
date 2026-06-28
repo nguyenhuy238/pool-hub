@@ -55,6 +55,8 @@ export const venueApi = {
 
 export const bookingApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Booking[] | { items?: Booking[] }>(`/api/bookings${toQuery(params)}`),
+  availability: (tableId: number, startTimeUtc: string, endTimeUtc: string) =>
+    apiFetch<VenueTable[]>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`),
   calendar: (from: string, to: string, params: Record<string, string | number | undefined> = {}) => 
     apiFetch<BookingCalendarItem[] | { items?: BookingCalendarItem[] }>(`/api/bookings/calendar${toQuery({ from, to, ...params })}`),
   create: (body: Partial<Booking>) => apiFetch<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
