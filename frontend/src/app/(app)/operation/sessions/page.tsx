@@ -1,16 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { bookingApi, sessionApi } from "@/lib/api/endpoints";
-import { getVietnamDateInputValue, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
+import { bookingApi, customerApi, sessionApi, venueApi } from "@/lib/api/endpoints";
+import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamHourOfDay, vietnamDateRangeToUtcIso, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
-import { Badge, ConfirmDialog, DataTable, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
+import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { Booking, Session } from "@/types";
+import type { Booking, CustomerDto, Session, VenueTable } from "@/types";
 
 const BOOKING_CONFIRMED = 2;
 const SESSION_OPEN = 1;
+const WALK_IN_START_HOUR = 7;
+const WALK_IN_SLOT_COUNT = (24 - WALK_IN_START_HOUR) * 2;
+const WALK_IN_TIME_POINTS = Array.from({ length: WALK_IN_SLOT_COUNT + 1 }, (_, index) => {
+  const minutes = WALK_IN_START_HOUR * 60 + index * 30;
+  return `${Math.floor(minutes / 60).toString().padStart(2, "0")}:${(minutes % 60).toString().padStart(2, "0")}`;
+});
 
 function unwrap<T>(value: T[] | { items?: T[] } | undefined): T[] {
   if (!value) return [];
@@ -28,18 +34,23 @@ export default function SessionsPage() {
   const [noShowing, setNoShowing] = useState<Booking | null>(null);
   const [ending, setEnding] = useState<Session | null>(null);
   const [summary, setSummary] = useState<any | null>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
 
   const { data, loading, error, reload } = useLoad(async () => {
     const { startUtc, endUtc } = vietnamDateRangeToUtcIso(getVietnamDateInputValue());
 
-    const [bookingsRes, activeSessionsRes] = await Promise.all([
+    const [bookingsRes, activeSessionsRes, tablesRes, customersRes] = await Promise.all([
       bookingApi.calendar(startUtc, endUtc, { status: BOOKING_CONFIRMED, pageNumber: 1, pageSize: 100 }),
-      sessionApi.active()
+      sessionApi.active(),
+      venueApi.tables({ pageSize: 500 }),
+      customerApi.list({ pageNumber: 1, pageSize: 500, status: true })
     ]);
 
     return {
       bookings: bookingsRes,
-      sessions: activeSessionsRes
+      sessions: activeSessionsRes,
+      tables: tablesRes,
+      customers: customersRes
     };
   }, []);
 
@@ -54,6 +65,19 @@ export default function SessionsPage() {
   }, [data]);
 
   const activeSessions = useList<Session>(data?.sessions).filter((session) => Number(session.status) === SESSION_OPEN);
+  const tables = useList<VenueTable>(data?.tables);
+  const customers = useList<CustomerDto>(data?.customers).filter((customer) => customer.status);
+  const activeTableIds = new Set(activeSessions.map((session) => Number((session as any).currentTable?.tableId || session.tableId)));
+  const availableTables = tables.filter((table) =>
+    table.isActive !== false &&
+    Number(table.operationalStatus) === 1 &&
+    !activeTableIds.has(Number(table.tableId))
+  );
+
+  function customerName(customerId: unknown) {
+    if (!customerId) return "Khách vãng lai";
+    return customers.find((customer) => customer.customerId === Number(customerId))?.fullName || "Khách hàng";
+  }
 
   async function startSelected() {
     if (!starting) return;
@@ -135,13 +159,14 @@ export default function SessionsPage() {
               <h3>Phien dang hoat dong</h3>
               <p>Cac phien dang mo, lay tu route chuan /api/sessions/active.</p>
             </div>
+            <button className="primary-btn" type="button" onClick={() => setWalkInOpen(true)}>Mở phiên khách vãng lai</button>
           </div>
           <StateBlock loading={loading} error={error} empty={!loading && activeSessions.length === 0} />
           <DataTable
             rows={activeSessions as unknown as Record<string, unknown>[]}
             columns={[
               { key: "sessionCode", label: "Ma session" },
-              { key: "customerId", label: "Khach hang", render: (row) => String(row.customerId || "-") },
+              { key: "customerId", label: "Khach hang", render: (row) => customerName(row.customerId) },
               { key: "currentTable", label: "Ban hien tai", render: (row) => {
                 const table = row.currentTable as any;
                 return table ? `${table.tableName || table.tableCode || table.tableId}` : String(row.tableName || row.tableId || "-");
@@ -171,8 +196,184 @@ export default function SessionsPage() {
       {starting ? <ConfirmDialog title="Bat dau phien" message={`Bat dau phien cho booking ${starting.bookingCode || starting.bookingId}?`} confirmLabel="Bat dau" onCancel={() => setStarting(null)} onConfirm={startSelected} /> : null}
       {noShowing ? <ConfirmDialog title="Khach khong den" message={`Danh dau booking ${noShowing.bookingCode || noShowing.bookingId} la khach khong den?`} confirmLabel="Khach khong den" danger onCancel={() => setNoShowing(null)} onConfirm={markNoShow} /> : null}
       {ending ? <ConfirmDialog title="Ket thuc phien choi" message={`Ban co chac muon ket thuc phien ${ending.sessionCode || ending.sessionId}?`} confirmLabel="Ket thuc" danger onCancel={() => setEnding(null)} onConfirm={endSelected} /> : null}
+      {walkInOpen ? <WalkInSessionModal tables={availableTables} customers={customers} onClose={() => setWalkInOpen(false)} onStarted={async () => { setWalkInOpen(false); await reload(); }} /> : null}
       {summary ? <SummaryModal summary={summary} onClose={() => setSummary(null)} /> : null}
     </>
+  );
+}
+
+function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
+  tables: VenueTable[];
+  customers: CustomerDto[];
+  onClose: () => void;
+  onStarted: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const [tableId, setTableId] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [playDate, setPlayDate] = useState(() => getVietnamDateInputValue());
+  const [selectedSlots, setSelectedSlots] = useState<number[]>(() => {
+    const index = Math.floor((getCurrentVietnamHourOfDay() - WALK_IN_START_HOUR) * 2);
+    return index >= 0 && index < WALK_IN_SLOT_COUNT ? [index] : [];
+  });
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [checking, setChecking] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const selectedPeriod = useMemo(() => {
+    if (selectedSlots.length !== 2 || selectedSlots[1] <= selectedSlots[0]) return null;
+    return {
+      startTimeUtc: vietnamDateTimeToUtcIso(playDate, WALK_IN_TIME_POINTS[selectedSlots[0]]),
+      endTimeUtc: vietnamDateTimeToUtcIso(playDate, WALK_IN_TIME_POINTS[selectedSlots[1]])
+    };
+  }, [playDate, selectedSlots]);
+
+  const isImmediatePeriod = useMemo(() => {
+    if (!selectedPeriod || playDate !== getVietnamDateInputValue()) return false;
+    const now = Date.now();
+    return new Date(selectedPeriod.startTimeUtc).getTime() <= now && new Date(selectedPeriod.endTimeUtc).getTime() > now;
+  }, [playDate, selectedPeriod]);
+
+  useEffect(() => {
+    if (!tableId || !playDate) {
+      setBookings([]);
+      return;
+    }
+    let cancelled = false;
+    const { startUtc, endUtc } = vietnamDateRangeToUtcIso(playDate);
+    bookingApi.calendar(startUtc, endUtc, { tableId: Number(tableId), pageNumber: 1, pageSize: 100 })
+      .then((result) => {
+        if (!cancelled) setBookings(unwrap<Booking>(result as Booking[] | { items?: Booking[] }).filter((booking) => [1, 2].includes(Number(booking.status))));
+      })
+      .catch(() => { if (!cancelled) setBookings([]); });
+    return () => { cancelled = true; };
+  }, [playDate, tableId]);
+
+  useEffect(() => {
+    if (!tableId || !selectedPeriod || !isImmediatePeriod) {
+      setConflict(false);
+      setChecking(false);
+      return;
+    }
+    let cancelled = false;
+    setChecking(true);
+    bookingApi.availability(Number(tableId), selectedPeriod.startTimeUtc, selectedPeriod.endTimeUtc)
+      .then((available) => { if (!cancelled) setConflict(!available.some((table) => Number(table.tableId) === Number(tableId))); })
+      .catch(() => { if (!cancelled) setConflict(true); })
+      .finally(() => { if (!cancelled) setChecking(false); });
+    return () => { cancelled = true; };
+  }, [isImmediatePeriod, selectedPeriod, tableId]);
+
+  function isPastPoint(index: number) {
+    if (playDate !== getVietnamDateInputValue()) return playDate < getVietnamDateInputValue();
+    const currentIndex = Math.floor((getCurrentVietnamHourOfDay() - WALK_IN_START_HOUR) * 2);
+    return index < currentIndex;
+  }
+
+  function isBookedPoint(index: number) {
+    const hour = WALK_IN_START_HOUR + index * 0.5;
+    return bookings.some((booking) => {
+      const start = getVietnamHourOfDay(booking.startTimeUtc);
+      const rawEnd = getVietnamHourOfDay(booking.endTimeUtc);
+      const end = rawEnd === 0 && new Date(booking.endTimeUtc) > new Date(booking.startTimeUtc) ? 24 : rawEnd;
+      return hour >= start && hour < end;
+    });
+  }
+
+  function selectSlot(index: number) {
+    if (isPastPoint(index)) return;
+    if (selectedSlots.length !== 1) {
+      if (isBookedPoint(index) || index === WALK_IN_SLOT_COUNT) return;
+      setSelectedSlots([index]);
+      return;
+    }
+    const start = selectedSlots[0];
+    if (index <= start) {
+      if (!isBookedPoint(index) && index < WALK_IN_SLOT_COUNT) setSelectedSlots([index]);
+      return;
+    }
+    setSelectedSlots([start, index]);
+  }
+
+  async function start() {
+    if (!tableId || !selectedPeriod) {
+      toast("Vui lòng chọn bàn và đầy đủ giờ bắt đầu, kết thúc.", "error");
+      return;
+    }
+    if (!isImmediatePeriod) {
+      toast("Khung giờ này là tương lai. Hãy dùng Tạo lịch đặt bàn.", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const available = await bookingApi.availability(Number(tableId), selectedPeriod.startTimeUtc, selectedPeriod.endTimeUtc);
+      if (!available.some((table) => Number(table.tableId) === Number(tableId))) {
+        setConflict(true);
+        toast("Bàn này đã có booking hoặc phiên chơi trong khung giờ đã chọn.", "error");
+        return;
+      }
+      await sessionApi.start({
+        tableId: Number(tableId),
+        ...(customerId ? { customerId: Number(customerId) } : {})
+      });
+      toast("Mở phiên thành công", "success");
+      await onStarted();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể mở phiên.", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Mở phiên khách vãng lai" onClose={onClose} size="large">
+      <div style={{ display: "grid", gap: 16 }}>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>Bàn *</span>
+          <select value={tableId} onChange={(event) => setTableId(event.target.value)}>
+            <option value="">Chọn bàn trống</option>
+            {tables.map((table) => <option key={table.tableId} value={table.tableId}>{table.tableName || table.tableCode}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>Khách hàng có sẵn <small style={{ color: "var(--muted)", fontWeight: 500 }}>(không bắt buộc)</small></span>
+          <select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+            <option value="">Không chọn - Khách vãng lai</option>
+            {customers.map((customer) => <option key={customer.customerId} value={customer.customerId}>{customer.fullName}{customer.phoneNumber ? ` - ${customer.phoneNumber}` : ""}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 6, maxWidth: 240 }}>
+          <span style={{ fontWeight: 700 }}>Ngày chơi *</span>
+          <input type="date" min={getVietnamDateInputValue()} value={playDate} onChange={(event) => { setPlayDate(event.target.value); setSelectedSlots([]); }} />
+        </label>
+        {playDate > getVietnamDateInputValue() ? <div className="inline-alert error">Khung giờ này là tương lai. Hãy dùng Tạo lịch đặt bàn.</div> : null}
+        <div>
+          <strong>Khung giờ dự kiến *</strong>
+          <p style={{ margin: "5px 0 10px", color: "var(--muted)", fontSize: 13 }}>Mốc thứ hai là giờ kết thúc dự kiến; thời gian tính tiền vẫn theo phiên thực tế.</p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10, fontSize: 13 }}>
+            <span>□ Trống</span><span style={{ color: "#1d4ed8" }}>■ Đang chọn</span><span style={{ color: "#dc2626" }}>■ Đã đặt / Đang bận</span><span style={{ color: "#64748b" }}>■ Đã qua</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 6 }}>
+            {WALK_IN_TIME_POINTS.map((time, index) => {
+              const selected = selectedSlots.includes(index) || (selectedSlots.length === 2 && index > selectedSlots[0] && index < selectedSlots[1]);
+              const past = isPastPoint(index);
+              const booked = isBookedPoint(index);
+              return <button key={time} type="button" onClick={() => selectSlot(index)} disabled={past}
+                style={{ minHeight: 38, border: `1px solid ${selected ? "#2563eb" : booked ? "#fecaca" : "#cbd5e1"}`, borderRadius: 6, background: selected ? "#dbeafe" : booked ? "#fee2e2" : past ? "#f1f5f9" : "#fff", color: past ? "#94a3b8" : booked ? "#b91c1c" : "#0f172a", fontWeight: selected ? 700 : 500, cursor: past ? "not-allowed" : "pointer" }}>{time}</button>;
+            })}
+          </div>
+        </div>
+        {selectedPeriod && !isImmediatePeriod ? <div className="inline-alert error">Khung giờ phải chứa thời điểm hiện tại. Nếu đặt cho tương lai, hãy dùng Tạo lịch đặt bàn.</div> : null}
+        {checking ? <div className="inline-note">Đang kiểm tra lịch trống...</div> : null}
+        {conflict ? <div className="inline-alert error">Bàn này đã có booking hoặc phiên chơi trong khung giờ đã chọn.</div> : null}
+        <div className="modal-actions">
+          <button className="ghost-btn" type="button" onClick={onClose} disabled={saving}>Hủy</button>
+          <button className="primary-btn" type="button" onClick={start} disabled={saving || checking || conflict || !tableId || !selectedPeriod || !isImmediatePeriod}>{saving ? "Đang mở..." : "Mở phiên"}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
