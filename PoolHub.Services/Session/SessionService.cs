@@ -33,19 +33,38 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         }
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var rawItems = await query
             .OrderByDescending(x => x.SessionId)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(x => new SessionDto
+            .Select(x => new
             {
-                SessionId = x.SessionId,
-                SessionCode = x.SessionCode,
-                Status = x.Status,
-                StartedAtUtc = x.StartedAtUtc,
-                EndedAtUtc = x.EndedAtUtc
+                x.SessionId,
+                x.SessionCode,
+                x.Status,
+                x.StartedAtUtc,
+                x.EndedAtUtc,
+                TableName = db.SessionTableAssignments
+                    .Where(sta => sta.SessionId == x.SessionId)
+                    .OrderByDescending(sta => sta.SessionTableAssignmentId)
+                    .Join(db.VenueTables, sta => sta.TableId, vt => vt.TableId, (sta, vt) => vt.TableName)
+                    .FirstOrDefault()
             })
             .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+        var items = rawItems.Select(x => new SessionDto
+        {
+            SessionId = x.SessionId,
+            SessionCode = x.SessionCode,
+            Status = x.Status,
+            StartedAtUtc = x.StartedAtUtc,
+            EndedAtUtc = x.EndedAtUtc,
+            TableName = !string.IsNullOrEmpty(x.TableName) ? x.TableName : $"Bàn #{x.SessionId}",
+            DurationMinutes = x.Status == 1
+                ? (int)Math.Max(0, Math.Ceiling((now - x.StartedAtUtc).TotalMinutes))
+                : (x.EndedAtUtc.HasValue ? (int)Math.Max(0, Math.Ceiling((x.EndedAtUtc.Value - x.StartedAtUtc).TotalMinutes)) : 0)
+        }).ToList();
 
         return new PagedResult<SessionDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
     }

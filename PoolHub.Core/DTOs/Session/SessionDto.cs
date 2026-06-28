@@ -7,4 +7,6 @@ public class SessionDto
     public int Status { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public DateTime? EndedAtUtc { get; set; }
+    public string TableName { get; set; } = string.Empty;
+    public int DurationMinutes { get; set; }
 }

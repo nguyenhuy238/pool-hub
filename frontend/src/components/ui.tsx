@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, unwrapList } from "@/lib/api/client";
 import { useToast } from "@/components/toast";
 import type { SelectOption } from "@/types";
@@ -302,4 +302,138 @@ export function SmartForm<T extends Record<string, unknown>>({ title, fields, in
 
 export function useList<T>(source: T[] | { items?: T[]; data?: T[] } | null | undefined) {
   return useMemo(() => unwrapList<T>(source), [source]);
+}
+
+export function SearchableSelect({
+  options,
+  value,
+  onChange,
+  placeholder = "Chọn...",
+  disabled = false
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find((o) => o.value === value);
+  const filteredOptions = options.filter((o) =>
+    o.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", width: "100%", minWidth: "260px" }}>
+      <div
+        onClick={() => !disabled && setOpen(!open)}
+        style={{
+          padding: "10px 14px",
+          border: "1px solid #dce7e2",
+          borderRadius: "8px",
+          background: disabled ? "#f5f5f5" : "#ffffff",
+          cursor: disabled ? "not-allowed" : "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          minHeight: "42px",
+          userSelect: "none",
+          color: selectedOption ? "#111" : "#888"
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <span style={{ marginLeft: "8px", fontSize: "12px", color: "#666" }}>{open ? "▲" : "▼"}</span>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            marginTop: "4px",
+            background: "#ffffff",
+            border: "1px solid #dce7e2",
+            borderRadius: "8px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+            zIndex: 1000,
+            overflow: "hidden"
+          }}
+        >
+          <div style={{ padding: "8px", borderBottom: "1px solid #eee", background: "#f8faf9" }}>
+            <input
+              type="text"
+              placeholder="Tìm kiếm..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                border: "1px solid #ccc",
+                borderRadius: "6px",
+                outline: "none",
+                fontSize: "14px"
+              }}
+            />
+          </div>
+          <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+            {filteredOptions.length === 0 ? (
+              <div style={{ padding: "12px", color: "#888", textAlign: "center", fontSize: "14px" }}>
+                Không tìm thấy kết quả
+              </div>
+            ) : (
+              filteredOptions.map((opt) => {
+                const isSelected = opt.value === value;
+                return (
+                  <div
+                    key={opt.value}
+                    onClick={() => {
+                      onChange(opt.value);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    style={{
+                      padding: "10px 14px",
+                      cursor: "pointer",
+                      background: isSelected ? "#e4f7ec" : "transparent",
+                      color: isSelected ? "#0f5d4b" : "#333",
+                      fontWeight: isSelected ? 600 : 400,
+                      borderBottom: "1px solid #f5f5f5",
+                      fontSize: "14px"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = "#f0f5f3";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    {opt.label}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

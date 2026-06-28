@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { orderApi, productApi, sessionApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
-import { ConfirmDialog, DataTable, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
+import { ConfirmDialog, DataTable, PageHeader, SearchableSelect, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Order, OrderItem, Product, Session } from "@/types";
 
@@ -21,11 +21,21 @@ export default function OrdersPage() {
   const [removingItem, setRemovingItem] = useState<OrderItem | null>(null);
   const [itemQuantities, setItemQuantities] = useState<Record<number, number>>({});
   const { data, loading, error, reload } = useLoad(async () => {
-    const [sessions, products, orders] = await Promise.all([sessionApi.list(), productApi.list(), sessionId ? orderApi.bySession(sessionId) : Promise.resolve([])]);
+    const [sessions, products, orders] = await Promise.all([sessionApi.list({ Status: 1, PageSize: 100 }), productApi.list(), sessionId ? orderApi.bySession(sessionId) : Promise.resolve([])]);
     return { sessions, products, orders };
   }, [sessionId]);
 
   const sessions = useList<Session>(data?.sessions);
+  const activeSessions = sessions.filter((s) => Number(s.status) === 1);
+  const sessionOptions = activeSessions.map((item) => {
+    const rawTable = item.tableName?.trim() || "";
+    const tableStr = rawTable ? (/^(bàn|table)/i.test(rawTable) ? rawTable : `Bàn ${rawTable}`) : "Bàn";
+    const codeStr = item.sessionCode || `#${item.sessionId}`;
+    return {
+      value: String(item.sessionId),
+      label: `${tableStr} - ${codeStr} - Đang chơi ${item.durationMinutes ?? 0} phút`
+    };
+  });
   const products = useList<Product>(data?.products);
   const orders = data?.orders || [] as Order[];
   const currentOrder = selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : orders[0] ?? null;
@@ -108,16 +118,14 @@ export default function OrdersPage() {
         title="Order POS"
         description="Tạo đơn hàng theo phiên chơi và thêm sản phẩm."
         action={
-          <select value={sessionId || ""} onChange={(e) => {
-            setSessionId(Number(e.target.value) || null);
-          }}>
-            <option value="">Chọn phiên chơi</option>
-            {sessions.map((item) => (
-              <option key={item.sessionId} value={item.sessionId}>
-                {item.sessionCode || item.sessionId}
-              </option>
-            ))}
-          </select>
+          <div style={{ width: "700px", maxWidth: "100%" }}>
+            <SearchableSelect
+              options={sessionOptions}
+              value={sessionId ? String(sessionId) : ""}
+              onChange={(val) => setSessionId(val ? Number(val) : null)}
+              placeholder="Chọn hoặc tìm kiếm phiên chơi..."
+            />
+          </div>
         }
       />
       <StateBlock loading={loading} error={error} />

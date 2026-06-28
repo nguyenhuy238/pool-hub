@@ -134,6 +134,7 @@ export type Session = {
   endedAtUtc?: string;
   tableId?: number;
   tableName?: string;
+  durationMinutes?: number;
   note?: string;
   assignments?: SessionTableAssignment[];
 };

@@ -1,146 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { invoiceApi, sessionApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
-import { money, label, sessionStatus, dateTime } from "@/lib/status";
-import { ConfirmDialog, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Modal, Pagination } from "@/components/ui";
+import { money, dateTime } from "@/lib/status";
+import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Invoice, PaymentMethod, Session } from "@/types";
-
-function SearchableSelect({
-  options,
-  value,
-  onChange,
-  placeholder = "Chọn phiên chơi...",
-  disabled = false
-}: {
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (val: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const selectedOption = options.find((o) => o.value === value);
-  const filteredOptions = options.filter((o) =>
-    o.label.toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div ref={containerRef} style={{ position: "relative", width: "100%" }}>
-      <div
-        onClick={() => !disabled && setOpen(!open)}
-        style={{
-          padding: "10px 14px",
-          border: "1px solid #dce7e2",
-          borderRadius: "8px",
-          background: disabled ? "#f5f5f5" : "#ffffff",
-          cursor: disabled ? "not-allowed" : "pointer",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          minHeight: "42px",
-          userSelect: "none",
-          color: selectedOption ? "#111" : "#888"
-        }}
-      >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {selectedOption ? selectedOption.label : placeholder}
-        </span>
-        <span style={{ marginLeft: "8px", fontSize: "12px", color: "#666" }}>{open ? "▲" : "▼"}</span>
-      </div>
-
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            marginTop: "4px",
-            background: "#ffffff",
-            border: "1px solid #dce7e2",
-            borderRadius: "8px",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
-            zIndex: 1000,
-            overflow: "hidden"
-          }}
-        >
-          <div style={{ padding: "8px", borderBottom: "1px solid #eee", background: "#f8faf9" }}>
-            <input
-              type="text"
-              placeholder="Tìm kiếm mã phiên, bàn..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              autoFocus
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                border: "1px solid #ccc",
-                borderRadius: "6px",
-                outline: "none",
-                fontSize: "14px"
-              }}
-            />
-          </div>
-          <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-            {filteredOptions.length === 0 ? (
-              <div style={{ padding: "12px", color: "#888", textAlign: "center", fontSize: "14px" }}>
-                Không tìm thấy kết quả
-              </div>
-            ) : (
-              filteredOptions.map((opt) => {
-                const isSelected = opt.value === value;
-                return (
-                  <div
-                    key={opt.value}
-                    onClick={() => {
-                      onChange(opt.value);
-                      setOpen(false);
-                      setSearch("");
-                    }}
-                    style={{
-                      padding: "10px 14px",
-                      cursor: "pointer",
-                      background: isSelected ? "#e4f7ec" : "transparent",
-                      color: isSelected ? "#0f5d4b" : "#333",
-                      fontWeight: isSelected ? 600 : 400,
-                      borderBottom: "1px solid #f5f5f5",
-                      fontSize: "14px"
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = "#f0f5f3";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    {opt.label}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function InvoicesPage() {
   const toast = useToast();
@@ -155,21 +21,35 @@ export default function InvoicesPage() {
   const [discountCode, setDiscountCode] = useState("");
   const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20 });
   const { data, loading, error, reload } = useLoad(async () => {
-    const [invoices, methods, sessions] = await Promise.all([
+    const [invoices, methods, sessions, allInvoices] = await Promise.all([
       invoiceApi.list({ Search: params.search, PageNumber: params.pageNumber, PageSize: params.pageSize }),
       invoiceApi.paymentMethods(),
-      sessionApi.list({ PageSize: 100 })
+      sessionApi.list({ PageSize: 100 }),
+      invoiceApi.list({ PageSize: 1000 })
     ]);
-    return { invoices, methods, sessions };
+    return { invoices, methods, sessions, allInvoices };
   }, [params]);
   const invoices = useList<Invoice>(data?.invoices);
   const methods = (data?.methods || []) as PaymentMethod[];
   const sessions = useList<Session>(data?.sessions);
+  const allInvoices = useList<Invoice>(data?.allInvoices);
 
-  const sessionOptions = sessions.map((s) => ({
-    value: String(s.sessionId),
-    label: `${s.sessionCode || '#' + s.sessionId} (${label(sessionStatus, Number(s.status))} - ${dateTime(String(s.startedAtUtc))})`
-  }));
+  const paidSessionIds = new Set(
+    allInvoices
+      .filter((inv) => Number(inv.paymentStatus) === 3)
+      .map((inv) => Number(inv.sessionId))
+  );
+  const unpaidSessions = sessions.filter((s) => !paidSessionIds.has(Number(s.sessionId)));
+
+  const sessionOptions = unpaidSessions.map((s) => {
+    const rawTable = s.tableName?.trim() || "";
+    const tableStr = rawTable ? (/^(bàn|table)/i.test(rawTable) ? rawTable : `Bàn ${rawTable}`) : "Bàn";
+    const codeStr = s.sessionCode || `#${s.sessionId}`;
+    const labelStr = Number(s.status) === 1
+      ? `${tableStr} - ${codeStr} - Đang chơi ${s.durationMinutes ?? 0} phút`
+      : `${tableStr} - ${codeStr} - Đã kết thúc - ${dateTime(String(s.endedAtUtc || s.startedAtUtc))}`;
+    return { value: String(s.sessionId), label: labelStr };
+  });
 
   async function loadDetail(id: number) {
     setInvoice(await invoiceApi.detail(id));
