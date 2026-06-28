@@ -94,6 +94,7 @@ export type Booking = {
   customerId?: number;
   customerName?: string;
   phoneNumber?: string;
+  email?: string;
   tableId?: number;
   tableTypeId?: number;
   startTimeUtc: string;

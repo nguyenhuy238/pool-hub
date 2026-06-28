@@ -11,6 +11,9 @@ public class CreateBookingRequest
     [Phone]
     public string? PhoneNumber { get; set; }
 
+    [EmailAddress]
+    public string? Email { get; set; }
+
     public long? TableId { get; set; }
     public long? TableTypeId { get; set; }
 

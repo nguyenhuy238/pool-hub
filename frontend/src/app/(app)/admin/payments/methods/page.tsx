@@ -45,7 +45,7 @@ export default function PaymentMethodsPage() {
     setEditingMethod(row);
     setName(row.name);
     setCode(row.code);
-    setIsActive(row.isActive);
+    setIsActive(row.isActive ?? true);
 
     let parsedVietQR = false;
     try {

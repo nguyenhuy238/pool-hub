@@ -22,6 +22,7 @@ function toBookingPayload(request: PublicBookingRequest) {
   return {
     customerName: request.customerName,
     phoneNumber: request.phoneNumber,
+    email: request.email,
     tableId: request.tableId,
     tableTypeId: request.tableTypeId,
     startTimeUtc: start.toISOString(),

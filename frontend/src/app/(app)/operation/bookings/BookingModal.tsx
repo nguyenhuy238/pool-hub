@@ -38,6 +38,7 @@ export function BookingModal({
   
   const [customerName, setCustomerName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("");
   const [numberOfGuests, setNumberOfGuests] = useState("2");
   const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
   const [selectedTableId, setSelectedTableId] = useState("");
@@ -260,6 +261,7 @@ export function BookingModal({
       const payload: Partial<Booking> = {
         customerName,
         phoneNumber,
+        email: email || undefined,
         numberOfGuests: Number(numberOfGuests) || 2,
         tableId: Number(selectedTableId),
         tableTypeId: selectedTable?.tableTypeId,
@@ -294,6 +296,10 @@ export function BookingModal({
             <label>
               <span>Số điện thoại *</span>
               <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="Nhập SĐT" />
+            </label>
+            <label>
+              <span>Email (nhận thông báo)</span>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" />
             </label>
             <label>
               <span>Số lượng khách</span>
