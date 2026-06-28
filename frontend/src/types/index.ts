@@ -204,12 +204,15 @@ export type InvoiceDiscount = {
 export type InvoicePayment = {
   paymentId: number;
   invoiceId: number;
+  invoiceCode?: string;
   paymentMethodId: number;
+  paymentMethodName?: string;
   amount: number;
   paymentStatus: number;
   transactionCode?: string;
   paidAtUtc?: string;
   note?: string;
+  refundReason?: string;
 };
 
 export type Invoice = {
@@ -332,8 +335,8 @@ export type InventoryTransaction = {
   quantity: number; unitCost?: number; note?: string; createdAtUtc: string;
 };
 export type Payment = {
-  paymentId: number; invoiceId: number; paymentMethodId: number; amount: number;
-  paymentStatus: number; transactionCode?: string; paidAtUtc?: string;
+  paymentId: number; invoiceId: number; invoiceCode?: string; paymentMethodId: number; paymentMethodName?: string; amount: number;
+  paymentStatus: number; transactionCode?: string; paidAtUtc?: string; note?: string; refundReason?: string;
 };
 export type RevenueReport = { date: string; revenue: number; invoiceCount: number };
 export type TableUsageReport = { tableId: number; tableName: string; sessionCount: number; totalMinutes: number };

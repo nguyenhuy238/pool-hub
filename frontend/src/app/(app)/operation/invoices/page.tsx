@@ -19,10 +19,10 @@ export default function InvoicesPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
-  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20 });
+  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "" });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods, sessions, allInvoices] = await Promise.all([
-      invoiceApi.list({ Search: params.search, PageNumber: params.pageNumber, PageSize: params.pageSize }),
+      invoiceApi.list({ Search: params.search, PageNumber: params.pageNumber, PageSize: params.pageSize, PaymentStatus: params.paymentStatus ? Number(params.paymentStatus) : undefined }),
       invoiceApi.paymentMethods(),
       sessionApi.list({ PageSize: 100 }),
       invoiceApi.list({ PageSize: 1000 })
@@ -114,7 +114,22 @@ export default function InvoicesPage() {
   return (
     <>
       <PageHeader title="Hóa đơn và thanh toán" description="Tạo hóa đơn, xem chi tiết và ghi nhận thanh toán." />
-      <ListControls search={params.search} pageNumber={params.pageNumber} pageSize={params.pageSize} onChange={setParams} />
+      <ListControls
+        search={params.search}
+        pageNumber={params.pageNumber}
+        pageSize={params.pageSize}
+        onChange={(next) => setParams((prev) => ({ ...prev, ...next }))}
+        extra={
+          <label>
+            <span>Trạng thái</span>
+            <select value={params.paymentStatus} onChange={(e) => setParams((prev) => ({ ...prev, paymentStatus: e.target.value, pageNumber: 1 }))}>
+              <option value="">Tất cả</option>
+              <option value="1">Chưa thanh toán</option>
+              <option value="2">Đã thanh toán</option>
+            </select>
+          </label>
+        }
+      />
       <form className="card" style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end", marginBottom: "18px" }} onSubmit={async (e) => {
         e.preventDefault();
         if (!selectedSessionId) {
@@ -152,15 +167,15 @@ export default function InvoicesPage() {
         </div>
       </form>
       <StateBlock loading={loading} error={error} empty={!loading && !invoices.length} />
-      <DataTable 
-        rows={invoices as unknown as Record<string, unknown>[]} 
+      <DataTable
+        rows={invoices as unknown as Record<string, unknown>[]}
         columns={[
           { key: "invoiceCode", label: "Mã" },
           { key: "sessionId", label: "Phiên chơi" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
           { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
-        ]} 
-        actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>} 
+        ]}
+        actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>}
       />
       <Pagination
         pageNumber={params.pageNumber}
@@ -219,7 +234,7 @@ export default function InvoicesPage() {
               }
             }}>🖨️ In bill chi tiết</button>
           </div>
-          
+
           <div style={{ marginBottom: '24px' }}>
             <h4 style={{ margin: '0 0 12px', fontSize: '15px', fontWeight: 600 }}>Chi tiết mục tính tiền</h4>
             <div style={{ border: '1px solid var(--line)', borderRadius: '8px', overflow: 'hidden' }}>
@@ -330,7 +345,7 @@ export default function InvoicesPage() {
                       if (parsed.accountName) accountName = parsed.accountName;
                     }
                   }
-                } catch {}
+                } catch { }
 
                 const qrUrl = `${API_BASE_URL}/api/invoices/${invoice.invoiceId}/qr-code?amt=${amount}&t=${Date.now()}`;
 
@@ -339,7 +354,7 @@ export default function InvoicesPage() {
                     <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f5d4b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span>⚡</span> QUÉT MÃ VIETQR ĐỂ THANH TOÁN TỰ ĐỘNG
                     </div>
-                    
+
                     <div style={{ background: 'white', padding: '12px', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', border: '1px solid var(--line)' }}>
                       <img src={qrUrl} alt="VietQR Thanh Toán" style={{ width: '100%', maxWidth: '300px', display: 'block', borderRadius: '8px' }} />
                     </div>

@@ -184,6 +184,7 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
             PaymentMethodId = request.PaymentMethodId, 
             Amount = request.Amount, 
             PaymentStatus = PaymentStatuses.Completed,
+            TransactionCode = $"TXN{DateTime.UtcNow:HHmmssddMMyyyy}",
             ReceivedByUserId = receivedByUserId, 
             PaidAtUtc = DateTime.UtcNow 
         };
@@ -245,21 +246,23 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
             })
             .ToListAsync(ct);
 
-        var payments = await db.Payments
-            .Where(x => x.InvoiceId == id)
-            .Select(x => new PaymentDto
-            {
-                PaymentId = x.PaymentId,
-                InvoiceId = x.InvoiceId,
-                PaymentMethodId = x.PaymentMethodId,
-                Amount = x.Amount,
-                PaymentStatus = x.PaymentStatus,
-                TransactionCode = x.TransactionCode,
-                PaidAtUtc = x.PaidAtUtc,
-                ReceivedByUserId = x.ReceivedByUserId,
-                Note = x.Note
-            })
-            .ToListAsync(ct);
+        var payments = await (from p in db.Payments
+                              where p.InvoiceId == id
+                              join pm in db.PaymentMethods.AsNoTracking() on p.PaymentMethodId equals pm.PaymentMethodId
+                              select new PaymentDto
+                              {
+                                  PaymentId = p.PaymentId,
+                                  InvoiceId = p.InvoiceId,
+                                  InvoiceCode = invoice.InvoiceCode,
+                                  PaymentMethodId = p.PaymentMethodId,
+                                  PaymentMethodName = pm.Name,
+                                  Amount = p.Amount,
+                                  PaymentStatus = p.PaymentStatus,
+                                  TransactionCode = p.TransactionCode,
+                                  PaidAtUtc = p.PaidAtUtc,
+                                  ReceivedByUserId = p.ReceivedByUserId,
+                                  Note = p.Note
+                              }).ToListAsync(ct);
 
         return new InvoiceDetailDto
         {

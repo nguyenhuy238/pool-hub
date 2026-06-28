@@ -182,10 +182,15 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
         if (request.PaymentStatus.HasValue) query = query.Where(x => x.PaymentStatus == request.PaymentStatus);
         if (request.Date.HasValue) query = query.Where(x => x.PaidAtUtc.HasValue && x.PaidAtUtc.Value.Date == request.Date.Value.Date);
         var total = await query.CountAsync(ct);
-        var items = await query.OrderByDescending(x => x.PaymentId).Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize)
-            .Select(x => new PaymentDto { PaymentId = x.PaymentId, InvoiceId = x.InvoiceId, PaymentMethodId = x.PaymentMethodId,
-                Amount = x.Amount, PaymentStatus = x.PaymentStatus, TransactionCode = x.TransactionCode,
-                PaidAtUtc = x.PaidAtUtc, ReceivedByUserId = x.ReceivedByUserId, Note = x.Note }).ToListAsync(ct);
+        var items = await (from p in query
+                           join inv in db.Invoices.AsNoTracking() on p.InvoiceId equals inv.InvoiceId
+                           join pm in db.PaymentMethods.AsNoTracking() on p.PaymentMethodId equals pm.PaymentMethodId
+                           orderby p.PaymentId descending
+                           select new PaymentDto {
+                               PaymentId = p.PaymentId, InvoiceId = p.InvoiceId, InvoiceCode = inv.InvoiceCode, PaymentMethodId = p.PaymentMethodId, PaymentMethodName = pm.Name,
+                               Amount = p.Amount, PaymentStatus = p.PaymentStatus, TransactionCode = p.TransactionCode,
+                               PaidAtUtc = p.PaidAtUtc, ReceivedByUserId = p.ReceivedByUserId, Note = p.Note
+                           }).Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).ToListAsync(ct);
         return Page(items, request.PageNumber, request.PageSize, total);
     }
 

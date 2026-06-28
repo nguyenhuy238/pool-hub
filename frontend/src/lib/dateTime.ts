@@ -21,6 +21,7 @@ function getVietnamParts(utcString?: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hourCycle: "h23"
   }).formatToParts(date);
 
@@ -30,8 +31,15 @@ function getVietnamParts(utcString?: string) {
     month: values.month,
     day: values.day,
     hour: values.hour,
-    minute: values.minute
+    minute: values.minute,
+    second: values.second || "00"
   };
+}
+
+export function formatVietnamDateTimeWithSeconds(utcString?: string) {
+  const parts = getVietnamParts(utcString);
+  if (!parts) return "-";
+  return `${parts.hour}:${parts.minute}:${parts.second} ${parts.day}/${parts.month}/${parts.year}`;
 }
 
 export function formatVietnamDateTime(utcString?: string) {
