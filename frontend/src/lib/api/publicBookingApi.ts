@@ -34,6 +34,7 @@ function toBookingPayload(request: PublicBookingRequest) {
 export interface PublicBookingSlot {
   startTimeUtc: string;
   endTimeUtc: string;
+  status?: number;
 }
 
 export const publicBookingApi = {

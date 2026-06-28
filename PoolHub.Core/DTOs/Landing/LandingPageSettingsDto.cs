@@ -22,6 +22,46 @@ public class LandingPageSettingsDto
     public QrCodeSettingsDto QrCode { get; set; } = new();
 }
 
+public class PublicPricingSummaryDto
+{
+    public List<PricingPlanSummaryDto> Plans { get; set; } = [];
+    public List<PricingRuleSummaryDto> Rules { get; set; } = [];
+    public List<TableTypePricingSummaryDto> TableTypes { get; set; } = [];
+    public DateTime FetchedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class PricingPlanSummaryDto
+{
+    public long PricingPlanId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsDefault { get; set; }
+    public bool IsActive { get; set; }
+}
+
+public class PricingRuleSummaryDto
+{
+    public long PricingPlanRuleId { get; set; }
+    public long PricingPlanId { get; set; }
+    public long TableTypeId { get; set; }
+    public int DayOfWeek { get; set; }
+    public string StartTime { get; set; } = string.Empty;
+    public string EndTime { get; set; } = string.Empty;
+    public decimal HourlyRate { get; set; }
+    public int MinimumMinutes { get; set; }
+    public int BillingBlockMinutes { get; set; }
+    public bool IsActive { get; set; }
+}
+
+public class TableTypePricingSummaryDto
+{
+    public long TableTypeId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int DefaultCapacity { get; set; }
+    public bool IsActive { get; set; }
+}
+
 public class AboutSectionDto
 {
     public bool IsEnabled { get; set; } = true;

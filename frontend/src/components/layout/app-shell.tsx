@@ -50,7 +50,7 @@ const nav: NavItem[] = [
     ]
   },
   { href: "/admin/reports", label: "Báo cáo", roles: [ROLES.ADMIN, ROLES.MANAGER] },
-  { href: "/admin/landing-settings", label: "Cấu hình trang chủ", roles: [ROLES.ADMIN] },
+  { href: "/admin/landing-settings", label: "Cấu hình trang chủ", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { href: "/admin/audit-logs", label: "Nhật ký hệ thống", roles: MANAGEMENT_READ_ROLES },
   { href: "/change-password", label: "Đổi mật khẩu", roles: OPERATION_ROLES },
   { href: "/notifications", label: "Thông báo", roles: OPERATION_ROLES }
