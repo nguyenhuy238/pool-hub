@@ -234,7 +234,7 @@ export function useDebouncedValue<T>(value: T, delayMs = 350) {
 
 export function SmartForm<T extends Record<string, unknown>>({ title, fields, initial, submitLabel = "Lưu", onSubmit }: {
   title: string;
-  fields: { name: keyof T; label: string; type?: string; options?: SelectOption[]; required?: boolean; step?: string | number }[];
+  fields: { name: keyof T; label: string; type?: string; options?: SelectOption[]; required?: boolean; step?: string | number; colSpan?: number }[];
   initial: Partial<T>;
   submitLabel?: string;
   onSubmit: (value: Partial<T>) => Promise<void>;
@@ -266,25 +266,36 @@ export function SmartForm<T extends Record<string, unknown>>({ title, fields, in
 
   return (
     <form className="card form-grid" onSubmit={submit}>
-      <h2>{title}</h2>
-      {fields.map((field) => (
-        <label key={String(field.name)}>
-          <span>{field.label}</span>
-          {field.options ? (
-            <select value={String(value[field.name] ?? "")} required={field.required} onChange={(event) => setValue((current) => ({ ...current, [field.name]: event.target.value }))}>
-              <option value="">Chọn</option>
-              {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          ) : (
-            <input type={field.type || "text"} step={field.step} required={field.required} value={String(value[field.name] ?? "")} onChange={(event) => {
-              const raw = event.target.value;
-              const next = field.type === "number" ? Number(raw) : field.type === "checkbox" ? event.currentTarget.checked : raw;
-              setValue((current) => ({ ...current, [field.name]: next }));
-            }} />
-          )}
-        </label>
-      ))}
-      <button className="primary-btn" disabled={saving}>{saving ? "Đang lưu..." : submitLabel}</button>
+      {title ? <h2 style={{ gridColumn: "1 / -1", margin: "0 0 8px" }}>{title}</h2> : null}
+      {fields.map((field) => {
+        const fieldNameLower = String(field.name).toLowerCase();
+        const fieldLabelLower = field.label.toLowerCase();
+        const isTextArea = field.type === "textarea" || ["description", "note", "reason"].some(k => fieldNameLower.includes(k)) || ["mô tả", "ghi chú", "lý do"].some(k => fieldLabelLower.includes(k));
+        const isFullSpan = field.colSpan ? field.colSpan > 1 : isTextArea || ["name", "productid"].includes(fieldNameLower) || ["tên chương trình", "sản phẩm"].some(k => fieldLabelLower.includes(k));
+
+        return (
+          <label key={String(field.name)} style={isFullSpan ? { gridColumn: "1 / -1" } : undefined}>
+            <span>{field.label}</span>
+            {field.options ? (
+              <select value={String(value[field.name] ?? "")} required={field.required} onChange={(event) => setValue((current) => ({ ...current, [field.name]: event.target.value }))}>
+                <option value="">Chọn</option>
+                {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            ) : isTextArea ? (
+              <textarea rows={3} required={field.required} value={String(value[field.name] ?? "")} placeholder={`Nhập ${field.label.toLowerCase()}...`} onChange={(event) => setValue((current) => ({ ...current, [field.name]: event.target.value }))} />
+            ) : (
+              <input type={field.type || "text"} step={field.step} required={field.required} value={String(value[field.name] ?? "")} placeholder={`Nhập ${field.label.toLowerCase()}...`} onChange={(event) => {
+                const raw = event.target.value;
+                const next = field.type === "number" ? (raw === "" ? "" : Number(raw)) : field.type === "checkbox" ? event.currentTarget.checked : raw;
+                setValue((current) => ({ ...current, [field.name]: next }));
+              }} />
+            )}
+          </label>
+        );
+      })}
+      <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px", paddingTop: "14px", borderTop: fields.length > 2 ? "1px solid var(--line)" : "none" }}>
+        <button type="submit" className="primary-btn" style={{ minWidth: "130px" }} disabled={saving}>{saving ? "Đang lưu..." : submitLabel}</button>
+      </div>
     </form>
   );
 }

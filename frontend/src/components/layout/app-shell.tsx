@@ -41,7 +41,14 @@ const nav: NavItem[] = [
   { href: "/admin/roles", label: "Vai trò và quyền hạn", roles: [ROLES.ADMIN] },
   { href: "/admin/discounts", label: "Mã giảm giá", roles: [ROLES.ADMIN, ROLES.CASHIER] },
   { href: "/admin/inventory", label: "Tồn kho", roles: [ROLES.ADMIN, ROLES.MANAGER] },
-  { href: "/admin/payments", label: "Thanh toán", roles: [ROLES.ADMIN, ROLES.CASHIER] },
+  {
+    label: "Thanh toán",
+    roles: [ROLES.ADMIN, ROLES.CASHIER],
+    children: [
+      { href: "/admin/payments/methods", label: "Phương thức thanh toán", roles: [ROLES.ADMIN, ROLES.CASHIER] },
+      { href: "/admin/payments/history", label: "Lịch sử giao dịch", roles: [ROLES.ADMIN, ROLES.CASHIER] },
+    ]
+  },
   { href: "/admin/reports", label: "Báo cáo", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { href: "/admin/landing-settings", label: "Cấu hình trang chủ", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { href: "/admin/audit-logs", label: "Nhật ký hệ thống", roles: MANAGEMENT_READ_ROLES },
@@ -65,7 +72,7 @@ function NavDropdown({ item, pathname, roles }: { item: NavItem; pathname: strin
       <button className="nav-dropdown-trigger" onClick={() => setOpen(!open)}>
         <span>{item.label}</span>
         <svg style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }} width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
       <div className="nav-dropdown-content" style={{ display: open ? "flex" : "none", flexDirection: "column", paddingLeft: "12px", borderLeft: "2px solid var(--line)", marginLeft: "12px", marginTop: "4px" }}>

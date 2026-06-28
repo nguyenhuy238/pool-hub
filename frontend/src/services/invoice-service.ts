@@ -57,4 +57,7 @@ export const invoiceService = {
 
   applyDiscount: (id: number, payload: ApplyDiscountRequest) =>
     apiFetch(`/api/invoices/${id}/discounts`, { method: "POST", body: JSON.stringify(payload) }),
+
+  removeDiscount: (id: number) =>
+    apiFetch(`/api/invoices/${id}/discounts`, { method: "DELETE" }),
 };

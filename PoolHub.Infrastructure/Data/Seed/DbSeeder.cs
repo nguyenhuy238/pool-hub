@@ -13,6 +13,7 @@ public static class DbSeeder
         await EnsureRolesAsync(db, ct);
         await EnsurePermissionsAsync(db, ct);
         await EnsureDemoUsersAsync(db, ct);
+        await EnsureDemoDiscountsAsync(db, ct);
 
         var userMap = await db.Users.ToDictionaryAsync(x => x.Email, x => x.UserId, ct);
 
@@ -492,6 +493,20 @@ public static class DbSeeder
             }
         }
 
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDemoDiscountsAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        if (await db.Discounts.AnyAsync(ct)) return;
+        var now = DateTime.UtcNow;
+        var discounts = new[]
+        {
+            new Discount { DiscountCode = "DISCOUNT10", Name = "Giảm 10% tiền giờ chơi", DiscountType = "PERCENTAGE", Value = 10, AppliesTo = "TIME", StartsAtUtc = now.AddDays(-10), EndsAtUtc = now.AddYears(1), IsActive = true },
+            new Discount { DiscountCode = "POOLVIP20", Name = "Giảm 20% tổng hóa đơn", DiscountType = "PERCENTAGE", Value = 20, AppliesTo = "ALL", StartsAtUtc = now.AddDays(-5), EndsAtUtc = now.AddYears(1), IsActive = true, MaxAmount = 50000 },
+            new Discount { DiscountCode = "FIXED50K", Name = "Giảm trực tiếp 50K", DiscountType = "FIXED", Value = 50000, AppliesTo = "ALL", StartsAtUtc = now.AddDays(-10), EndsAtUtc = now.AddYears(1), IsActive = true, MinTimeSubtotal = 100000 }
+        };
+        db.Discounts.AddRange(discounts);
         await db.SaveChangesAsync(ct);
     }
 }

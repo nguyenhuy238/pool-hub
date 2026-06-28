@@ -20,6 +20,8 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
         if (!string.IsNullOrWhiteSpace(request.Search))
             query = query.Where(x => x.DiscountCode.Contains(request.Search) || x.Name.Contains(request.Search));
         if (request.IsActive.HasValue) query = query.Where(x => x.IsActive == request.IsActive);
+        if (!string.IsNullOrWhiteSpace(request.DiscountType)) query = query.Where(x => x.DiscountType == request.DiscountType);
+        if (!string.IsNullOrWhiteSpace(request.AppliesTo)) query = query.Where(x => x.AppliesTo == request.AppliesTo);
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.DiscountId)
             .Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize)

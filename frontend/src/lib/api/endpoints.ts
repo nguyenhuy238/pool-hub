@@ -103,6 +103,7 @@ export const invoiceApi = {
   generate: (sessionId: number) => apiFetch<Invoice>(`/api/invoices/generate/${sessionId}`, { method: "POST" }),
   pay: (body: { invoiceId: number; paymentMethodId: number; amount: number }) => apiFetch("/api/invoices/payments", { method: "POST", body: JSON.stringify(body) }),
   discount: (id: number, discountCode: string) => apiFetch(`/api/invoices/${id}/discounts`, { method: "POST", body: JSON.stringify({ discountCode }) }),
+  removeDiscount: (id: number) => apiFetch(`/api/invoices/${id}/discounts`, { method: "DELETE" }),
   cancel: (id: number, reason: string) => apiFetch(`/api/invoices/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   exportPdf: (id: number) => apiFetch<{ url: string }>(`/api/invoices/${id}/export-pdf`)
 };
