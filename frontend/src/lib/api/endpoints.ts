@@ -29,6 +29,11 @@ import type {
   , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport
 } from "@/types";
 
+type UpdateCustomerPayload = Pick<CustomerDto, "fullName" | "status"> & {
+  email?: string;
+  note?: string;
+};
+
 export const venueApi = {
   layout: () => apiFetch<VenueLayoutResponse>("/api/venue-tables/layout", { skipAuth: true }),
   floors: (params: Record<string, string | number | undefined> = {}) => apiFetch<Floor[] | { items?: Floor[] }>(`/api/floors${toQuery(params)}`),
@@ -55,6 +60,8 @@ export const venueApi = {
 
 export const bookingApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Booking[] | { items?: Booking[] }>(`/api/bookings${toQuery(params)}`),
+  availability: (tableId: number, startTimeUtc: string, endTimeUtc: string) =>
+    apiFetch<VenueTable[]>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`),
   calendar: (from: string, to: string, params: Record<string, string | number | undefined> = {}) => 
     apiFetch<BookingCalendarItem[] | { items?: BookingCalendarItem[] }>(`/api/bookings/calendar${toQuery({ from, to, ...params })}`),
   create: (body: Partial<Booking>) => apiFetch<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
@@ -70,7 +77,7 @@ export const customerApi = {
   list: (params: Record<string, string | number | boolean | null | undefined> = {}) => apiFetch<CustomerDto[] | { items?: CustomerDto[], totalCount?: number }>(`/api/customers${toQuery(params as Record<string, string | number | null | undefined>)}`),
   create: (body: Partial<Customer>) => apiFetch<Customer>("/api/customers", { method: "POST", body: JSON.stringify(body) }),
   detail: (id: number) => apiFetch<CustomerDto>(`/api/customers/${id}`),
-  update: (id: number, body: Partial<CustomerDto>) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  update: (id: number, body: UpdateCustomerPayload) => apiFetch<CustomerDto>(`/api/customers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   bookingHistory: (id: number) => apiFetch<{ items?: CustomerBookingHistory[] }>(`/api/customers/${id}/bookings`),
   sessionHistory: (id: number) => apiFetch<{ items?: CustomerSessionHistory[] }>(`/api/customers/${id}/sessions`),

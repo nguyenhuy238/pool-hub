@@ -127,6 +127,42 @@ export type LandingPageSettings = {
   qrCode: QrCodeSettings;
 };
 
+export type PublicPricingSummary = {
+  plans: PricingPlanSummary[];
+  rules: PricingRuleSummary[];
+  tableTypes: TableTypePricingSummary[];
+  fetchedAtUtc: string;
+};
+
+export type PricingPlanSummary = {
+  pricingPlanId: number;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+};
+
+export type PricingRuleSummary = {
+  pricingPlanRuleId: number;
+  pricingPlanId: number;
+  tableTypeId: number;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  hourlyRate: number;
+  minimumMinutes: number;
+  billingBlockMinutes: number;
+  isActive: boolean;
+};
+
+export type TableTypePricingSummary = {
+  tableTypeId: number;
+  name: string;
+  code: string;
+  description?: string;
+  defaultCapacity: number;
+  isActive: boolean;
+};
+
 export const defaultLandingSettings: LandingPageSettings = {
   generalInfo: {
     centerName: "PoolHub Center",
@@ -223,8 +259,9 @@ export function activeSorted<T extends { displayOrder: number; isActive?: boolea
 }
 
 export const landingSettingsApi = {
-  public: async () => apiFetch<LandingPageSettings>("/api/public/landing-page", { skipAuth: true }),
-  admin: async () => apiFetch<LandingPageSettings>("/api/admin/landing-page-settings"),
-  update: async (body: LandingPageSettings) => apiFetch<LandingPageSettings>("/api/admin/landing-page-settings", { method: "PUT", body: JSON.stringify(body) }),
-  resetDefault: async () => apiFetch<LandingPageSettings>("/api/admin/landing-page-settings/reset-default", { method: "POST" })
+  public: async () => apiFetch<LandingPageSettings>("/api/public/landing-settings", { skipAuth: true }),
+  pricingSummary: async () => apiFetch<PublicPricingSummary>("/api/public/pricing-summary", { skipAuth: true }),
+  admin: async () => apiFetch<LandingPageSettings>("/api/admin/landing-settings"),
+  update: async (body: LandingPageSettings) => apiFetch<LandingPageSettings>("/api/admin/landing-settings", { method: "PUT", body: JSON.stringify(body) }),
+  resetDefault: async () => apiFetch<LandingPageSettings>("/api/admin/landing-settings/restore-default", { method: "POST" })
 };

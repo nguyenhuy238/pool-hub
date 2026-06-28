@@ -22,7 +22,6 @@ export function ServicesSection({ items }: { items: ServiceSettings[] }) {
           </article>
         ))}
       </div>
-      <p className="data-note">Menu nổi bật đang dùng dữ liệu mẫu và đã tách sẵn để thay bằng API sản phẩm public.</p>
     </section>
   );
 }

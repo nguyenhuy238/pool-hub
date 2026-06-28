@@ -286,7 +286,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (request.EndTimeUtc <= request.StartTimeUtc) throw new ValidationException("End time must be after start time.");
         var query = from table in db.VenueTables.AsNoTracking()
                     join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
-                    where table.OperationalStatus == 1
+                    where table.IsActive && table.OperationalStatus == 1
                        && !db.SessionTableAssignments.Any(a => a.TableId == table.TableId && a.EndedAtUtc == null)
                        && !db.Bookings.Any(b => b.TableId == table.TableId &&
                             (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.Confirmed)
@@ -295,6 +295,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                         TableId = table.TableId, TableCode = table.TableCode, TableName = table.TableName,
                         TableTypeId = table.TableTypeId, TableTypeName = type.Name, Capacity = table.Capacity
                     };
+        if (request.TableId.HasValue) query = query.Where(x => x.TableId == request.TableId.Value);
         if (request.TableTypeId.HasValue) query = query.Where(x => x.TableTypeId == request.TableTypeId);
         return await query.OrderBy(x => x.TableCode).ToListAsync(ct);
     }

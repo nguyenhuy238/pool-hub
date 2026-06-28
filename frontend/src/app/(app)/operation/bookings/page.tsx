@@ -103,7 +103,7 @@ export default function BookingsPage() {
       <ListControls search={params.search} pageNumber={params.pageNumber} pageSize={params.pageSize} onChange={setParams} />
 
       <div style={{ padding: "0 24px", marginBottom: "16px" }}>
-        <button className="primary-btn" onClick={() => setIsModalOpen(true)}>+ Tạo Booking Nhanh</button>
+        <button className="primary-btn" onClick={() => setIsModalOpen(true)}>+ Tạo lịch đặt bàn</button>
       </div>
 
       {isModalOpen && (

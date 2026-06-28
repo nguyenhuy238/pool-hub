@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import './BookingWizard.css';
 import { availabilityApi, type LandingAvailability, type LandingPricing } from "@/lib/api/availabilityApi";
-import { publicBookingApi } from "@/lib/api/publicBookingApi";
+import { publicBookingApi, type PublicBookingSlot } from "@/lib/api/publicBookingApi";
 import { addDaysToVietnamDateInput, getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamDayOfWeek, getVietnamHourOfDay, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
-import type { VenueFloorLayoutItem, VenueZoneLayoutItem, VenueTableLayoutItem, PricingPlan, PricingPlanRule } from '@/types';
+import type { VenueTableLayoutItem } from '@/types';
 const START_HOUR = 7;
 const TOTAL_SLOTS = (24 - START_HOUR) * 2;
 const TIME_SLOTS = Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
@@ -83,11 +83,10 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     if (!selectedTable) return;
     setLoadingBookings(true);
     try {
-      const res = await publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate);
-      const dataArray = Array.isArray(res) ? res : ((res as any).data || []);
+      const dataArray: PublicBookingSlot[] = await publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate);
       
       const booked = new Set<number>();
-      dataArray.forEach((b: any) => {
+      dataArray.forEach((b) => {
         if (b.status === 3) return;
         const start = new Date(b.startTimeUtc);
         const end = new Date(b.endTimeUtc);

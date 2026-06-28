@@ -283,7 +283,7 @@ export function BookingModal({
     <div className="booking-modal-overlay" onClick={onClose}>
       <div className="booking-modal-content" onClick={e => e.stopPropagation()}>
         <div className="booking-modal-header">
-          <h2>Tạo Booking Nhanh</h2>
+          <h2>Tạo lịch đặt bàn</h2>
           <button className="btn-close" onClick={onClose}>&times;</button>
         </div>
         

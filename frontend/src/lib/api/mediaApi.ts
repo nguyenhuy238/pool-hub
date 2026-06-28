@@ -31,9 +31,9 @@ export const mediaApi = {
     return apiFetch<MediaAsset>("/api/admin/media/upload", { method: "POST", body: form });
   },
   list(params: { keyword?: string; mediaType?: string; folder?: string; pageNumber?: number; pageSize?: number } = {}) {
-    return apiFetch<MediaPage>(`/api/admin/media${toQuery(params)}`);
+    return apiFetch<MediaPage>(`/api/admin/media-assets${toQuery(params)}`);
   },
   delete(id: number) {
-    return apiFetch(`/api/admin/media/${id}`, { method: "DELETE" });
+    return apiFetch(`/api/admin/media-assets/${id}`, { method: "DELETE" });
   }
 };

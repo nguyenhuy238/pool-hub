@@ -34,19 +34,35 @@ export default function LandingSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     landingSettingsApi.admin()
-      .then(setSettings)
+      .then((value) => {
+        setSettings(value);
+        setDirty(false);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Không tải được cấu hình."))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [dirty]);
+
   function patch<T extends keyof LandingPageSettings>(key: T, value: LandingPageSettings[T]) {
+    setDirty(true);
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
   function updateList<T extends ListName>(name: T, index: number, value: LandingPageSettings[T][number]) {
+    setDirty(true);
     setSettings((current) => {
       const next = [...current[name]] as LandingPageSettings[T];
       next[index] = value as never;
@@ -55,6 +71,7 @@ export default function LandingSettingsPage() {
   }
 
   function addItem(name: ListName) {
+    setDirty(true);
     const order = settings[name].length + 1;
     const defaults = {
       uspItems: { title: "Lợi ích mới", description: "", displayOrder: order, isActive: true, icon: "+" },
@@ -67,6 +84,7 @@ export default function LandingSettingsPage() {
   }
 
   function removeItem(name: ListName, index: number) {
+    setDirty(true);
     setSettings((current) => ({ ...current, [name]: current[name].filter((_, itemIndex) => itemIndex !== index) as never }));
   }
 
@@ -101,6 +119,7 @@ export default function LandingSettingsPage() {
     setSaving(true);
     try {
       setSettings(await landingSettingsApi.update(settings));
+      setDirty(false);
       toast("Đã lưu cấu hình trang chủ.", "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Lưu cấu hình thất bại.", "error");
@@ -113,6 +132,7 @@ export default function LandingSettingsPage() {
     setSaving(true);
     try {
       setSettings(await landingSettingsApi.resetDefault());
+      setDirty(false);
       toast("Đã reset cấu hình mặc định.", "success");
       setResetOpen(false);
     } catch (err) {
@@ -126,7 +146,7 @@ export default function LandingSettingsPage() {
     <>
       <PageHeader
         title="Cấu hình trang chủ"
-        description="Quản lý toàn bộ nội dung hiển thị trên trang chủ dành cho khách hàng."
+        description={`Quản lý toàn bộ nội dung hiển thị trên trang chủ dành cho khách hàng.${dirty ? " Có thay đổi chưa lưu." : ""}`}
         action={<div className="actions"><a className="ghost-btn" href="/" target="_blank">Xem trước</a><button className="secondary-btn" onClick={() => setResetOpen(true)} disabled={saving}>Khôi phục mặc định</button><button className="primary-btn" onClick={save} disabled={saving}>{saving ? "Đang lưu..." : "Lưu cấu hình"}</button></div>}
       />
       <StateBlock loading={loading} error={error} />
