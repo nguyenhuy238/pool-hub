@@ -1,0 +1,12 @@
+services:
+  poolhub-redis:
+    image: redis:7-alpine
+    container_name: poolhub-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - poolhub-redis-data:/data
+
+volumes:
+  poolhub-redis-data:

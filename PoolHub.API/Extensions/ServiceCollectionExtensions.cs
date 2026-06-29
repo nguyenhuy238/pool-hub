@@ -234,6 +234,12 @@ public static class ServiceCollectionExtensions
         var redisConnectionString = configuration["Redis:ConnectionString"];
         if (string.IsNullOrWhiteSpace(redisConnectionString))
         {
+            var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            if (string.Equals(environmentName, Environments.Production, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Redis:ConnectionString is required in Production.");
+            }
+
             services.AddDistributedMemoryCache();
             return services;
         }

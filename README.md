@@ -35,12 +35,81 @@ Tài liệu ngữ cảnh đầy đủ cho AI và người mới được gom t�
 ### Connection String
 `PoolHub.API/appsettings.json`
 
+### Development Config
+Copy the example config before running locally if you do not already have a personal development config:
+
+```powershell
+copy PoolHub.API\appsettings.Development.example.json PoolHub.API\appsettings.Development.json
+```
+
+Git Bash/macOS/Linux:
+
+```bash
+cp PoolHub.API/appsettings.Development.example.json PoolHub.API/appsettings.Development.json
+```
+
+If you already have `PoolHub.API/appsettings.Development.json`, do not overwrite it. Just make sure `Redis:ConnectionString` points to `127.0.0.1:6379`.
+
 ### JwtSettings
 `PoolHub.API/appsettings.json`
 - `SecretKey`
 - `Issuer = PoolHub.API`
 - `Audience = PoolHub.Client`
 - `ExpirationHours = 8`
+
+## Local Development - Redis
+PoolHub uses Redis to store refresh tokens in the auth flow. If Redis is not running, login can fail or the backend can timeout while saving the refresh token.
+
+Recommended local Redis startup:
+
+```powershell
+docker compose -f docker-compose.dev.yml up -d
+```
+
+Check Redis:
+
+```powershell
+docker exec -it poolhub-redis redis-cli ping
+```
+
+Expected result:
+
+```text
+PONG
+```
+
+Stop Redis when needed:
+
+```powershell
+docker compose -f docker-compose.dev.yml down
+```
+
+If Docker reports that the container already exists, start it:
+
+```powershell
+docker start poolhub-redis
+```
+
+Or remove the old container and recreate it:
+
+```powershell
+docker rm -f poolhub-redis
+docker compose -f docker-compose.dev.yml up -d
+```
+
+Suggested local startup order:
+
+1. Start SQL Server/local database according to your local setup.
+2. Start Redis:
+
+```powershell
+docker compose -f docker-compose.dev.yml up -d
+```
+
+3. Run backend `PoolHub.API`.
+4. Run frontend.
+
+Redis does not start automatically after pulling code. Run Docker Compose once before logging in locally.
 
 ## Run Commands
 1. `dotnet restore pool-hub.sln`
