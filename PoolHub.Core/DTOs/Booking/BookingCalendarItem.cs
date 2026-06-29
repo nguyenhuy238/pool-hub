@@ -57,11 +57,13 @@ public class BookingCalendarItem
         2 => "Confirmed",
         3 => "Cancelled",
         4 => "Completed",
+        5 => "NoShow",
         _ => "Unknown"
     };
 
     /// <summary>Ghi chú booking.</summary>
     public string? Note { get; set; }
+    public bool HasSession { get; set; }
 
     /// <summary>Thời điểm xác nhận (UTC).</summary>
     public DateTime? ConfirmedAtUtc { get; set; }

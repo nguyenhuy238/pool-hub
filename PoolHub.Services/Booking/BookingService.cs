@@ -16,6 +16,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 {
     public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
     {
+        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
         var query = db.Bookings.AsQueryable();
 
         if (request.Status.HasValue)
@@ -45,6 +46,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                 EndTimeUtc = x.EndTimeUtc,
                 NumberOfGuests = x.NumberOfGuests,
                 Note = x.Note,
+                HasSession = db.Sessions.Any(s => s.BookingId == x.BookingId),
                 Status = x.Status
             })
             .ToListAsync(ct);
@@ -54,7 +56,11 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> GetByIdAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        return Map(booking);
+        if (await ApplyAutomaticBookingStatusAsync(booking, DateTime.UtcNow, ct))
+            await db.SaveChangesAsync(ct);
+        var result = Map(booking);
+        result.HasSession = await db.Sessions.AnyAsync(session => session.BookingId == booking.BookingId, ct);
+        return result;
     }
 
     public async Task<BookingDto> CreateAsync(CreateBookingRequest request, CancellationToken ct)
@@ -208,7 +214,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (request.StartTimeUtc.Minute % 30 != 0 || request.StartTimeUtc.Second != 0 || request.StartTimeUtc.Millisecond != 0 ||
             request.EndTimeUtc.Minute % 30 != 0 || request.EndTimeUtc.Second != 0 || request.EndTimeUtc.Millisecond != 0)
         {
-            throw new BusinessRuleException("Thá»i gian Ä‘áº·t bĂ n pháº£i lĂ  cĂ¡c má»‘c cháºµn 30 phĂºt (VD: 10:00, 10:30).");
+            throw new BusinessRuleException(" (VD: 10:00, 10:30).");
         }
 
         if (request.TableId.HasValue)
@@ -231,6 +237,12 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> ConfirmAsync(long id, long? confirmedByUserId, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+
+        if (await ApplyAutomaticBookingStatusAsync(booking, DateTime.UtcNow, ct))
+        {
+            await db.SaveChangesAsync(ct);
+            throw new ConflictException("Booking has expired and cannot be confirmed.");
+        }
 
         if (booking.Status != BookingStatuses.Pending) throw new BusinessRuleException("Only Pending bookings can be confirmed.");
         if (booking.TableId.HasValue && await HasConflictAsync(booking, ct))
@@ -283,6 +295,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     public async Task<List<AvailableTableDto>> GetAvailabilityAsync(BookingAvailabilityRequest request, CancellationToken ct)
     {
+        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
         if (request.EndTimeUtc <= request.StartTimeUtc) throw new ValidationException("End time must be after start time.");
         var query = from table in db.VenueTables.AsNoTracking()
                     join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
@@ -394,6 +407,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     /// <inheritdoc/>
     public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)
     {
+        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
         // Validate khoảng thời gian
         if (request.From > request.To)
             throw new ValidationException("'from' must be earlier than 'to'.");
@@ -455,6 +469,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                 NumberOfGuests = x.Booking.NumberOfGuests,
                 Status = x.Booking.Status,
                 Note = x.Booking.Note,
+                HasSession = db.Sessions.Any(s => s.BookingId == x.Booking.BookingId),
                 ConfirmedAtUtc = x.Booking.ConfirmedAtUtc,
                 CancelledAtUtc = x.Booking.CancelledAtUtc
             })
@@ -472,6 +487,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     /// <inheritdoc/>
     public async Task<IEnumerable<PublicBookingSlotDto>> GetPublicCalendarAsync(long tableId, DateTime date, CancellationToken ct)
     {
+        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
         // Khoảng thời gian trong ngày (từ 00:00 đến 23:59 của ngày đó - theo UTC hoặc local tùy thuộc logic lưu trữ của DB, 
         // ở đây ta so sánh StartTimeUtc/EndTimeUtc có giao với ngày được chỉ định).
         var startOfDay = date.Date;
@@ -493,6 +509,54 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
         return slots;
     }
+
+    private async Task ApplyAutomaticBookingStatusesAsync(DateTime nowUtc, CancellationToken ct)
+    {
+        var candidates = await db.Bookings
+            .Where(booking =>
+                (booking.Status == BookingStatuses.Pending && booking.StartTimeUtc <= nowUtc) ||
+                (booking.Status == BookingStatuses.Confirmed && booking.EndTimeUtc <= nowUtc))
+            .Where(booking => !db.Sessions.Any(session => session.BookingId == booking.BookingId))
+            .ToListAsync(ct);
+
+        var changed = false;
+        foreach (var booking in candidates)
+            changed |= ApplyAutomaticBookingStatus(booking, nowUtc);
+
+        if (changed) await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<bool> ApplyAutomaticBookingStatusAsync(EntityBooking booking, DateTime nowUtc, CancellationToken ct)
+    {
+        if (booking.Status is not (BookingStatuses.Pending or BookingStatuses.Confirmed)) return false;
+        if (await db.Sessions.AnyAsync(session => session.BookingId == booking.BookingId, ct)) return false;
+        return ApplyAutomaticBookingStatus(booking, nowUtc);
+    }
+
+    private static bool ApplyAutomaticBookingStatus(EntityBooking booking, DateTime nowUtc)
+    {
+        if (booking.Status == BookingStatuses.Pending && booking.StartTimeUtc <= nowUtc)
+        {
+            booking.Status = BookingStatuses.Cancelled;
+            booking.CancelledAtUtc = nowUtc;
+            booking.Note = AppendAutomaticNote(booking.Note, "Auto-cancelled because booking was not confirmed before start time.");
+            booking.UpdatedAtUtc = nowUtc;
+            return true;
+        }
+
+        if (booking.Status == BookingStatuses.Confirmed && booking.EndTimeUtc <= nowUtc)
+        {
+            booking.Status = BookingStatuses.NoShow;
+            booking.Note = AppendAutomaticNote(booking.Note, "Auto no-show because confirmed booking ended without starting session.");
+            booking.UpdatedAtUtc = nowUtc;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string AppendAutomaticNote(string? note, string reason) =>
+        string.IsNullOrWhiteSpace(note) ? reason : $"{note.Trim()} | {reason}";
 
     private static void ValidateBookingPeriod(DateTime startTimeUtc, DateTime endTimeUtc)
     {

@@ -2,28 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { bookingApi, pricingApi } from "@/lib/api/endpoints";
-import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamDayOfWeek, getVietnamHourOfDay, vietnamDateRangeToUtcIso, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
+import { getVietnamDateInputValue, getVietnamDayOfWeek, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
+import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso, validateSlotRange } from "@/lib/timeSlots";
 import { useToast } from "@/components/toast";
+import { OvernightToggle } from "@/components/OvernightToggle";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
 import "./booking-modal.css";
-
-// 07:00 to 24:00, in 30-minute boundaries.
-const START_HOUR = 7;
-const TOTAL_SLOTS = (24 - START_HOUR) * 2;
-
-function generateTimeSlots() {
-  const slots = [];
-  for (let i = 0; i < TOTAL_SLOTS; i++) {
-    const totalMins = START_HOUR * 60 + i * 30;
-    const hours = Math.floor(totalMins / 60);
-    const mins = totalMins % 60;
-    const timeStr = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-    slots.push(timeStr);
-  }
-  return slots;
-}
-
-const TIME_SLOTS = generateTimeSlots();
 
 export function BookingModal({ 
   onClose, 
@@ -42,12 +26,16 @@ export function BookingModal({
   const [numberOfGuests, setNumberOfGuests] = useState("2");
   const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
   const [selectedTableId, setSelectedTableId] = useState("");
+  const [overnightEnabled, setOvernightEnabled] = useState(false);
+  const timeSlots = useMemo(() => generateBookingSlots({ startDate: selectedDate, overnightEnabled }), [overnightEnabled, selectedDate]);
   
   // Selection can be 1 or 2 slots. If 1, it's the start. If 2, it's start and end.
   const [selectedSlotIndexes, setSelectedSlotIndexes] = useState<number[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [checkingRange, setCheckingRange] = useState(false);
+  const [rangeConflict, setRangeConflict] = useState(false);
   
   const [bookedSlots, setBookedSlots] = useState<Set<number>>(new Set());
   const [pastSlots, setPastSlots] = useState<Set<number>>(new Set());
@@ -83,7 +71,8 @@ export function BookingModal({
     async function loadAvailability() {
       setLoading(true);
       try {
-        const { startUtc, endUtc } = vietnamDateRangeToUtcIso(selectedDate);
+        const { startUtc, endUtc: sameDayEndUtc } = vietnamDateRangeToUtcIso(selectedDate);
+        const endUtc = overnightEnabled ? slotToUtcIso(timeSlots[timeSlots.length - 1]) : sameDayEndUtc;
         
         const res = await bookingApi.calendar(startUtc, endUtc, { tableId: selectedTableId });
         const items = Array.isArray(res) ? res : (res as any).items || [];
@@ -94,13 +83,12 @@ export function BookingModal({
         items.forEach((b: any) => {
           if (b.status === 3) return; // Cancelled doesn't count
           
-          const startHours = getVietnamHourOfDay(b.startTimeUtc);
-          const endHours = getVietnamHourOfDay(b.endTimeUtc);
-          
-          for (let i = 0; i < TOTAL_SLOTS; i++) {
-            const slotHour = START_HOUR + i * 0.5;
-            // If the slot falls within the booking period (not strictly at the end edge)
-            if (slotHour >= startHours && slotHour < endHours) {
+          const bookingStart = new Date(b.startTimeUtc).getTime();
+          const bookingEnd = new Date(b.endTimeUtc).getTime();
+          for (let i = 0; i < timeSlots.length; i++) {
+            const slotStart = new Date(slotToUtcIso(timeSlots[i])).getTime();
+            const slotEnd = slotStart + 30 * 60 * 1000;
+            if (slotStart < bookingEnd && bookingStart < slotEnd) {
               booked.add(i);
             }
           }
@@ -116,35 +104,26 @@ export function BookingModal({
     }
     
     loadAvailability();
-  }, [selectedDate, selectedTableId, toast]);
+  }, [overnightEnabled, selectedDate, selectedTableId, timeSlots, toast]);
 
   // Calculate past slots
   useEffect(() => {
     const calculatePast = () => {
-      const todayStr = getVietnamDateInputValue();
       const past = new Set<number>();
-      
-      if (selectedDate < todayStr) {
-        // All past
-        for (let i = 0; i < TOTAL_SLOTS; i++) past.add(i);
-      } else if (selectedDate === todayStr) {
-        const currentHour = getCurrentVietnamHourOfDay();
-        for (let i = 0; i < TOTAL_SLOTS; i++) {
-          if (START_HOUR + i * 0.5 <= currentHour) {
-            past.add(i);
-          }
-        }
-      }
+      const now = Date.now();
+      timeSlots.forEach((slot, index) => {
+        if (new Date(slotToUtcIso(slot)).getTime() <= now) past.add(index);
+      });
       setPastSlots(past);
     };
     
     calculatePast();
     const timer = setInterval(calculatePast, 60000); // Update every minute
     return () => clearInterval(timer);
-  }, [selectedDate]);
+  }, [selectedDate, timeSlots]);
 
   const handleSlotClick = (index: number) => {
-    if (bookedSlots.has(index) || pastSlots.has(index)) return;
+    if (pastSlots.has(index) || (bookedSlots.has(index) && selectedSlotIndexes.length !== 1)) return;
     
     if (selectedSlotIndexes.length === 0 || selectedSlotIndexes.length === 2) {
       setSelectedSlotIndexes([index]);
@@ -153,7 +132,7 @@ export function BookingModal({
       const end = index;
       
       if (end <= start) {
-        setSelectedSlotIndexes([end]);
+        toast("Giờ kết thúc phải sau giờ bắt đầu. Nếu muốn đặt qua đêm, hãy bật Đặt qua đêm.", "error");
       } else {
         // Check if there are booked slots in between
         let hasBooked = false;
@@ -186,6 +165,31 @@ export function BookingModal({
   };
 
   const selectedTable = useMemo(() => tables.find(t => t.tableId === Number(selectedTableId)), [tables, selectedTableId]);
+  const selectedStartSlot = timeSlots[selectedSlotIndexes[0]];
+  const selectedEndSlot = timeSlots[selectedSlotIndexes[1]];
+  const durationMinutes = calculateDurationMinutes(selectedStartSlot, selectedEndSlot);
+  const nightRules = useMemo(() => rules.filter((rule) => {
+    if (selectedTable && rule.tableTypeId !== selectedTable.tableTypeId) return false;
+    const planName = plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name.toLowerCase() || "";
+    const start = rule.startTime?.slice(0, 5) || "";
+    const end = rule.endTime?.slice(0, 5) || "";
+    return planName.includes("đêm") || planName.includes("night") || planName.includes("overnight") ||
+      Boolean(start && end && (start > end || start >= "22:00" || end <= "06:00"));
+  }), [plans, rules, selectedTable]);
+
+  useEffect(() => {
+    if (!selectedTableId || !selectedStartSlot || !selectedEndSlot) {
+      setRangeConflict(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingRange(true);
+    bookingApi.availability(Number(selectedTableId), slotToUtcIso(selectedStartSlot), slotToUtcIso(selectedEndSlot))
+      .then((available) => { if (!cancelled) setRangeConflict(!available.some((table) => Number(table.tableId) === Number(selectedTableId))); })
+      .catch(() => { if (!cancelled) setRangeConflict(true); })
+      .finally(() => { if (!cancelled) setCheckingRange(false); });
+    return () => { cancelled = true; };
+  }, [selectedEndSlot, selectedStartSlot, selectedTableId]);
 
   // Get price for a specific 30-minute slot
   const getSlotPrice = useCallback((index: number) => {
@@ -195,38 +199,38 @@ export function BookingModal({
     if (!activePlans.length) return 25000; // fallback 50k/hour = 25k/30m
     
     const plan = activePlans.find(p => p.isDefault) || activePlans[0];
-    const dayOfWeek = getVietnamDayOfWeek(selectedDate);
-    
-    const startHour = START_HOUR + index * 0.5;
-    const hoursStr = Math.floor(startHour).toString().padStart(2, '0');
-    const minsStr = (startHour % 1 * 60).toString().padStart(2, '0');
-    const timeStr = `${hoursStr}:${minsStr}:00`;
+    const slot = timeSlots[index];
+    if (!slot) return 0;
+    const dayOfWeek = getVietnamDayOfWeek(slot.localDate);
+    const timeStr = `${slot.time}:00`;
     
     const rule = rules.find(r => {
       if (!r.startTime || !r.endTime) return false;
+      const matchesTime = r.startTime <= r.endTime
+        ? r.startTime <= timeStr && r.endTime > timeStr
+        : r.startTime <= timeStr || r.endTime > timeStr;
 
       return (
         r.pricingPlanId === plan.pricingPlanId &&
         r.tableTypeId === selectedTable.tableTypeId &&
         r.dayOfWeek === dayOfWeek &&
-        r.startTime <= timeStr &&
-        r.endTime > timeStr // endTime should be strictly greater than timeStr to cover the block
+        matchesTime
       );
     });
     
     const rate = rule ? rule.hourlyRate : 50000;
     return rate * 0.5; // 30 mins = 0.5 hours
-  }, [plans, rules, selectedDate, selectedTable]);
+  }, [plans, rules, selectedTable, timeSlots]);
 
   // Calculate estimated price by summing all selected slots
   const estimatedPrice = useMemo(() => {
     if (selectedSlotIndexes.length !== 2 || !selectedTable) return 0;
     
     const s = selectedSlotIndexes[0];
-    const e = selectedSlotIndexes[1] - 1;
+    const e = selectedSlotIndexes[1];
     
     let total = 0;
-    for (let i = s; i <= e; i++) {
+    for (let i = s; i < e; i++) {
       total += getSlotPrice(i);
     }
     
@@ -242,20 +246,23 @@ export function BookingModal({
       toast("Vui lòng chọn bàn.", "error");
       return;
     }
-    if (selectedSlotIndexes.length !== 2 || selectedSlotIndexes[1] <= selectedSlotIndexes[0]) {
-      toast("Vui lòng chọn khung giờ trên lịch.", "error");
+    const startSlot = timeSlots[selectedSlotIndexes[0]];
+    const endSlot = timeSlots[selectedSlotIndexes[1]];
+    const validation = validateSlotRange(startSlot, endSlot, overnightEnabled);
+    if (!validation.valid) {
+      toast(validation.message, "error");
       return;
     }
 
     setSaving(true);
     try {
-      const s = selectedSlotIndexes[0];
-      const e = selectedSlotIndexes[1];
-      
-      const startHour = START_HOUR + s * 0.5;
-      const endHour = START_HOUR + e * 0.5;
-      const startTime = `${Math.floor(startHour).toString().padStart(2, "0")}:${((startHour % 1) * 60).toString().padStart(2, "0")}`;
-      const endTime = `${Math.floor(endHour).toString().padStart(2, "0")}:${((endHour % 1) * 60).toString().padStart(2, "0")}`;
+      const startTimeUtc = slotToUtcIso(startSlot);
+      const endTimeUtc = slotToUtcIso(endSlot);
+      const available = await bookingApi.availability(Number(selectedTableId), startTimeUtc, endTimeUtc);
+      if (!available.some((table) => Number(table.tableId) === Number(selectedTableId))) {
+        toast("Bàn đã có booking hoặc phiên chơi trong khung giờ này.", "error");
+        return;
+      }
 
       // Create booking payload
       const payload: Partial<Booking> = {
@@ -265,8 +272,8 @@ export function BookingModal({
         numberOfGuests: Number(numberOfGuests) || 2,
         tableId: Number(selectedTableId),
         tableTypeId: selectedTable?.tableTypeId,
-        startTimeUtc: vietnamDateTimeToUtcIso(selectedDate, startTime),
-        endTimeUtc: vietnamDateTimeToUtcIso(selectedDate, endTime)
+        startTimeUtc,
+        endTimeUtc
       };
 
       await bookingApi.create(payload);
@@ -310,6 +317,7 @@ export function BookingModal({
               <span>Chọn Ngày *</span>
               <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
             </label>
+            <OvernightToggle checked={overnightEnabled} onChange={(checked) => { setOvernightEnabled(checked); setSelectedSlotIndexes((current) => current.length ? [current[0]] : []); }} />
             <label>
               <span>Chọn Bàn cụ thể *</span>
               <select value={selectedTableId} onChange={e => setSelectedTableId(e.target.value)}>
@@ -336,9 +344,9 @@ export function BookingModal({
               <>
                 <p style={{fontSize: '14px', margin: 0, color: 'var(--ink)'}}>Nhấp vào 1 ô để chọn giờ bắt đầu, nhấp ô tiếp theo để chọn giờ kết thúc.</p>
                 <div className="time-slots-grid">
-                  {TIME_SLOTS.map((timeStr, index) => {
+                  {timeSlots.map((slot, index) => {
                     const cls = getSlotClass(index);
-                    const isDisabled = cls === "disabled" || cls === "booked";
+                    const isDisabled = cls === "disabled" || (cls === "booked" && selectedSlotIndexes.length !== 1);
                     const price = getSlotPrice(index);
                     return (
                       <button 
@@ -348,7 +356,7 @@ export function BookingModal({
                         onClick={() => handleSlotClick(index)}
                         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', padding: '6px 2px' }}
                       >
-                        <span>{timeStr}</span>
+                        <span>{slot.displayLabel}</span>
                         {!isDisabled && price > 0 && (
                           <span style={{ fontSize: '11px', opacity: 0.8 }}>{(price / 1000)}k</span>
                         )}
@@ -356,6 +364,11 @@ export function BookingModal({
                     );
                   })}
                 </div>
+                {overnightEnabled ? <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 13 }}>(+1) nghĩa là ngày hôm sau.</p> : null}
+                {selectedEndSlot?.dayOffset === 1 ? <div className="inline-note">Bạn đang chọn ca qua đêm.<br />Thời gian dự kiến: {formatSlotDateTime(selectedStartSlot)} → {formatSlotDateTime(selectedEndSlot)}.<br />Thời lượng: {(durationMinutes / 60).toLocaleString("vi-VN")} giờ.</div> : null}
+                {overnightEnabled ? <div className="inline-note"><strong>Gói đêm áp dụng</strong><br />{nightRules.length ? nightRules.map((rule) => `${plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name || "Bảng giá"}: ${rule.startTime?.slice(0, 5)}–${rule.endTime?.slice(0, 5)} (${rule.hourlyRate.toLocaleString("vi-VN")} đ/giờ)`).join("; ") : "Chưa có gói đêm được cấu hình. Giá tạm tính theo bảng giá hiện tại."}</div> : null}
+                {checkingRange ? <div className="inline-note">Đang kiểm tra lịch trống...</div> : null}
+                {rangeConflict ? <div className="inline-alert error">Bàn đã có booking hoặc phiên chơi trong khung giờ này.</div> : null}
               </>
             )}
           </div>
@@ -368,7 +381,7 @@ export function BookingModal({
           </div>
           <div className="booking-modal-actions">
             <button className="ghost-btn" onClick={onClose} disabled={saving}>Hủy</button>
-            <button className="primary-btn" onClick={handleSubmit} disabled={saving || selectedSlotIndexes.length !== 2}>
+            <button className="primary-btn" onClick={handleSubmit} disabled={saving || checkingRange || rangeConflict || selectedSlotIndexes.length !== 2}>
               {saving ? "Đang xử lý..." : "Lưu Booking"}
             </button>
           </div>

@@ -2,22 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { bookingApi, customerApi, sessionApi, venueApi } from "@/lib/api/endpoints";
-import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamHourOfDay, vietnamDateRangeToUtcIso, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
+import { bookingApi, customerApi, pricingApi, sessionApi, venueApi } from "@/lib/api/endpoints";
+import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
+import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso } from "@/lib/timeSlots";
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { Booking, CustomerDto, Session, VenueTable } from "@/types";
+import { OvernightToggle } from "@/components/OvernightToggle";
+import type { Booking, CustomerDto, PricingPlan, PricingPlanRule, Session, VenueTable } from "@/types";
 
 const BOOKING_CONFIRMED = 2;
 const SESSION_OPEN = 1;
-const WALK_IN_START_HOUR = 7;
-const WALK_IN_SLOT_COUNT = (24 - WALK_IN_START_HOUR) * 2;
-const WALK_IN_TIME_POINTS = Array.from({ length: WALK_IN_SLOT_COUNT + 1 }, (_, index) => {
-  const minutes = WALK_IN_START_HOUR * 60 + index * 30;
-  return `${Math.floor(minutes / 60).toString().padStart(2, "0")}:${(minutes % 60).toString().padStart(2, "0")}`;
-});
-
 function unwrap<T>(value: T[] | { items?: T[] } | undefined): T[] {
   if (!value) return [];
   return Array.isArray(value) ? value : value.items || [];
@@ -59,6 +54,7 @@ export default function SessionsPage() {
     return unwrap<Booking>(data?.bookings as any).filter((booking) =>
       Number(booking.status) === BOOKING_CONFIRMED &&
       Boolean(booking.tableId) &&
+      !booking.hasSession &&
       new Date(booking.startTimeUtc).getTime() <= now &&
       new Date(booking.endTimeUtc).getTime() > now
     );
@@ -212,22 +208,42 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   const [tableId, setTableId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [playDate, setPlayDate] = useState(() => getVietnamDateInputValue());
+  const [overnightEnabled, setOvernightEnabled] = useState(false);
+  const timeSlots = useMemo(() => generateBookingSlots({ startDate: playDate, overnightEnabled }), [overnightEnabled, playDate]);
   const [selectedSlots, setSelectedSlots] = useState<number[]>(() => {
-    const index = Math.floor((getCurrentVietnamHourOfDay() - WALK_IN_START_HOUR) * 2);
-    return index >= 0 && index < WALK_IN_SLOT_COUNT ? [index] : [];
+    const index = Math.floor(getCurrentVietnamHourOfDay() * 2);
+    return index >= 0 && index < 48 ? [index] : [];
   });
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [checking, setChecking] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [plans, setPlans] = useState<PricingPlan[]>([]);
+  const [rules, setRules] = useState<PricingPlanRule[]>([]);
+
+  useEffect(() => {
+    Promise.all([pricingApi.plans(), pricingApi.rules({ pageSize: 500 })]).then(([planResult, ruleResult]) => {
+      setPlans(unwrap<PricingPlan>(planResult));
+      setRules(unwrap<PricingPlanRule>(ruleResult));
+    }).catch(() => undefined);
+  }, []);
+
+  const selectedTable = tables.find((table) => table.tableId === Number(tableId));
+  const nightRules = rules.filter((rule) => {
+    if (selectedTable && rule.tableTypeId !== selectedTable.tableTypeId) return false;
+    const planName = plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name.toLowerCase() || "";
+    const start = rule.startTime?.slice(0, 5) || "";
+    const end = rule.endTime?.slice(0, 5) || "";
+    return planName.includes("đêm") || planName.includes("night") || planName.includes("overnight") || Boolean(start && end && (start > end || start >= "22:00" || end <= "06:00"));
+  });
 
   const selectedPeriod = useMemo(() => {
     if (selectedSlots.length !== 2 || selectedSlots[1] <= selectedSlots[0]) return null;
     return {
-      startTimeUtc: vietnamDateTimeToUtcIso(playDate, WALK_IN_TIME_POINTS[selectedSlots[0]]),
-      endTimeUtc: vietnamDateTimeToUtcIso(playDate, WALK_IN_TIME_POINTS[selectedSlots[1]])
+      startTimeUtc: slotToUtcIso(timeSlots[selectedSlots[0]]),
+      endTimeUtc: slotToUtcIso(timeSlots[selectedSlots[1]])
     };
-  }, [playDate, selectedSlots]);
+  }, [selectedSlots, timeSlots]);
 
   const isImmediatePeriod = useMemo(() => {
     if (!selectedPeriod || playDate !== getVietnamDateInputValue()) return false;
@@ -241,14 +257,15 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
       return;
     }
     let cancelled = false;
-    const { startUtc, endUtc } = vietnamDateRangeToUtcIso(playDate);
+    const { startUtc, endUtc: sameDayEndUtc } = vietnamDateRangeToUtcIso(playDate);
+    const endUtc = overnightEnabled ? slotToUtcIso(timeSlots[timeSlots.length - 1]) : sameDayEndUtc;
     bookingApi.calendar(startUtc, endUtc, { tableId: Number(tableId), pageNumber: 1, pageSize: 100 })
       .then((result) => {
         if (!cancelled) setBookings(unwrap<Booking>(result as Booking[] | { items?: Booking[] }).filter((booking) => [1, 2].includes(Number(booking.status))));
       })
       .catch(() => { if (!cancelled) setBookings([]); });
     return () => { cancelled = true; };
-  }, [playDate, tableId]);
+  }, [overnightEnabled, playDate, tableId, timeSlots]);
 
   useEffect(() => {
     if (!tableId || !selectedPeriod || !isImmediatePeriod) {
@@ -266,31 +283,32 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   }, [isImmediatePeriod, selectedPeriod, tableId]);
 
   function isPastPoint(index: number) {
-    if (playDate !== getVietnamDateInputValue()) return playDate < getVietnamDateInputValue();
-    const currentIndex = Math.floor((getCurrentVietnamHourOfDay() - WALK_IN_START_HOUR) * 2);
-    return index < currentIndex;
+    const slot = timeSlots[index];
+    return !slot || new Date(slotToUtcIso(slot)).getTime() < Date.now() - 30 * 60 * 1000;
   }
 
   function isBookedPoint(index: number) {
-    const hour = WALK_IN_START_HOUR + index * 0.5;
+    const slot = timeSlots[index];
+    if (!slot) return false;
+    const slotStart = new Date(slotToUtcIso(slot)).getTime();
+    const slotEnd = slotStart + 30 * 60 * 1000;
     return bookings.some((booking) => {
-      const start = getVietnamHourOfDay(booking.startTimeUtc);
-      const rawEnd = getVietnamHourOfDay(booking.endTimeUtc);
-      const end = rawEnd === 0 && new Date(booking.endTimeUtc) > new Date(booking.startTimeUtc) ? 24 : rawEnd;
-      return hour >= start && hour < end;
+      const start = new Date(booking.startTimeUtc).getTime();
+      const end = new Date(booking.endTimeUtc).getTime();
+      return slotStart < end && start < slotEnd;
     });
   }
 
   function selectSlot(index: number) {
     if (isPastPoint(index)) return;
     if (selectedSlots.length !== 1) {
-      if (isBookedPoint(index) || index === WALK_IN_SLOT_COUNT) return;
+      if (isBookedPoint(index) || index === timeSlots.length - 1) return;
       setSelectedSlots([index]);
       return;
     }
     const start = selectedSlots[0];
     if (index <= start) {
-      if (!isBookedPoint(index) && index < WALK_IN_SLOT_COUNT) setSelectedSlots([index]);
+      toast("Giờ kết thúc phải sau giờ bắt đầu. Nếu muốn đặt qua đêm, hãy bật Đặt qua đêm.", "error");
       return;
     }
     setSelectedSlots([start, index]);
@@ -348,6 +366,7 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
           <span style={{ fontWeight: 700 }}>Ngày chơi *</span>
           <input type="date" min={getVietnamDateInputValue()} value={playDate} onChange={(event) => { setPlayDate(event.target.value); setSelectedSlots([]); }} />
         </label>
+        <OvernightToggle checked={overnightEnabled} onChange={(checked) => { setOvernightEnabled(checked); setSelectedSlots((current) => current.length ? [current[0]] : []); }} />
         {playDate > getVietnamDateInputValue() ? <div className="inline-alert error">Khung giờ này là tương lai. Hãy dùng Tạo lịch đặt bàn.</div> : null}
         <div>
           <strong>Khung giờ dự kiến *</strong>
@@ -356,14 +375,17 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
             <span>□ Trống</span><span style={{ color: "#1d4ed8" }}>■ Đang chọn</span><span style={{ color: "#dc2626" }}>■ Đã đặt / Đang bận</span><span style={{ color: "#64748b" }}>■ Đã qua</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 6 }}>
-            {WALK_IN_TIME_POINTS.map((time, index) => {
+            {timeSlots.map((slot, index) => {
               const selected = selectedSlots.includes(index) || (selectedSlots.length === 2 && index > selectedSlots[0] && index < selectedSlots[1]);
               const past = isPastPoint(index);
               const booked = isBookedPoint(index);
-              return <button key={time} type="button" onClick={() => selectSlot(index)} disabled={past}
-                style={{ minHeight: 38, border: `1px solid ${selected ? "#2563eb" : booked ? "#fecaca" : "#cbd5e1"}`, borderRadius: 6, background: selected ? "#dbeafe" : booked ? "#fee2e2" : past ? "#f1f5f9" : "#fff", color: past ? "#94a3b8" : booked ? "#b91c1c" : "#0f172a", fontWeight: selected ? 700 : 500, cursor: past ? "not-allowed" : "pointer" }}>{time}</button>;
+              return <button key={slot.localDateTime} type="button" onClick={() => selectSlot(index)} disabled={past}
+                style={{ minHeight: 38, border: `1px solid ${selected ? "#2563eb" : booked ? "#fecaca" : "#cbd5e1"}`, borderRadius: 6, background: selected ? "#dbeafe" : booked ? "#fee2e2" : past ? "#f1f5f9" : "#fff", color: past ? "#94a3b8" : booked ? "#b91c1c" : "#0f172a", fontWeight: selected ? 700 : 500, cursor: past ? "not-allowed" : "pointer" }}>{slot.displayLabel}</button>;
             })}
           </div>
+          {overnightEnabled ? <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 13 }}>(+1) nghĩa là ngày hôm sau.</p> : null}
+          {timeSlots[selectedSlots[1]]?.dayOffset === 1 ? <div className="inline-note">Bạn đang chọn ca qua đêm.<br />Thời gian dự kiến: {formatSlotDateTime(timeSlots[selectedSlots[0]])} → {formatSlotDateTime(timeSlots[selectedSlots[1]])}.<br />Thời lượng: {(calculateDurationMinutes(timeSlots[selectedSlots[0]], timeSlots[selectedSlots[1]]) / 60).toLocaleString("vi-VN")} giờ.</div> : null}
+          {overnightEnabled ? <div className="inline-note"><strong>Gói đêm áp dụng</strong><br />{nightRules.length ? nightRules.map((rule) => `${plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name || "Bảng giá"}: ${rule.startTime?.slice(0, 5)}–${rule.endTime?.slice(0, 5)} (${rule.hourlyRate.toLocaleString("vi-VN")} đ/giờ)`).join("; ") : "Chưa có gói đêm được cấu hình. Giá tạm tính theo bảng giá hiện tại."}</div> : null}
         </div>
         {selectedPeriod && !isImmediatePeriod ? <div className="inline-alert error">Khung giờ phải chứa thời điểm hiện tại. Nếu đặt cho tương lai, hãy dùng Tạo lịch đặt bàn.</div> : null}
         {checking ? <div className="inline-note">Đang kiểm tra lịch trống...</div> : null}

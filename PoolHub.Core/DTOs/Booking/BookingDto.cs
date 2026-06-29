@@ -14,4 +14,5 @@ public class BookingDto
     public int Status { get; set; }
     public int NumberOfGuests { get; set; }
     public string? Note { get; set; }
+    public bool HasSession { get; set; }
 }

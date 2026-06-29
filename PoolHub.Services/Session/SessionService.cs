@@ -301,14 +301,40 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
         if (booking is not null)
         {
+            var hasSession = await db.Sessions.AnyAsync(x => x.BookingId == booking.BookingId, ct);
+            if (hasSession)
+            {
+                throw new ConflictException("Booking already has a session.");
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            if (booking.Status == BookingStatuses.Pending && booking.StartTimeUtc <= nowUtc)
+            {
+                booking.Status = BookingStatuses.Cancelled;
+                booking.CancelledAtUtc = nowUtc;
+                booking.Note = AppendAutomaticBookingNote(booking.Note, "Auto-cancelled because booking was not confirmed before start time.");
+                booking.UpdatedAtUtc = nowUtc;
+                await db.SaveChangesAsync(ct);
+                throw new ConflictException("Booking has expired and cannot start a session.");
+            }
+
+            if (booking.Status == BookingStatuses.Confirmed && booking.EndTimeUtc <= nowUtc)
+            {
+                booking.Status = BookingStatuses.NoShow;
+                booking.Note = AppendAutomaticBookingNote(booking.Note, "Auto no-show because confirmed booking ended without starting session.");
+                booking.UpdatedAtUtc = nowUtc;
+                await db.SaveChangesAsync(ct);
+                throw new ConflictException("Booking has ended and cannot start a session.");
+            }
+
             if (booking.Status != BookingStatuses.Confirmed)
             {
                 throw new BusinessRuleException("Only confirmed bookings can start a session.");
             }
 
-            if (await db.Sessions.AnyAsync(x => x.BookingId == booking.BookingId, ct))
+            if (booking.StartTimeUtc > nowUtc)
             {
-                throw new ConflictException("Booking already has a session.");
+                throw new BusinessRuleException("Booking has not reached its start time.");
             }
         }
 
@@ -375,6 +401,9 @@ public class SessionService(PoolHubDbContext db) : ISessionService
             BookingId = bookingId,
             TableId = tableId.GetValueOrDefault()
         }, ct);
+
+    private static string AppendAutomaticBookingNote(string? note, string reason) =>
+        string.IsNullOrWhiteSpace(note) ? reason : $"{note.Trim()} | {reason}";
 
     private async Task EnsureCustomerCanStartSessionAsync(long? customerId, long? bookingId, CancellationToken ct)
     {
