@@ -19,21 +19,13 @@ type RequestOptions = RequestInit & {
   timeoutMs?: number;
 };
 
-const tokenKey = "poolhub.accessToken";
-const refreshKey = "poolhub.refreshToken";
 let refreshPromise: Promise<boolean> | null = null;
 
 export const tokenStore = {
-  getAccess: () => (typeof window === "undefined" ? null : localStorage.getItem(tokenKey)),
-  getRefresh: () => (typeof window === "undefined" ? null : localStorage.getItem(refreshKey)),
-  set: (accessToken: string, refreshToken: string) => {
-    localStorage.setItem(tokenKey, accessToken);
-    localStorage.setItem(refreshKey, refreshToken);
-  },
-  clear: () => {
-    localStorage.removeItem(tokenKey);
-    localStorage.removeItem(refreshKey);
-  }
+  getAccess: () => null,
+  getRefresh: () => null,
+  set: (_accessToken?: string, _refreshToken?: string) => {},
+  clear: () => {}
 };
 
 function normalize<T>(payload: unknown): { data: T; message: string } {
@@ -49,20 +41,13 @@ function normalize<T>(payload: unknown): { data: T; message: string } {
 }
 
 async function executeRefresh() {
-  const refreshToken = tokenStore.getRefresh();
-  if (!refreshToken) return false;
-
   const response = await fetch(`${API_BASE_URL}/api/auth/refresh-token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken })
+    credentials: "include"
   });
 
   if (!response.ok) return false;
-  const payload = await response.json();
-  const { data } = normalize<{ accessToken: string; refreshToken: string }>(payload);
-  if (!data?.accessToken || !data?.refreshToken) return false;
-  tokenStore.set(data.accessToken, data.refreshToken);
   return true;
 }
 
@@ -99,11 +84,6 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
-  }
-
-  const accessToken = tokenStore.getAccess();
-  if (!options.skipAuth && accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
   let response: Response;

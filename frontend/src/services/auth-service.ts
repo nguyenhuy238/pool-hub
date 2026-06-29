@@ -20,8 +20,8 @@ export const authService = {
   register: (payload: RegisterRequest) =>
     apiFetch<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify(payload), skipAuth: true }),
   getMe: () => apiFetch<AuthUser>("/api/auth/me"),
-  logout: (refreshToken: string) =>
-    apiFetch("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }), retry: false }),
+  logout: () =>
+    apiFetch("/api/auth/logout", { method: "POST", retry: false }),
   refreshToken: refreshAccessToken,
   forgotPassword: (payload: ForgotPasswordRequest) =>
     apiFetch("/api/auth/forgot-password", { method: "POST", body: JSON.stringify(payload), skipAuth: true }),
