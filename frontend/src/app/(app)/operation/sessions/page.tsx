@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { bookingApi, customerApi, pricingApi, sessionApi, venueApi } from "@/lib/api/endpoints";
 import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso } from "@/lib/timeSlots";
@@ -18,18 +19,17 @@ function unwrap<T>(value: T[] | { items?: T[] } | undefined): T[] {
   return Array.isArray(value) ? value : value.items || [];
 }
 
-function durationMinutes(startedAtUtc?: string) {
-  if (!startedAtUtc) return 0;
-  return Math.max(0, Math.floor((Date.now() - new Date(startedAtUtc).getTime()) / 60000));
-}
-
 export default function SessionsPage() {
+  const router = useRouter();
   const toast = useToast();
   const [starting, setStarting] = useState<Booking | null>(null);
   const [noShowing, setNoShowing] = useState<Booking | null>(null);
   const [ending, setEnding] = useState<Session | null>(null);
+  const [endingSummary, setEndingSummary] = useState<any | null>(null);
   const [summary, setSummary] = useState<any | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [previewingSessionId, setPreviewingSessionId] = useState<number | null>(null);
+  const [closingSession, setClosingSession] = useState(false);
 
   const { data, loading, error, reload } = useLoad(async () => {
     const { startUtc, endUtc } = vietnamDateRangeToUtcIso(getVietnamDateInputValue());
@@ -78,10 +78,10 @@ export default function SessionsPage() {
   async function startSelected() {
     if (!starting) return;
     try {
-      await bookingApi.startSession(starting.bookingId, starting.tableId);
+      const session = await bookingApi.startSession(starting.bookingId, starting.tableId);
       toast("Bat dau phien thanh cong.", "success");
       setStarting(null);
-      reload();
+      router.push(`/operation/sessions/${session.sessionId}`);
     } catch (err: any) {
       const message = err?.status === 409
         ? "Booking da co phien hoac ban dang duoc su dung."
@@ -104,14 +104,37 @@ export default function SessionsPage() {
 
   async function endSelected() {
     if (!ending) return;
+    setClosingSession(true);
     try {
       const result = await sessionApi.end(ending.sessionId);
-      setSummary(result);
-      toast("Ket thuc phien thanh cong.", "success");
+      const invoiceId = result?.invoiceId ?? result?.InvoiceId;
+      toast("Kết thúc phiên và tạo hóa đơn thành công.", "success");
       setEnding(null);
+      setEndingSummary(null);
       reload();
+      if (invoiceId) {
+        router.push(`/operation/invoices?invoiceId=${invoiceId}`);
+      } else {
+        router.push("/operation/invoices");
+      }
     } catch (err: any) {
-      toast(err?.message || "Khong the ket thuc phien.", "error");
+      toast(err?.message || "Không thể kết thúc phiên.", "error");
+    } finally {
+      setClosingSession(false);
+    }
+  }
+
+  async function openEndConfirm(session: Session) {
+    setEnding(session);
+    setEndingSummary(null);
+    setPreviewingSessionId(session.sessionId);
+    try {
+      setEndingSummary(await sessionApi.summary(session.sessionId));
+    } catch (err: any) {
+      setEnding(null);
+      toast(err?.message || "Không tải được tạm tính.", "error");
+    } finally {
+      setPreviewingSessionId(null);
     }
   }
 
@@ -168,20 +191,25 @@ export default function SessionsPage() {
                 return table ? `${table.tableName || table.tableCode || table.tableId}` : String(row.tableName || row.tableId || "-");
               } },
               { key: "startedAtUtc", label: "Bat dau", render: (row) => dateTime(String(row.startedAtUtc)) },
-              { key: "duration", label: "Thoi luong", render: (row) => `${durationMinutes(String(row.startedAtUtc))} phut` },
+              { key: "duration", label: "Thoi luong", render: (row) => `${Number(row.durationMinutes ?? 0)} phut` },
               { key: "status", label: "Trang thai", render: (row) => <Badge tone="green">{label(sessionStatus, Number(row.status))}</Badge> }
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="ghost-btn" onClick={async () => {
                   try {
+                    setPreviewingSessionId(Number(row.sessionId));
                     setSummary(await sessionApi.summary(Number(row.sessionId)));
                   } catch (err: any) {
                     toast(err?.message || "Khong tai duoc tam tinh.", "error");
+                  } finally {
+                    setPreviewingSessionId(null);
                   }
-                }}>Tam tinh</button>
+                }} disabled={previewingSessionId === Number(row.sessionId)}>Tam tinh</button>
                 {Number(row.status) === SESSION_OPEN && (
-                  <button className="danger-btn" onClick={() => setEnding(row as unknown as Session)}>Ket thuc</button>
+                  <button className="danger-btn" onClick={() => openEndConfirm(row as unknown as Session)} disabled={previewingSessionId === Number(row.sessionId)}>
+                    {previewingSessionId === Number(row.sessionId) ? "Dang tai..." : "Ket thuc"}
+                  </button>
                 )}
               </div>
             )}
@@ -191,8 +219,8 @@ export default function SessionsPage() {
 
       {starting ? <ConfirmDialog title="Bat dau phien" message={`Bat dau phien cho booking ${starting.bookingCode || starting.bookingId}?`} confirmLabel="Bat dau" onCancel={() => setStarting(null)} onConfirm={startSelected} /> : null}
       {noShowing ? <ConfirmDialog title="Khach khong den" message={`Danh dau booking ${noShowing.bookingCode || noShowing.bookingId} la khach khong den?`} confirmLabel="Khach khong den" danger onCancel={() => setNoShowing(null)} onConfirm={markNoShow} /> : null}
-      {ending ? <ConfirmDialog title="Ket thuc phien choi" message={`Ban co chac muon ket thuc phien ${ending.sessionCode || ending.sessionId}?`} confirmLabel="Ket thuc" danger onCancel={() => setEnding(null)} onConfirm={endSelected} /> : null}
-      {walkInOpen ? <WalkInSessionModal tables={availableTables} customers={customers} onClose={() => setWalkInOpen(false)} onStarted={async () => { setWalkInOpen(false); await reload(); }} /> : null}
+      {ending ? <EndSessionModal session={ending} summary={endingSummary} busy={closingSession} onCancel={() => { if (!closingSession) { setEnding(null); setEndingSummary(null); } }} onAddOrder={() => router.push(`/operation/orders?sessionId=${ending.sessionId}&returnTo=${encodeURIComponent("/operation/sessions")}`)} onConfirm={endSelected} /> : null}
+      {walkInOpen ? <WalkInSessionModal tables={availableTables} customers={customers} onClose={() => setWalkInOpen(false)} onStarted={async (session) => { setWalkInOpen(false); router.push(`/operation/sessions/${session.sessionId}`); }} /> : null}
       {summary ? <SummaryModal summary={summary} onClose={() => setSummary(null)} /> : null}
     </>
   );
@@ -202,7 +230,7 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   tables: VenueTable[];
   customers: CustomerDto[];
   onClose: () => void;
-  onStarted: () => Promise<void>;
+  onStarted: (session: Session) => Promise<void>;
 }) {
   const toast = useToast();
   const [tableId, setTableId] = useState("");
@@ -332,12 +360,12 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
         toast("Bàn này đã có booking hoặc phiên chơi trong khung giờ đã chọn.", "error");
         return;
       }
-      await sessionApi.start({
+      const session = await sessionApi.start({
         tableId: Number(tableId),
         ...(customerId ? { customerId: Number(customerId) } : {})
       });
       toast("Mở phiên thành công", "success");
-      await onStarted();
+      await onStarted(session);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể mở phiên.", "error");
     } finally {
@@ -399,11 +427,90 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   );
 }
 
+function EndSessionModal({ session, summary, busy, onCancel, onAddOrder, onConfirm }: {
+  session: Session;
+  summary: any;
+  busy: boolean;
+  onCancel: () => void;
+  onAddOrder: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const data = summary?.data || summary;
+  const duration = data?.currentDurationMinutes ?? data?.durationMinutes ?? session.durationMinutes ?? 0;
+  const timeAmount = data?.timeSubtotalAmount ?? 0;
+  const orderAmount = data?.productSubtotalAmount ?? data?.orderSubtotalAmount ?? 0;
+  const discountAmount = data?.discountAmount ?? 0;
+  const total = data?.grandTotalAmount ?? Math.max(0, Number(timeAmount) + Number(orderAmount) - Number(discountAmount));
+
+  return (
+    <Modal title="Kết thúc phiên chơi" onClose={onCancel} size="small">
+      <div style={{ display: "grid", gap: 12 }}>
+        <p className="modal-message" style={{ margin: 0 }}>
+          Bạn có chắc muốn kết thúc phiên {session.sessionCode || session.sessionId}?
+        </p>
+        {!summary ? <div className="state-card loading-state"><span className="spinner" />Đang tải tạm tính...</div> : (
+          <div style={{ display: "grid", gap: 10 }}>
+            <SummaryRow label="Thời lượng" value={`${duration} phút`} />
+            <PricingDetails assignments={data?.assignments || data?.Assignments || []} />
+            <SummaryRow label="Tiền giờ" value={money(Number(timeAmount))} />
+            <SummaryRow label="Tiền order" value={money(Number(orderAmount))} />
+            <SummaryRow label="Giảm giá" value={`-${money(Number(discountAmount))}`} />
+            <SummaryRow label="Tổng tiền" value={money(Number(total))} />
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className="ghost-btn" type="button" onClick={onAddOrder} disabled={busy || Number(session.status) !== SESSION_OPEN}>Quay lại thêm order</button>
+          <button className="danger-btn" type="button" onClick={onConfirm} disabled={busy || !summary}>
+            {busy ? "Đang xử lý..." : "Kết thúc & tạo hóa đơn"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PricingDetails({ assignments }: { assignments: any[] }) {
+  if (!assignments.length) return null;
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {assignments.map((assignment) => {
+        const actual = assignment.actualDurationMinutes ?? assignment.durationMinutes ?? 0;
+        const billable = assignment.billableDurationMinutes ?? assignment.billableMinutes ?? actual;
+        const minimum = assignment.minimumMinutes ?? 0;
+        const block = assignment.billingBlockMinutes ?? 0;
+        const rate = assignment.hourlyRate ?? assignment.hourlyRateSnapshot ?? 0;
+        const reason = billable > actual
+          ? minimum > actual
+            ? `Áp dụng thời gian tối thiểu ${minimum} phút`
+            : `Làm tròn theo block ${block} phút`
+          : null;
+
+        return (
+          <div key={assignment.sessionTableAssignmentId || assignment.assignmentId || `${assignment.tableId}-${assignment.startedAtUtc}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}>
+              <strong>{assignment.tableName || assignment.tableCode || "Bàn"}</strong>
+              <span>{money(Number(rate))}/giờ</span>
+            </div>
+            <div style={{ display: "grid", gap: 3, marginTop: 6, color: "#475569", fontSize: 13 }}>
+              <span>Thực tế: {actual} phút · Tính tiền: {billable} phút</span>
+              <span>Minimum: {minimum} phút · Block: {block} phút</span>
+              {assignment.pricingPlanName ? <span>Bảng giá: {assignment.pricingPlanName}</span> : null}
+              {reason ? <span style={{ color: "#b45309", fontWeight: 700 }}>{reason}</span> : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SummaryModal({ summary, onClose }: { summary: any; onClose: () => void }) {
   const data = summary?.data || summary;
   const timeAmount = data?.timeSubtotalAmount ?? data?.TimeSubtotalAmount ?? 0;
   const orderAmount = data?.orderSubtotalAmount ?? data?.productSubtotalAmount ?? data?.ProductSubtotalAmount ?? 0;
-  const total = data?.grandTotalAmount ?? data?.subtotalAmount ?? data?.SubtotalAmount ?? timeAmount + orderAmount;
+  const discountAmount = data?.discountAmount ?? data?.DiscountAmount ?? 0;
+  const total = data?.grandTotalAmount ?? data?.subtotalAmount ?? data?.SubtotalAmount ?? Math.max(0, timeAmount + orderAmount - discountAmount);
   const duration = data?.totalDurationMinutes ?? data?.currentDurationMinutes ?? data?.TotalDurationMinutes;
 
   return (
@@ -457,8 +564,10 @@ function SummaryModal({ summary, onClose }: { summary: any; onClose: () => void 
         <div style={{ display: "grid", gap: 12 }}>
           <SummaryRow label="Ma phien" value={data?.sessionCode || data?.SessionCode || data?.sessionId || data?.SessionId || "-"} />
           <SummaryRow label="Thoi luong" value={`${duration ?? "-"} phut`} />
+          <PricingDetails assignments={data?.assignments || data?.Assignments || []} />
           <SummaryRow label="Tien gio" value={money(Number(timeAmount))} />
           <SummaryRow label="Tien san pham/order" value={money(Number(orderAmount))} />
+          <SummaryRow label="Giam gia" value={`-${money(Number(discountAmount))}`} />
           <SummaryRow label="Hoa don" value={data?.invoiceCode || data?.InvoiceCode || (data?.invoiceGenerated ? "Da tao" : "Chua tao")} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid #e2e8f0", marginTop: 4, paddingTop: 16 }}>
             <span style={{ color: "#0f172a", fontWeight: 700 }}>Tong tien</span>

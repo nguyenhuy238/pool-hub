@@ -443,9 +443,7 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
                 }
                 else
                 {
-                    decimal fallbackRate = 50000;
-                    assignment.HourlyRateSnapshot = fallbackRate;
-                    assignment.Amount = ((decimal)durationMinutes / 60m) * fallbackRate;
+                    throw new ConflictException($"No active pricing rule found for table {table.TableCode} at assignment start time.");
                 }
             }
         }
@@ -462,7 +460,7 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
 
         if (!activePlans.Any()) return null;
 
-        var planIds = activePlans.OrderBy(p => p.IsDefault).Select(p => p.PricingPlanId).ToList();
+        var planIds = activePlans.OrderByDescending(p => p.IsDefault).Select(p => p.PricingPlanId).ToList();
 
         foreach (var planId in planIds)
         {

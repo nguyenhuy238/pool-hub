@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { invoiceApi, sessionApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
 import { money, dateTime } from "@/lib/status";
@@ -10,6 +11,7 @@ import type { Invoice, PaymentMethod, Session } from "@/types";
 
 export default function InvoicesPage() {
   const toast = useToast();
+  const router = useRouter();
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
@@ -51,9 +53,16 @@ export default function InvoicesPage() {
     return { value: String(s.sessionId), label: labelStr };
   });
 
-  async function loadDetail(id: number) {
+  const loadDetail = useCallback(async (id: number) => {
     setInvoice(await invoiceApi.detail(id));
-  }
+  }, []);
+
+  useEffect(() => {
+    const invoiceId = Number(new URLSearchParams(window.location.search).get("invoiceId"));
+    if (!Number.isFinite(invoiceId) || invoiceId <= 0) return;
+
+    loadDetail(invoiceId).catch((err) => toast(err.message || "Không tải được hóa đơn.", "error"));
+  }, [loadDetail, toast]);
 
   async function pay() {
     if (!invoice) return;
@@ -61,11 +70,15 @@ export default function InvoicesPage() {
       toast("Vui lòng chọn phương thức thanh toán.", "error");
       return;
     }
-    await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: invoice.grandTotalAmount || 0 })
-      .then(() => toast("Đã ghi nhận thanh toán.", "success"))
-      .catch((err) => toast(err.message, "error"));
-    await loadDetail(invoice.invoiceId);
-    reload();
+    try {
+      await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: invoice.grandTotalAmount || 0 });
+      toast("Đã ghi nhận thanh toán.", "success");
+      await reload();
+      router.push("/operation/floor-map");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể ghi nhận thanh toán.", "error");
+      await loadDetail(invoice.invoiceId);
+    }
   }
 
   async function cancelInvoice() {

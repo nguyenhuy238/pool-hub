@@ -19,7 +19,12 @@ public class SessionTimeChargeItemDto
     public DateTime StartedAtUtc { get; set; }
     public DateTime? EndedAtUtc { get; set; }
     public int DurationMinutes { get; set; }
+    public int ActualDurationMinutes { get; set; }
     public int? BillableMinutes { get; set; }
     public decimal HourlyRateSnapshot { get; set; }
+    public decimal HourlyRate { get; set; }
+    public int MinimumMinutes { get; set; }
+    public int BillingBlockMinutes { get; set; }
+    public string? PricingPlanName { get; set; }
     public decimal Amount { get; set; }
 }
