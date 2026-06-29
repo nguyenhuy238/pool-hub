@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, toQuery } from "@/lib/api/client";
 import { vietnamDateTimeToUtcIso } from "@/lib/dateTime";
 import type { Booking } from "@/types";
 
@@ -38,6 +38,8 @@ export interface PublicBookingSlot {
 }
 
 export const publicBookingApi = {
+  availability: (tableId: number, startTimeUtc: string, endTimeUtc: string) =>
+    apiFetch<Array<{ tableId: number }>>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`, { skipAuth: true }),
   create: (request: PublicBookingRequest) => apiFetch<Booking>("/api/bookings/public", {
     method: "POST",
     body: JSON.stringify(toBookingPayload(request)),

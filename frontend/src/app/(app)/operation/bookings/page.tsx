@@ -15,17 +15,10 @@ const BOOKING_PENDING = 1;
 const BOOKING_CONFIRMED = 2;
 const BOOKING_CANCELLED = 3;
 const BOOKING_COMPLETED = 4;
+const BOOKING_NO_SHOW = 5;
 
 type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number };
 type TableTypeOption = { tableTypeId: number; name?: string };
-
-function isExpired(row: Record<string, unknown>) {
-  return false;
-}
-
-function effectiveStatus(row: Record<string, unknown>) {
-  return Number(row.status);
-}
 
 function hasStartedSession(row: Record<string, unknown>) {
   return Boolean(row.sessionId || row.hasSession);
@@ -96,6 +89,7 @@ export default function BookingsPage() {
               <option value="2">Đã xác nhận</option>
               <option value="3">Đã hủy</option>
               <option value="4">Hoàn thành</option>
+              <option value="5">Khách không đến</option>
             </select>
           </div>
         }
@@ -156,15 +150,19 @@ export default function BookingsPage() {
           { key: "startTimeUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startTimeUtc)) },
           { key: "endTimeUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endTimeUtc)) },
           { key: "status", label: "Trạng thái", render: (row) => {
-            const statusValue = effectiveStatus(row);
-            return <Badge tone={statusValue === 3 ? "red" : statusValue === 2 ? "green" : statusValue === 4 ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
+            const statusValue = Number(row.status);
+            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
           } }
         ]}
         actions={(row) => {
-          const statusValue = effectiveStatus(row);
-          const canConfirm = statusValue === BOOKING_PENDING;
-          const canEdit = (statusValue === BOOKING_PENDING || statusValue === BOOKING_CONFIRMED) && !hasStartedSession(row);
-          const canCancel = (statusValue === BOOKING_PENDING || statusValue === BOOKING_CONFIRMED) && !hasStartedSession(row);
+          const statusValue = Number(row.status);
+          const now = Date.now();
+          const pendingStillValid = statusValue === BOOKING_PENDING && new Date(String(row.startTimeUtc)).getTime() > now;
+          const confirmedStillValid = statusValue === BOOKING_CONFIRMED && new Date(String(row.endTimeUtc)).getTime() > now;
+          const hasSession = hasStartedSession(row);
+          const canConfirm = pendingStillValid && !hasSession;
+          const canEdit = (pendingStillValid || confirmedStillValid) && !hasSession;
+          const canCancel = (pendingStillValid || confirmedStillValid) && !hasSession;
           return (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", minWidth: 240 }}>
               {canConfirm && (

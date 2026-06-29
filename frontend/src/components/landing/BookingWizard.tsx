@@ -2,17 +2,12 @@ import React, { useState, useEffect } from 'react';
 import './BookingWizard.css';
 import { availabilityApi, type LandingAvailability, type LandingPricing } from "@/lib/api/availabilityApi";
 import { publicBookingApi, type PublicBookingSlot } from "@/lib/api/publicBookingApi";
-import { addDaysToVietnamDateInput, getCurrentVietnamHourOfDay, getVietnamDateInputValue, getVietnamDayOfWeek, getVietnamHourOfDay, vietnamDateTimeToUtcIso } from "@/lib/dateTime";
+import { addDaysToVietnamDateInput, getVietnamDateInputValue, getVietnamDayOfWeek } from "@/lib/dateTime";
+import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso, validateSlotRange } from "@/lib/timeSlots";
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
+import { OvernightToggle } from "@/components/OvernightToggle";
 import type { VenueTableLayoutItem } from '@/types';
-const START_HOUR = 7;
-const TOTAL_SLOTS = (24 - START_HOUR) * 2;
-const TIME_SLOTS = Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
-  const totalMins = START_HOUR * 60 + i * 30;
-  return `${Math.floor(totalMins / 60).toString().padStart(2, '0')}:${(totalMins % 60).toString().padStart(2, '0')}`;
-});
-
 function getTableTypeColors(name: string) {
   const n = name.toLowerCase();
   if (n.includes('vip')) return { color: '#8b5cf6', background: '#ede9fe' };
@@ -38,10 +33,14 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const [selectedTable, setSelectedTable] = useState<VenueTableLayoutItem | null>(null);
   
   const [bookingDate, setBookingDate] = useState(getVietnamDateInputValue());
+  const [overnightEnabled, setOvernightEnabled] = useState(false);
+  const timeSlots = React.useMemo(() => generateBookingSlots({ startDate: bookingDate, overnightEnabled }), [bookingDate, overnightEnabled]);
   const [selectedSlotIndexes, setSelectedSlotIndexes] = useState<number[]>([]);
   const [bookedSlots, setBookedSlots] = useState<Set<number>>(new Set());
   const [pastSlots, setPastSlots] = useState<Set<number>>(new Set());
   const [loadingBookings, setLoadingBookings] = useState(false);
+  const [checkingRange, setCheckingRange] = useState(false);
+  const [rangeConflict, setRangeConflict] = useState(false);
   
   const [customerInfo, setCustomerInfo] = useState({
     customerName: '',
@@ -77,32 +76,25 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     }
     // fetchExistingBookings intentionally follows the selected table/date lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable, bookingDate]);
+  }, [selectedTable, bookingDate, overnightEnabled]);
 
   const fetchExistingBookings = async () => {
     if (!selectedTable) return;
     setLoadingBookings(true);
     try {
-      const dataArray: PublicBookingSlot[] = await publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate);
+      const requests = [publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate)];
+      if (overnightEnabled) requests.push(publicBookingApi.getPublicCalendar(selectedTable.tableId, addDaysToVietnamDateInput(bookingDate, 1)));
+      const dataArray: PublicBookingSlot[] = (await Promise.all(requests)).flat();
       
       const booked = new Set<number>();
       dataArray.forEach((b) => {
         if (b.status === 3) return;
-        const start = new Date(b.startTimeUtc);
-        const end = new Date(b.endTimeUtc);
-        const targetStart = new Date(vietnamDateTimeToUtcIso(bookingDate, "00:00"));
-        const targetEnd = new Date(vietnamDateTimeToUtcIso(bookingDate, "23:59:59"));
-
-        let startHours = getVietnamHourOfDay(b.startTimeUtc);
-        let endHours = getVietnamHourOfDay(b.endTimeUtc);
-
-        if (start < targetStart) startHours = 0;
-        if (end > targetEnd || end.getTime() === targetEnd.getTime()) endHours = 24;
-        else if (endHours === 0 && end.getMinutes() === 0 && end > start) endHours = 24;
-
-        for (let i = 0; i < TOTAL_SLOTS; i++) {
-          const slotHour = START_HOUR + i * 0.5;
-          if (slotHour >= startHours && slotHour < endHours) {
+        const bookingStart = new Date(b.startTimeUtc).getTime();
+        const bookingEnd = new Date(b.endTimeUtc).getTime();
+        for (let i = 0; i < timeSlots.length; i++) {
+          const slotStart = new Date(slotToUtcIso(timeSlots[i])).getTime();
+          const slotEnd = slotStart + 30 * 60 * 1000;
+          if (slotStart < bookingEnd && bookingStart < slotEnd) {
             booked.add(i);
           }
         }
@@ -119,26 +111,18 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
 
   useEffect(() => {
     const calculatePast = () => {
-      const todayStr = getVietnamDateInputValue();
       const past = new Set<number>();
-      
-      if (bookingDate < todayStr) {
-        for (let i = 0; i < TOTAL_SLOTS; i++) past.add(i);
-      } else if (bookingDate === todayStr) {
-        const currentHour = getCurrentVietnamHourOfDay();
-        for (let i = 0; i < TOTAL_SLOTS; i++) {
-          if (START_HOUR + i * 0.5 <= currentHour) {
-            past.add(i);
-          }
-        }
-      }
+      const now = Date.now();
+      timeSlots.forEach((slot, index) => {
+        if (new Date(slotToUtcIso(slot)).getTime() <= now) past.add(index);
+      });
       setPastSlots(past);
     };
     
     calculatePast();
     const timer = setInterval(calculatePast, 60000);
     return () => clearInterval(timer);
-  }, [bookingDate]);
+  }, [bookingDate, timeSlots]);
 
   const handleNextStep1 = () => {
     if (!selectedTable) {
@@ -149,8 +133,9 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   };
 
   const handleNextStep2 = () => {
-    if (selectedSlotIndexes.length !== 2 || selectedSlotIndexes[1] <= selectedSlotIndexes[0]) {
-      toast("Vui lòng chọn khung giờ.", "error");
+    const validation = validateSlotRange(timeSlots[selectedSlotIndexes[0]], timeSlots[selectedSlotIndexes[1]], overnightEnabled);
+    if (!validation.valid) {
+      toast(validation.message, "error");
       return;
     }
     setStep(3);
@@ -192,6 +177,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     setSaving(true);
     try {
       const { startTime, durationHours } = getCalculatedTimeAndDuration();
+      const startSlot = timeSlots[selectedSlotIndexes[0]];
+      const endSlot = timeSlots[selectedSlotIndexes[1]];
+      const available = await publicBookingApi.availability(selectedTable!.tableId, slotToUtcIso(startSlot), slotToUtcIso(endSlot));
+      if (!available.some((table) => Number(table.tableId) === selectedTable!.tableId)) {
+        toast("Bàn đã có booking hoặc phiên chơi trong khung giờ này.", "error");
+        return;
+      }
       await publicBookingApi.create({
         customerName: customerInfo.customerName.trim(),
         phoneNumber: customerInfo.phoneNumber.trim(),
@@ -264,7 +256,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   };
 
   const handleSlotClick = (index: number) => {
-    if (bookedSlots.has(index) || pastSlots.has(index)) return;
+    if (pastSlots.has(index) || (bookedSlots.has(index) && selectedSlotIndexes.length !== 1)) return;
     
     if (selectedSlotIndexes.length === 0 || selectedSlotIndexes.length === 2) {
       setSelectedSlotIndexes([index]);
@@ -273,7 +265,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
       const end = index;
       
       if (end <= start) {
-        setSelectedSlotIndexes([end]);
+        toast("Giờ kết thúc phải sau giờ bắt đầu. Nếu muốn đặt qua đêm, hãy bật Đặt qua đêm.", "error");
       } else {
         let hasBooked = false;
         for (let i = start; i < end; i++) {
@@ -318,13 +310,18 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     
     if (rulesForTableType.length === 0) return 0;
     
-    const dayOfWeek = getVietnamDayOfWeek(bookingDate);
-    const timeStr = TIME_SLOTS[index] + ":00";
+    const slot = timeSlots[index];
+    if (!slot) return 0;
+    const dayOfWeek = getVietnamDayOfWeek(slot.localDate);
+    const timeStr = `${slot.time}:00`;
     
     let rule = rulesForTableType.find(r => {
       if (!r.startTime || !r.endTime) return false;
       const ruleDay = r.dayOfWeek !== undefined ? r.dayOfWeek : -1;
-      return (ruleDay === dayOfWeek || ruleDay === -1) && r.startTime <= timeStr && r.endTime > timeStr;
+      const matchesTime = r.startTime <= r.endTime
+        ? r.startTime <= timeStr && r.endTime > timeStr
+        : r.startTime <= timeStr || r.endTime > timeStr;
+      return (ruleDay === dayOfWeek || ruleDay === -1) && matchesTime;
     });
     
     if (!rule) {
@@ -341,21 +338,44 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const estimatedPrice = React.useMemo(() => {
     if (selectedSlotIndexes.length !== 2 || !selectedTable) return 0;
     const s = selectedSlotIndexes[0];
-    const e = selectedSlotIndexes[1] - 1;
+    const e = selectedSlotIndexes[1];
     let total = 0;
-    for (let i = s; i <= e; i++) total += getSlotPrice(i);
+    for (let i = s; i < e; i++) total += getSlotPrice(i);
     return total;
-  }, [selectedSlotIndexes, selectedTable, pricing, bookingDate]);
+  }, [selectedSlotIndexes, selectedTable, pricing, bookingDate, timeSlots]);
 
   const getCalculatedTimeAndDuration = () => {
     if (selectedSlotIndexes.length !== 2) return { startTime: "00:00", durationHours: 0 };
-    const s = selectedSlotIndexes[0];
-    const e = selectedSlotIndexes[1];
-    const startHourNum = START_HOUR + s * 0.5;
-    const endHourNum = START_HOUR + e * 0.5;
-    const durationHours = endHourNum - startHourNum;
-    return { startTime: TIME_SLOTS[s], durationHours };
+    const startSlot = timeSlots[selectedSlotIndexes[0]];
+    const endSlot = timeSlots[selectedSlotIndexes[1]];
+    return { startTime: startSlot.time, durationHours: calculateDurationMinutes(startSlot, endSlot) / 60 };
   };
+
+  const selectedStartSlot = timeSlots[selectedSlotIndexes[0]];
+  const selectedEndSlot = timeSlots[selectedSlotIndexes[1]];
+  const selectedDurationMinutes = calculateDurationMinutes(selectedStartSlot, selectedEndSlot);
+
+  useEffect(() => {
+    if (!selectedTable || !selectedStartSlot || !selectedEndSlot) {
+      setRangeConflict(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingRange(true);
+    publicBookingApi.availability(selectedTable.tableId, slotToUtcIso(selectedStartSlot), slotToUtcIso(selectedEndSlot))
+      .then((available) => { if (!cancelled) setRangeConflict(!available.some((table) => Number(table.tableId) === selectedTable.tableId)); })
+      .catch(() => { if (!cancelled) setRangeConflict(true); })
+      .finally(() => { if (!cancelled) setCheckingRange(false); });
+    return () => { cancelled = true; };
+  }, [selectedEndSlot, selectedStartSlot, selectedTable]);
+  const nightRules = (pricing?.rules || []).filter((rule) => {
+    if (selectedTable && rule.tableTypeId !== selectedTable.tableTypeId) return false;
+    const planName = pricing?.plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name.toLowerCase() || "";
+    const start = rule.startTime?.slice(0, 5) || "";
+    const end = rule.endTime?.slice(0, 5) || "";
+    return planName.includes("đêm") || planName.includes("night") || planName.includes("overnight") ||
+      Boolean(start && end && (start > end || start >= "22:00" || end <= "06:00"));
+  });
 
   const renderStep2 = () => {
     return (
@@ -372,6 +392,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
                      setSelectedSlotIndexes([]);
                    }} />
           </label>
+          <OvernightToggle checked={overnightEnabled} onChange={(checked) => { setOvernightEnabled(checked); setSelectedSlotIndexes((current) => current.length ? [current[0]] : []); }} />
         </div>
 
         <div className="bw-timeline-container" style={{ marginBottom: '32px' }}>
@@ -388,9 +409,9 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
             <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>Đang tải lịch đặt...</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(65px, 1fr))', gap: '6px' }}>
-              {TIME_SLOTS.map((timeStr, index) => {
+              {timeSlots.map((slot, index) => {
                 const cls = getSlotClass(index);
-                const isDisabled = cls === "disabled" || cls === "booked";
+                const isDisabled = cls === "disabled" || (cls === "booked" && selectedSlotIndexes.length !== 1);
                 const price = getSlotPrice(index);
                 return (
                   <button 
@@ -406,7 +427,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
                       color: cls === 'disabled' ? '#9ca3af' : cls === 'booked' ? '#b91c1c' : '#111827'
                     }}
                   >
-                    <span style={{ fontSize: '13px', fontWeight: cls.includes('selected') ? 600 : 400 }}>{timeStr}</span>
+                    <span style={{ fontSize: '13px', fontWeight: cls.includes('selected') ? 600 : 400 }}>{slot.displayLabel}</span>
                     {!isDisabled && price > 0 && (
                       <span style={{ fontSize: '11px', color: cls.includes('selected') ? '#2563eb' : '#6b7280' }}>{(price / 1000)}k</span>
                     )}
@@ -415,6 +436,9 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
               })}
             </div>
           )}
+          {overnightEnabled ? <p style={{ fontSize: 13, color: "#6b7280" }}>(+1) nghĩa là ngày hôm sau.</p> : null}
+          {selectedEndSlot?.dayOffset === 1 ? <div className="inline-note">Bạn đang chọn ca qua đêm.<br />Thời gian dự kiến: {formatSlotDateTime(selectedStartSlot)} → {formatSlotDateTime(selectedEndSlot)}.<br />Thời lượng: {(selectedDurationMinutes / 60).toLocaleString("vi-VN")} giờ.</div> : null}
+          {overnightEnabled ? <div className="inline-note"><strong>Gói đêm áp dụng</strong><br />{nightRules.length ? nightRules.map((rule) => `${pricing?.plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name || "Bảng giá"}: ${rule.startTime?.slice(0, 5)}–${rule.endTime?.slice(0, 5)} (${rule.hourlyRate.toLocaleString("vi-VN")} đ/giờ)`).join("; ") : "Chưa có gói đêm được cấu hình. Giá tạm tính theo bảng giá hiện tại."}</div> : null}
         </div>
 
         <div className="bw-pricing-box">
@@ -422,10 +446,12 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           <div className="bw-price-amount">{estimatedPrice.toLocaleString('vi-VN')} đ</div>
           <p className="bw-price-note">* Giá ước tính dựa trên bảng giá. Giá thực tế tính theo thời gian sử dụng khi kết thúc.</p>
         </div>
+        {checkingRange ? <div className="inline-note">Đang kiểm tra lịch trống...</div> : null}
+        {rangeConflict ? <div className="inline-alert error">Bàn đã có booking hoặc phiên chơi trong khung giờ này.</div> : null}
 
         <div className="bw-actions">
           <button className="outline-btn" onClick={() => setStep(1)}>Quay lại</button>
-          <button className="primary-btn" onClick={handleNextStep2}>Tiếp tục</button>
+          <button className="primary-btn" onClick={handleNextStep2} disabled={checkingRange || rangeConflict || selectedSlotIndexes.length !== 2}>Tiếp tục</button>
         </div>
       </div>
     );

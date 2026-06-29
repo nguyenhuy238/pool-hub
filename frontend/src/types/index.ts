@@ -101,6 +101,7 @@ export type Booking = {
   endTimeUtc: string;
   numberOfGuests?: number;
   note?: string;
+  hasSession?: boolean;
   status: number;
 };
 
@@ -122,6 +123,7 @@ export type BookingCalendarItem = {
   note?: string;
   confirmedAtUtc?: string;
   cancelledAtUtc?: string;
+  hasSession?: boolean;
 };
 
 export type Session = {
