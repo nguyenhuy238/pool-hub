@@ -8,6 +8,7 @@ import type { Booking } from '@/types';
 import { usePOS } from '../POSContext';
 
 function BookingItem({ booking }: { booking: Booking }) {
+  const { triggerRefresh } = usePOS();
   const [cardState, setCardState] = useState<"NORMAL" | "WARNING" | "LATE">("NORMAL");
   const [mounted, setMounted] = useState(false);
 
@@ -15,7 +16,8 @@ function BookingItem({ booking }: { booking: Booking }) {
     setMounted(true);
     const checkTime = () => {
       const now = new Date().getTime();
-      const start = new Date(booking.startTimeUtc).getTime();
+      const utcStr = booking.startTimeUtc + (booking.startTimeUtc.endsWith('Z') ? '' : 'Z');
+      const start = new Date(utcStr).getTime();
       const diffMins = (start - now) / 60000;
 
       if (diffMins < 0) {
@@ -35,6 +37,8 @@ function BookingItem({ booking }: { booking: Booking }) {
   const stateClass = cardState === "LATE" ? styles.bookingLate 
                    : cardState === "WARNING" ? styles.bookingWarning 
                    : styles.bookingNormal;
+                   
+  const startTimeObj = new Date(booking.startTimeUtc + (booking.startTimeUtc.endsWith('Z') ? '' : 'Z'));
 
   return (
     <div className={`${styles.bookingCard} ${stateClass}`}>
@@ -43,7 +47,7 @@ function BookingItem({ booking }: { booking: Booking }) {
           <Clock size={18} />
           {mounted ? (
             <span className={styles.timeText}>
-              {new Date(booking.startTimeUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {startTimeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           ) : (
             <span className={styles.timeText}>--:--</span>
@@ -59,8 +63,27 @@ function BookingItem({ booking }: { booking: Booking }) {
         <span>{booking.customerName || 'Khách vãng lai'}</span>
       </div>
       
-      <div className={styles.depositText}>
-        Số khách: {booking.numberOfGuests || 1}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+        <div className={styles.depositText}>
+          Số khách: {booking.numberOfGuests || 1}
+        </div>
+        <button 
+          onClick={async () => {
+            if (confirm(`Nhận bàn cho khách: ${booking.customerName || 'Khách'}?`)) {
+              try {
+                await bookingApi.startSession(booking.bookingId, booking.tableId);
+                triggerRefresh();
+              } catch (err) {
+                console.error("Lỗi khi nhận bàn", err);
+                alert("Không thể nhận bàn. Vui lòng thử lại.");
+              }
+            }
+          }}
+          className="primary-btn" 
+          style={{ padding: '0.25rem 0.75rem', fontSize: '0.85rem' }}
+        >
+          Nhận bàn
+        </button>
       </div>
     </div>
   );
@@ -79,12 +102,15 @@ export function BookingQueueColumn() {
         const res = await bookingApi.list({ Status: 2 });
         const items = Array.isArray(res) ? res : (res as any).items || [];
         
-        // Filter only today's bookings
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const todaysBookings = items.filter((b: Booking) => b.startTimeUtc.startsWith(todayStr));
+        // Filter only today's bookings in LOCAL time
+        const today = new Date();
+        const todaysBookings = items.filter((b: Booking) => {
+           const bDate = new Date(b.startTimeUtc + (b.startTimeUtc.endsWith('Z') ? '' : 'Z'));
+           return bDate.getDate() === today.getDate() && bDate.getMonth() === today.getMonth() && bDate.getFullYear() === today.getFullYear();
+        });
         
         // Sort by start time
-        todaysBookings.sort((a: Booking, b: Booking) => new Date(a.startTimeUtc).getTime() - new Date(b.startTimeUtc).getTime());
+        todaysBookings.sort((a: Booking, b: Booking) => new Date(a.startTimeUtc + (a.startTimeUtc.endsWith('Z') ? '' : 'Z')).getTime() - new Date(b.startTimeUtc + (b.startTimeUtc.endsWith('Z') ? '' : 'Z')).getTime());
         setBookings(todaysBookings);
       } catch (err) {
         console.error("Failed to fetch bookings", err);

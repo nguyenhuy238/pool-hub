@@ -1,5 +1,6 @@
 using PoolHub.API.Extensions;
 using PoolHub.API.Middlewares;
+using PoolHub.API.Hubs;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Infrastructure.Data.Seed;
 using Microsoft.AspNetCore.Http.Features;
@@ -74,6 +75,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<PosHub>("/hubs/pos");
 
 var disableSeed = builder.Configuration.GetValue<bool>("DisableDbSeed") || string.Equals(Environment.GetEnvironmentVariable("DisableDbSeed"), "true", StringComparison.OrdinalIgnoreCase);
 if (!disableSeed && !app.Environment.IsEnvironment("Testing"))

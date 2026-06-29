@@ -166,6 +166,8 @@ public static class ServiceCollectionExtensions
             .BindConfiguration("EmailSettings");
         services.AddHttpContextAccessor();
         services.AddHttpClient();
+        services.AddSignalR();
+        services.AddScoped<IPosNotificationService, PoolHub.API.Services.PosNotificationService>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuthService, AuthService>();
