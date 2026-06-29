@@ -60,7 +60,7 @@ public class VenueService(PoolHubDbContext db) : IVenueService
             .AsNoTracking()
             .Where(b => b.TableId.HasValue &&
                         b.EndTimeUtc > now &&
-                        (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.Confirmed))
+                        b.Status == BookingStatuses.Confirmed)
             .OrderBy(b => b.StartTimeUtc)
             .Select(b => new { b.TableId, b.BookingId, b.BookingCode, b.StartTimeUtc })
             .ToListAsync(ct);

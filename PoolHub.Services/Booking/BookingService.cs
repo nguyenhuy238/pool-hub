@@ -12,7 +12,7 @@ using EntityCustomer = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Booking;
 
-public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger) : IBookingService
+public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService) : IBookingService
 {
     public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
     {
@@ -135,9 +135,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         {
             var table = await db.VenueTables.FindAsync([request.TableId.Value], ct)
                 ?? throw new NotFoundException("Table not found.");
-            if (!table.IsActive || table.OperationalStatus != 1)
+            if (!table.IsActive || table.OperationalStatus == 4 || table.OperationalStatus == 5)
             {
-                throw new BusinessRuleException("Table is not available for booking.");
+                throw new BusinessRuleException($"Table is not available for booking (Status: {table.OperationalStatus}).");
             }
 
             var isConflict = await db.Bookings.AnyAsync(b => 
@@ -150,17 +150,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             {
                 throw new ConflictException("Table is already booked and confirmed for the selected time.");
             }
-
-            var hasActiveSession = await db.SessionTableAssignments.AnyAsync(a =>
-                a.TableId == request.TableId.Value &&
-                a.EndedAtUtc == null &&
-                db.Sessions.Any(s => s.SessionId == a.SessionId && s.Status == 1), ct);
-            if (hasActiveSession)
-            {
-                throw new ConflictException("Table currently has an active session.");
-            }
         }
-
+        
         var entity = new EntityBooking
         {
             CustomerId = customerId,
@@ -174,6 +165,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         };
         db.Bookings.Add(entity);
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyBookingUpdateAsync((int)entity.BookingId, ct);
+
         return new BookingDto { BookingId = entity.BookingId, BookingCode = entity.BookingCode, CustomerId = entity.CustomerId, TableId = entity.TableId, StartTimeUtc = entity.StartTimeUtc, EndTimeUtc = entity.EndTimeUtc, Status = entity.Status };
     }
 
@@ -225,6 +218,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.UpdatedAtUtc = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
+
         return Map(booking);
     }
 
@@ -240,6 +235,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.ConfirmedByUserId = confirmedByUserId;
         booking.ConfirmedAtUtc ??= DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
+
 
         // Gửi email xác nhận cho khách
         await TrySendBookingConfirmedEmailAsync(booking, ct);
@@ -256,6 +253,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.Status = BookingStatuses.Cancelled;
         booking.CancelledAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
+
 
         // Gửi email thông báo hủy cho khách
         await TrySendBookingCancelledEmailAsync(booking, "Đặt bàn đã bị hủy theo yêu cầu.", ct);
@@ -269,6 +268,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (booking.Status != BookingStatuses.Confirmed) throw new BusinessRuleException("Only Confirmed bookings can be marked NoShow.");
         booking.Status = BookingStatuses.NoShow;
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
         return Map(booking);
     }
 
@@ -278,6 +278,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (booking.Status != BookingStatuses.Confirmed) throw new BusinessRuleException("Only Confirmed bookings can be completed.");
         booking.Status = BookingStatuses.Completed;
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
         return Map(booking);
     }
 
@@ -309,9 +310,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     {
         var table = await db.VenueTables.FindAsync([tableId], ct)
             ?? throw new NotFoundException("Table not found.");
-        if (!table.IsActive || table.OperationalStatus != 1)
+        if (!table.IsActive || table.OperationalStatus == 4 || table.OperationalStatus == 5)
         {
-            throw new BusinessRuleException("Table is not available for booking.");
+            throw new BusinessRuleException($"Table is not available for booking (Status: {table.OperationalStatus}).");
         }
 
         var isConflict = await db.Bookings.AnyAsync(b =>

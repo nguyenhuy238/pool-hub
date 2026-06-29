@@ -11,7 +11,7 @@ using EntityInvoice = PoolHub.Core.Entities.Invoice;
 
 namespace PoolHub.Services.Session;
 
-public class SessionService(PoolHubDbContext db) : ISessionService
+public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService) : ISessionService
 {
     public async Task<PagedResult<SessionDto>> GetSessionsAsync(SessionQueryRequest request, CancellationToken ct)
     {
@@ -366,6 +366,9 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
+        await posNotificationService.NotifyTableUpdateAsync((int)tableId, ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
 
@@ -442,9 +445,12 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         foreach (var assignment in activeAssignments)
         {
             await CalculateAssignmentAmountAsync(assignment, endedAtUtc, ct);
+            await posNotificationService.NotifyTableUpdateAsync((int)assignment.TableId, ct);
         }
 
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
 
@@ -583,6 +589,12 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
         await transaction.CommitAsync(ct);
 
+        foreach (var assignment in activeAssignments)
+        {
+            await posNotificationService.NotifyTableUpdateAsync((int)assignment.TableId, ct);
+        }
+        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+
         return new CloseSessionResponse
         {
             SessionId = session.SessionId,
@@ -666,6 +678,12 @@ public class SessionService(PoolHubDbContext db) : ISessionService
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
+        foreach (var assignment in activeAssignments)
+        {
+            await posNotificationService.NotifyTableUpdateAsync((int)assignment.TableId, ct);
+        }
+        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+
         return new SessionDto
         {
             SessionId = session.SessionId,
@@ -732,6 +750,10 @@ public class SessionService(PoolHubDbContext db) : ISessionService
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+
+        await posNotificationService.NotifyTableUpdateAsync((int)currentAssignment.TableId, ct);
+        await posNotificationService.NotifyTableUpdateAsync((int)newTableId, ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)sessionId, ct);
     }
 
     private async Task<PricingPlanRule?> FindActiveRuleAsync(long tableTypeId, DateTime time, CancellationToken ct)

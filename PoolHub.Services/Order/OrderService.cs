@@ -13,7 +13,7 @@ using EntityOrder = PoolHub.Core.Entities.Order;
 
 namespace PoolHub.Services.Order;
 
-public class OrderService(PoolHubDbContext db) : IOrderService
+public class OrderService(PoolHubDbContext db, IPosNotificationService posNotificationService) : IOrderService
 {
     public async Task<OrderDetailDto> GetOrderByIdAsync(long orderId, CancellationToken ct)
     {
@@ -101,6 +101,8 @@ public class OrderService(PoolHubDbContext db) : IOrderService
         };
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+
         return new OrderDto { OrderId = order.OrderId, SessionId = order.SessionId, Status = order.Status };
     }
 
@@ -150,6 +152,8 @@ public class OrderService(PoolHubDbContext db) : IOrderService
         });
 
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+
     }
 
     public async Task UpdateOrderItemAsync(long orderId, long itemId, int quantity, CancellationToken ct)
@@ -205,6 +209,8 @@ public class OrderService(PoolHubDbContext db) : IOrderService
         });
 
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+
     }
 
     public async Task DeleteOrderItemAsync(long orderId, long itemId, CancellationToken ct)
@@ -236,6 +242,8 @@ public class OrderService(PoolHubDbContext db) : IOrderService
 
         db.OrderItems.Remove(item);
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+
     }
 
     public async Task CancelOrderAsync(long orderId, CancellationToken ct)

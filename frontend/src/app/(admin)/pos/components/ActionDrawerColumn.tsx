@@ -2,10 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { usePOS } from '../POSContext';
-import { X, Receipt, Clock, ArrowRightLeft, Coffee } from 'lucide-react';
+import { X, Receipt, Clock, ArrowRightLeft, Coffee, Plus, Minus, Play } from 'lucide-react';
 import styles from '../pos.module.css';
-import { sessionApi } from '@/lib/api/endpoints';
-import type { Session, SessionTableAssignment } from '@/types';
+import { API_BASE_URL } from '@/lib/api/client';
+import { sessionApi, productApi, orderApi, invoiceApi } from '@/lib/api/endpoints';
+import type { Session, Product, Order, Invoice, PaymentMethod } from '@/types';
+import { Modal } from '@/components/ui';
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -16,47 +18,76 @@ function formatDuration(ms: number) {
 }
 
 export function ActionDrawerColumn() {
-  const { selectedTable, isDrawerOpen, setIsDrawerOpen, setSelectedTable } = usePOS();
+  const { selectedTable, isDrawerOpen, setIsDrawerOpen, setSelectedTable, triggerRefresh } = usePOS();
   const [sessionData, setSessionData] = useState<Session | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [sessionSummary, setSessionSummary] = useState<any>(null);
+  
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [invoiceData, setInvoiceData] = useState<Invoice | null>(null);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<number | "">("");
+  const [processingPayment, setProcessingPayment] = useState(false);
+
+  const [isSessionEndedLocal, setIsSessionEndedLocal] = useState(false);
+  const [generatedInvoiceId, setGeneratedInvoiceId] = useState<number | null>(null);
+
   useEffect(() => {
-    const fetchSession = async () => {
-      if (!selectedTable?.activeSessionId) {
-        setSessionData(null);
-        return;
-      }
-      try {
-        setLoading(true);
-        const res = await sessionApi.detail(selectedTable.activeSessionId);
-        setSessionData(res);
-      } catch (err) {
-        console.error("Failed to fetch session detail", err);
-        setSessionData(null);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Load products once
+    productApi.list().then(res => {
+      const items = Array.isArray(res) ? res : (res as any).items || [];
+      setProducts(items);
+    }).catch(err => console.error("Failed to load products", err));
+  }, []);
 
-    if (isDrawerOpen && selectedTable?.activeSessionId) {
-      fetchSession();
-    }
-  }, [selectedTable, isDrawerOpen]);
-
-  // Timer effect
+  // Sync elapsed time every second
   useEffect(() => {
     if (!sessionData?.startedAtUtc) return;
+    if (isSessionEndedLocal) return; // Stop timer when session ended
+    const startMs = new Date(sessionData.startedAtUtc + "Z").getTime();
     
-    const startMs = new Date(sessionData.startedAtUtc).getTime();
-    setElapsed(Date.now() - startMs);
+    const tick = () => setElapsed(Date.now() - startMs);
+    tick(); // initial tick
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [sessionData?.startedAtUtc, isSessionEndedLocal]);
 
-    const interval = setInterval(() => {
-      setElapsed(Date.now() - new Date(sessionData.startedAtUtc).getTime());
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [sessionData?.startedAtUtc]);
+  const loadSessionDetails = async () => {
+    if (!selectedTable?.activeSessionId) {
+      setSessionData(null);
+      setOrders([]);
+      setSessionSummary(null);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const [session, sessionOrders, summary] = await Promise.all([
+        sessionApi.detail(selectedTable.activeSessionId),
+        orderApi.bySession(selectedTable.activeSessionId),
+        sessionApi.summary(selectedTable.activeSessionId)
+      ]);
+      setSessionData(session);
+      setOrders(sessionOrders as Order[]);
+      setSessionSummary(summary);
+    } catch (err) {
+      console.error("Failed to load session details", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isDrawerOpen && selectedTable) {
+      setIsSessionEndedLocal(false);
+      setGeneratedInvoiceId(null);
+      loadSessionDetails();
+    }
+  }, [isDrawerOpen, selectedTable]);
 
   if (!isDrawerOpen || !selectedTable) {
     return (
@@ -77,16 +108,127 @@ export function ActionDrawerColumn() {
     setSelectedTable(null);
   };
 
-  // Safe cast for assignment amount since types might not fully cover it.
-  const assignment = sessionData?.assignments?.find(a => a.tableId === selectedTable.tableId);
-  const timeAmount = assignment?.amount || 0;
-  
-  // Fake F&B total for now if order is not attached to Session type.
-  // In real implementation, we'd fetch orderApi.bySession(sessionId)
-  const fbAmount = 0; 
-  const deposit = 0; // If booking is attached, could be deposit
-  
-  const finalTotal = timeAmount + fbAmount - deposit;
+  const handleStartSession = async () => {
+    try {
+      await sessionApi.start({ tableId: selectedTable.tableId });
+      triggerRefresh();
+    } catch (err) {
+      console.error("Lỗi khi mở bàn", err);
+      alert("Không thể mở bàn. Vui lòng thử lại.");
+    }
+  };
+
+  const handleOrderProduct = async (product: Product) => {
+    if (!selectedTable.activeSessionId) {
+      alert("Vui lòng Mở Bàn trước khi gọi đồ!");
+      return;
+    }
+    if (!sessionData?.sessionId) return;
+    try {
+      let activeOrder = orders[0];
+      if (!activeOrder) {
+        // Create order first
+        activeOrder = await orderApi.create(sessionData.sessionId);
+      }
+      await orderApi.addItem(activeOrder.orderId!, { productId: product.productId, quantity: 1 });
+      // Reload session details
+      loadSessionDetails();
+    } catch (err) {
+      console.error("Failed to order product", err);
+      alert("Lỗi khi thêm món!");
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionData?.sessionId) return;
+    if (confirm(`Xác nhận kết thúc phiên chơi cho ${selectedTable.tableName}?`)) {
+      try {
+        setProcessingPayment(true);
+        const res = await sessionApi.end(sessionData.sessionId);
+        
+        let invId = res?.invoiceId;
+        if (!invId) {
+           const generated = await invoiceApi.generate(sessionData.sessionId);
+           invId = generated.invoiceId;
+        }
+        
+        setGeneratedInvoiceId(invId);
+        setIsSessionEndedLocal(true);
+        // Do NOT triggerRefresh here so that we keep the active session view
+      } catch (err) {
+        console.error("Failed to end session", err);
+        alert("Lỗi khi kết thúc phiên!");
+      } finally {
+        setProcessingPayment(false);
+      }
+    }
+  };
+
+  const handleCheckout = async () => {
+    if (!generatedInvoiceId) return;
+    try {
+      setProcessingPayment(true);
+      
+      const [inv, methodsRes] = await Promise.all([
+         invoiceApi.detail(generatedInvoiceId),
+         invoiceApi.paymentMethods()
+      ]);
+      
+      const methods = Array.isArray(methodsRes) ? methodsRes : ((methodsRes as any).items || []);
+      
+      setInvoiceData(inv);
+      setPaymentMethods(methods as PaymentMethod[]);
+      if (methods && methods.length > 0) {
+         setSelectedPaymentMethod(methods[0].paymentMethodId);
+      }
+      setCheckoutModalOpen(true);
+    } catch (err) {
+      console.error("Failed to open checkout", err);
+      alert("Lỗi tải thông tin thanh toán!");
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!invoiceData) return;
+    if (!selectedPaymentMethod) {
+      alert("Vui lòng chọn phương thức thanh toán.");
+      return;
+    }
+    
+    try {
+      setProcessingPayment(true);
+      await invoiceApi.pay({
+        invoiceId: invoiceData.invoiceId,
+        paymentMethodId: Number(selectedPaymentMethod),
+        amount: invoiceData.grandTotalAmount || 0
+      });
+      alert("Thanh toán thành công!");
+      setCheckoutModalOpen(false);
+      triggerRefresh();
+      closeDrawer();
+    } catch (err) {
+      console.error("Payment failed", err);
+      alert("Lỗi khi xác nhận thanh toán!");
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  let calculatedFbAmount = 0;
+  if (orders.length > 0 && orders[0].items) {
+    calculatedFbAmount = orders[0].items.reduce((sum, item) => sum + (item.lineTotalAmount || (item.unitPriceSnapshot || 0) * item.quantity), 0);
+  }
+
+  const timeAmount = sessionSummary?.timeSubtotalAmount || sessionSummary?.TimeSubtotalAmount || 0;
+  const fbAmount = sessionSummary?.productSubtotalAmount || sessionSummary?.ProductSubtotalAmount || sessionSummary?.orderSubtotalAmount || calculatedFbAmount; 
+  const deposit = sessionSummary?.depositAmount || sessionSummary?.DepositAmount || 0;
+  const finalTotal = (sessionSummary?.totalAmount || sessionSummary?.grandTotalAmount) 
+    ? (sessionSummary.totalAmount || sessionSummary.grandTotalAmount) 
+    : (timeAmount + fbAmount - deposit);
+
+  const isEmpty = !selectedTable.activeSessionId;
 
   return (
     <div className={styles.drawerColumn}>
@@ -94,7 +236,7 @@ export function ActionDrawerColumn() {
         <div>
           <h2 className={styles.drawerHeaderTitle}>{selectedTable.tableName}</h2>
           <div className={styles.drawerTimer}>
-            {loading ? "Đang tải..." : formatDuration(elapsed)}
+            {isEmpty ? "Trạng thái: Chưa mở" : loading ? "Đang tải..." : formatDuration(elapsed)}
           </div>
         </div>
         <button onClick={closeDrawer} className={styles.closeBtn}>
@@ -105,25 +247,73 @@ export function ActionDrawerColumn() {
       <div className={styles.drawerBody}>
         
         {/* Quick F&B Grid */}
-        <div>
+        <div style={{ opacity: isEmpty ? 0.5 : 1 }}>
           <h3 className={styles.sectionTitle}>
-            <Coffee size={16} /> Menu Gọi Nhanh
+            <Coffee size={16} /> Menu Gọi Nhanh {isEmpty && <span style={{fontSize: '0.8rem', color: '#ef4444', marginLeft: '8px'}}>(Cần mở bàn)</span>}
           </h3>
           <div className={styles.fbGrid}>
-            <button className="primary-btn" style={{ padding: '0.75rem', background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1' }}>Bia Tiger</button>
-            <button className="primary-btn" style={{ padding: '0.75rem', background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1' }}>Redbull</button>
-            <button className="primary-btn" style={{ padding: '0.75rem', background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1' }}>Nước Suối</button>
-            <button className="primary-btn" style={{ padding: '0.75rem', background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1' }}>Thuốc Lá</button>
+            {products.slice(0, 8).map(p => (
+              <button 
+                key={p.productId}
+                onClick={() => handleOrderProduct(p)}
+                className="primary-btn" 
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0.5rem', background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+              >
+                <span>{p.name}</span>
+                <span style={{color: '#64748b', fontSize: '0.8rem', marginTop: '2px'}}>{(p.unitPrice || 0).toLocaleString()}đ</span>
+              </button>
+            ))}
           </div>
         </div>
 
+        {/* Ordered Items */}
+        {!isEmpty && orders.length > 0 && orders[0].items && orders[0].items.length > 0 && (
+          <div style={{ marginTop: '20px' }}>
+            <h3 className={styles.sectionTitle} style={{ marginBottom: '8px' }}>
+              Món Đã Gọi
+            </h3>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.9rem' }}>
+              {Object.values(
+                orders[0].items.reduce((acc, item) => {
+                  const key = item.productId;
+                  if (!acc[key]) {
+                    acc[key] = { ...item };
+                  } else {
+                    acc[key].quantity += item.quantity;
+                    const price = item.lineTotalAmount || ((item.unitPriceSnapshot || 0) * item.quantity);
+                    acc[key].lineTotalAmount = (acc[key].lineTotalAmount || ((acc[key].unitPriceSnapshot || 0) * acc[key].quantity)) + price;
+                  }
+                  return acc;
+                }, {} as Record<number, any>)
+              ).map((item: any) => (
+                <li key={item.productId} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>
+                  <span>{item.quantity}x {item.productNameSnapshot || `Món #${item.productId}`}</span>
+                  <span>{(item.lineTotalAmount || (item.unitPriceSnapshot || 0) * item.quantity).toLocaleString()}Đ</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Bill Summary */}
-        <div>
+        <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
           <h3 className={styles.sectionTitle}>
             <Receipt size={16} /> Hóa Đơn Tạm Tính
           </h3>
           <div className={styles.billBox}>
-            {loading ? (
+            {isEmpty ? (
+              <>
+                <div className={styles.billRow}>
+                  <span>Tiền giờ (Chưa bắt đầu)</span>
+                  <span>0Đ</span>
+                </div>
+                <div className={styles.billLine}></div>
+                <div className={styles.billTotal}>
+                  <span>CẦN THU</span>
+                  <span>0Đ</span>
+                </div>
+              </>
+            ) : loading && !sessionSummary ? (
               <div className="text-center py-4 text-sm text-gray-500">Đang tải hóa đơn...</div>
             ) : (
               <>
@@ -131,12 +321,18 @@ export function ActionDrawerColumn() {
                   <span>Tiền giờ ({formatDuration(elapsed).substring(0, 5)})</span>
                   <span>{timeAmount.toLocaleString()}Đ</span>
                 </div>
-                {/* 
-                <div className={styles.billRow}>
-                  <span>Đồ uống (F&B)</span>
-                  <span>{fbAmount.toLocaleString()}Đ</span>
-                </div> 
-                */}
+                {fbAmount > 0 && (
+                  <div className={styles.billRow}>
+                    <span>Đồ uống (F&B)</span>
+                    <span>{fbAmount.toLocaleString()}Đ</span>
+                  </div>
+                )}
+                {deposit > 0 && (
+                  <div className={styles.billRow}>
+                    <span>Đã cọc (Deposit)</span>
+                    <span style={{color: '#ef4444'}}>-{deposit.toLocaleString()}Đ</span>
+                  </div>
+                )}
                 <div className={styles.billLine}></div>
                 <div className={styles.billTotal}>
                   <span>CẦN THU</span>
@@ -150,18 +346,131 @@ export function ActionDrawerColumn() {
       </div>
 
       <div className={styles.drawerFooter}>
-        <button className="primary-btn" style={{ width: '100%', padding: '0.75rem', background: 'white', color: '#0f172a', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-          <ArrowRightLeft size={16} /> Chuyển Bàn
-        </button>
+        {!isEmpty && !isSessionEndedLocal && (
+          <div style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
+            <button className="primary-btn" style={{ flex: 1, padding: '0.75rem', background: 'white', color: '#0f172a', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <ArrowRightLeft size={16} /> Chuyển
+            </button>
+            <button className="primary-btn" style={{ flex: 1, padding: '0.75rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <Clock size={16} /> Gia hạn
+            </button>
+          </div>
+        )}
 
-        <button className="primary-btn" style={{ width: '100%', padding: '0.75rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-          <Clock size={16} /> Gia Hạn Thời Gian
-        </button>
-
-        <button className="primary-btn" style={{ width: '100%', padding: '1rem', background: '#22c55e', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem' }}>
-          <Receipt size={20} /> Thanh Toán
-        </button>
+        {isEmpty ? (
+          <button 
+            onClick={handleStartSession}
+            className="primary-btn" 
+            style={{ width: '100%', padding: '1rem', background: '#3b82f6', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem' }}
+          >
+            <Play size={20} fill="currentColor" /> Mở Bàn Ngay
+          </button>
+        ) : !isSessionEndedLocal ? (
+          <button 
+            onClick={handleEndSession}
+            disabled={processingPayment}
+            className="primary-btn" 
+            style={{ width: '100%', padding: '1rem', background: '#dc2626', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', opacity: processingPayment ? 0.7 : 1 }}
+          >
+            <X size={20} /> {processingPayment ? "Đang xử lý..." : "Kết Thúc Phiên"}
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+            <button 
+              disabled
+              className="primary-btn" 
+              style={{ flex: 1, padding: '1rem', background: '#e2e8f0', color: '#94a3b8', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', cursor: 'not-allowed' }}
+            >
+               Tiếp tục phiên
+            </button>
+            <button 
+              onClick={handleCheckout}
+              disabled={processingPayment}
+              className="primary-btn" 
+              style={{ flex: 2, padding: '1rem', background: '#22c55e', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', opacity: processingPayment ? 0.7 : 1 }}
+            >
+              <Receipt size={20} /> {processingPayment ? "Đang xử lý..." : "Thanh Toán"}
+            </button>
+          </div>
+        )}
       </div>
+
+      {checkoutModalOpen && invoiceData && (
+        <Modal title="Thanh Toán Hóa Đơn" onClose={() => setCheckoutModalOpen(false)} size="medium">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Hóa Đơn Tổng Hợp</h3>
+              <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '4px 0 0' }}>Bàn: {selectedTable.tableName} - Mã HĐ: {invoiceData.invoiceCode || `#${invoiceData.invoiceId}`}</p>
+            </div>
+            
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+               <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                 {Object.values((invoiceData.lines || []).reduce((acc: any, l: any) => {
+                    const key = l.lineType === 'TIME' ? `TIME_${l.description}` : l.description;
+                    if (!acc[key]) {
+                      acc[key] = { ...l };
+                    } else {
+                      acc[key].quantity = Number(acc[key].quantity) + Number(l.quantity);
+                      acc[key].lineTotalAmount = Number(acc[key].lineTotalAmount) + Number(l.lineTotalAmount);
+                    }
+                    return acc;
+                 }, {})).map((l: any, i: number) => (
+                    <li key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
+                       <div>
+                         <span style={{ fontWeight: 500 }}>{l.description}</span>
+                         <div style={{ fontSize: '0.8rem', color: '#64748b' }}>SL: {l.lineType === 'TIME' ? `${Math.round(Number(l.quantity) * 60)} phút` : l.quantity}</div>
+                       </div>
+                       <div style={{ fontWeight: 500 }}>{(l.lineTotalAmount || 0).toLocaleString()}Đ</div>
+                    </li>
+                 ))}
+               </ul>
+               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '2px dashed #cbd5e1', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                  <span>TỔNG CẦN THU:</span>
+                  <span style={{ color: '#2563eb' }}>{(invoiceData.grandTotalAmount || 0).toLocaleString()}Đ</span>
+               </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 500 }}>Phương thức thanh toán:</label>
+              <select 
+                value={selectedPaymentMethod} 
+                onChange={e => setSelectedPaymentMethod(Number(e.target.value))}
+                style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', fontSize: '1rem', outline: 'none' }}
+              >
+                {paymentMethods.map(m => (
+                  <option key={m.paymentMethodId} value={m.paymentMethodId}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {(() => {
+              const method = paymentMethods.find(m => m.paymentMethodId === selectedPaymentMethod);
+              const methodStr = (method?.code || '') + ' ' + (method?.name || '');
+              const isBankTransfer = methodStr.toLowerCase().includes('bank') || methodStr.toLowerCase().includes('chuyển khoản');
+              if (isBankTransfer) {
+                return (
+                  <div style={{ marginTop: '8px', textAlign: 'center' }}>
+                    <p style={{ fontSize: '0.9rem', color: '#475569', marginBottom: '8px', fontWeight: 500 }}>Quét mã QR để thanh toán nhanh</p>
+                    <img 
+                      src={`${API_BASE_URL}/api/invoices/${invoiceData.invoiceId}/qr-code?amt=${invoiceData.grandTotalAmount || 0}&t=${Date.now()}`} 
+                      alt="QR Code" 
+                      style={{ width: '220px', height: '220px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: 'white' }}
+                    />
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button onClick={() => setCheckoutModalOpen(false)} style={{ flex: 1, padding: '12px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Hủy Bỏ</button>
+              <button onClick={handleConfirmPayment} disabled={processingPayment} style={{ flex: 2, padding: '12px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
+                {processingPayment ? "Đang xử lý..." : "Xác Nhận Thu Tiền"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
     </div>
   );
