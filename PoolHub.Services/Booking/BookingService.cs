@@ -14,6 +14,11 @@ namespace PoolHub.Services.Booking;
 
 public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService) : IBookingService
 {
+    public BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger)
+        : this(db, emailService, logger, new NoOpPosNotificationService())
+    {
+    }
+
     public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
     {
         await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
@@ -566,4 +571,15 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (endTimeUtc <= startTimeUtc)
             throw new ValidationException("End time must be after start time.");
     }
+}
+
+internal sealed class NoOpPosNotificationService : IPosNotificationService
+{
+    public Task NotifyTableUpdateAsync(int tableId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task NotifyBookingUpdateAsync(int bookingId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task NotifySessionUpdateAsync(int sessionId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task NotifyRefreshPosAsync(CancellationToken ct = default) => Task.CompletedTask;
 }

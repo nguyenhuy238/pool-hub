@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { invoiceApi, sessionApi, venueApi } from "@/lib/api/endpoints";
 import { dateTime, label, tableStatus } from "@/lib/status";
@@ -34,6 +35,7 @@ const statusTone = (status: number): "green" | "blue" | "yellow" | "red" | "neut
 };
 
 export default function FloorMapPage() {
+  const router = useRouter();
   const toast = useToast();
   const [selected, setSelected] = useState<SelectedTable | null>(null);
   const [endingSessionId, setEndingSessionId] = useState<number | null>(null);
@@ -94,10 +96,10 @@ export default function FloorMapPage() {
     }
 
     try {
-      await sessionApi.start({ tableId: table.tableId, bookingId: table.nextBookingId });
+      const session = await sessionApi.start({ tableId: table.tableId, bookingId: table.nextBookingId });
       toast("Đã mở phiên chơi.", "success");
-      await reload();
       setSelected(null);
+      router.push(`/operation/sessions/${session.sessionId}`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể mở phiên chơi.", "error");
     }
@@ -105,10 +107,11 @@ export default function FloorMapPage() {
 
   async function endSession(sessionId: number) {
     try {
-      await sessionApi.end(sessionId);
+      const result = await sessionApi.end(sessionId);
+      const invoiceId = result?.invoiceId ?? result?.InvoiceId;
       toast("Đã kết thúc phiên chơi.", "success");
-      await reload();
       setSelected(null);
+      router.push(invoiceId ? `/operation/invoices?invoiceId=${invoiceId}` : "/operation/invoices");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể kết thúc phiên chơi.", "error");
     } finally {
@@ -304,7 +307,7 @@ function TableDetailModal({ table, onClose, onStart, onEnd, onInvoice }: {
       <div className="modal-actions">
         {isOccupied ? (
           <>
-            <Link className="ghost-btn" href={`/operation/sessions?sessionId=${table.activeSessionId}`}>Xem session</Link>
+            <Link className="ghost-btn" href={`/operation/sessions/${table.activeSessionId}`}>Xem session</Link>
             <Link className="secondary-btn" href={`/operation/orders?sessionId=${table.activeSessionId}`}>Thêm order</Link>
             <button className="ghost-btn" type="button" onClick={onInvoice}>Tạo hóa đơn</button>
             <button className="danger-btn" type="button" onClick={onEnd}>Kết thúc phiên</button>

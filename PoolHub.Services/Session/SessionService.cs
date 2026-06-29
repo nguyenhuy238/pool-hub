@@ -13,6 +13,10 @@ namespace PoolHub.Services.Session;
 
 public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService) : ISessionService
 {
+    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService())
+    {
+    }
+
     public async Task<PagedResult<SessionDto>> GetSessionsAsync(SessionQueryRequest request, CancellationToken ct)
     {
         var query = db.Sessions.AsQueryable();
@@ -93,7 +97,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             query = query.Where(x => x.Table.TableId == tableId.Value);
         }
 
-        return await query
+        var activeRows = await query
             .OrderByDescending(x => x.Session.StartedAtUtc)
             .Select(x => new ActiveSessionResponse
             {
@@ -113,6 +117,32 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 }
             })
             .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+        var sessionIds = activeRows.Select(x => x.SessionId).ToList();
+        var assignments = await db.SessionTableAssignments.AsNoTracking()
+            .Where(x => sessionIds.Contains(x.SessionId))
+            .Select(x => new
+            {
+                x.SessionId,
+                x.StartedAtUtc,
+                x.EndedAtUtc,
+                x.DurationMinutes
+            })
+            .ToListAsync(ct);
+
+        var durationBySession = assignments
+            .GroupBy(x => x.SessionId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Sum(assignment => GetDurationMinutes(assignment.StartedAtUtc, assignment.EndedAtUtc ?? now, assignment.DurationMinutes)));
+
+        foreach (var row in activeRows)
+        {
+            row.DurationMinutes = durationBySession.GetValueOrDefault(row.SessionId);
+        }
+
+        return activeRows;
     }
 
     public async Task<SessionDetailDto> GetActiveSessionByTableAsync(long tableId, CancellationToken ct)
@@ -196,10 +226,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         {
             var isCurrent = row.Assignment.EndedAtUtc == null && session.Status == 1;
             var endedAtUtc = row.Assignment.EndedAtUtc ?? now;
-            var durationMinutes = row.Assignment.DurationMinutes
-                ?? Math.Max(0, (int)Math.Ceiling((endedAtUtc - row.Assignment.StartedAtUtc).TotalMinutes));
-            var amount = row.Assignment.Amount
-                ?? await CalculatePreviewAmountAsync(row.Assignment, row.Table, durationMinutes, ct);
+            var durationMinutes = GetDurationMinutes(row.Assignment.StartedAtUtc, endedAtUtc, row.Assignment.DurationMinutes);
+            var charge = await CalculatePreviewChargeAsync(row.Assignment, row.Table, durationMinutes, ct);
+            var amount = row.Assignment.Amount ?? charge.Amount;
 
             assignmentDtos.Add(new SessionSummaryAssignmentDto
             {
@@ -207,10 +236,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 TableId = row.Assignment.TableId,
                 TableCode = row.Table.TableCode,
                 TableName = row.Table.TableName,
+                PricingPlanRuleId = row.Assignment.PricingPlanRuleId ?? charge.PricingPlanRuleId,
                 StartedAtUtc = row.Assignment.StartedAtUtc,
                 EndedAtUtc = row.Assignment.EndedAtUtc,
                 DurationMinutes = durationMinutes,
-                HourlyRateSnapshot = row.Assignment.HourlyRateSnapshot,
+                ActualDurationMinutes = durationMinutes,
+                BillableDurationMinutes = charge.BillableMinutes,
+                HourlyRateSnapshot = row.Assignment.HourlyRateSnapshot > 0 ? row.Assignment.HourlyRateSnapshot : charge.HourlyRate,
+                HourlyRate = charge.HourlyRate,
+                MinimumMinutes = charge.MinimumMinutes,
+                BillingBlockMinutes = charge.BillingBlockMinutes,
+                PricingPlanName = charge.PricingPlanName,
                 Amount = amount,
                 IsCurrent = isCurrent
             });
@@ -221,6 +257,13 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             .Where(x => x.SessionId == sessionId && x.Status != 3)
             .SumAsync(x => x.SubtotalAmount, ct);
         var timeSubtotal = assignmentDtos.Sum(x => x.Amount);
+        var existingInvoice = await db.Invoices.AsNoTracking()
+            .Where(x => x.SessionId == sessionId)
+            .OrderByDescending(x => x.InvoiceId)
+            .Select(x => new { x.InvoiceId, x.InvoiceCode, x.Status, x.DiscountAmount, x.GrandTotalAmount })
+            .FirstOrDefaultAsync(ct);
+        var subtotal = timeSubtotal + orderSubtotal;
+        var discountAmount = existingInvoice?.DiscountAmount ?? 0;
 
         return new SessionSummaryResponse
         {
@@ -229,10 +272,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             Status = session.Status,
             StartedAtUtc = session.StartedAtUtc,
             EndedAtUtc = session.EndedAtUtc,
+            PreviewEndedAtUtc = session.EndedAtUtc ?? now,
             CurrentDurationMinutes = assignmentDtos.Sum(x => x.DurationMinutes),
             TimeSubtotalAmount = timeSubtotal,
             OrderSubtotalAmount = orderSubtotal,
-            SubtotalAmount = timeSubtotal + orderSubtotal,
+            ProductSubtotalAmount = orderSubtotal,
+            SubtotalAmount = subtotal,
+            DiscountAmount = discountAmount,
+            GrandTotalAmount = existingInvoice?.GrandTotalAmount ?? Math.Max(0, subtotal - discountAmount),
+            InvoiceId = existingInvoice?.InvoiceId,
+            InvoiceCode = existingInvoice?.InvoiceCode,
+            InvoiceStatus = existingInvoice?.Status,
             CurrentTable = currentAssignment is null
                 ? null
                 : new SessionSummaryTableDto
@@ -262,8 +312,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         foreach (var row in rows)
         {
             var endedAtUtc = row.Assignment.EndedAtUtc ?? now;
-            var durationMinutes = row.Assignment.DurationMinutes
-                ?? Math.Max(0, (int)Math.Ceiling((endedAtUtc - row.Assignment.StartedAtUtc).TotalMinutes));
+            var durationMinutes = GetDurationMinutes(row.Assignment.StartedAtUtc, endedAtUtc, row.Assignment.DurationMinutes);
             var charge = await CalculatePreviewChargeAsync(row.Assignment, row.Table, durationMinutes, ct);
             var amount = row.Assignment.Amount ?? charge.Amount;
 
@@ -277,8 +326,13 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 StartedAtUtc = row.Assignment.StartedAtUtc,
                 EndedAtUtc = row.Assignment.EndedAtUtc,
                 DurationMinutes = durationMinutes,
+                ActualDurationMinutes = durationMinutes,
                 BillableMinutes = charge.BillableMinutes,
-                HourlyRateSnapshot = row.Assignment.HourlyRateSnapshot,
+                HourlyRateSnapshot = row.Assignment.HourlyRateSnapshot > 0 ? row.Assignment.HourlyRateSnapshot : charge.HourlyRate,
+                HourlyRate = charge.HourlyRate,
+                MinimumMinutes = charge.MinimumMinutes,
+                BillingBlockMinutes = charge.BillingBlockMinutes,
+                PricingPlanName = charge.PricingPlanName,
                 Amount = amount
             });
         }
@@ -370,8 +424,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         await db.SaveChangesAsync(ct);
 
         // Fetch pricing plan and active rule for the table at start time
-        var rule = await FindActiveRuleAsync(table.TableTypeId, session.StartedAtUtc, ct);
-        var hourlyRate = rule?.HourlyRate ?? 50000; // Default to 50,000 VND/hour if no rule is found
+        var rule = await FindActiveRuleAsync(table.TableTypeId, session.StartedAtUtc, ct)
+            ?? throw new ConflictException($"No active pricing rule found for table {table.TableCode} at session start time.");
+        var hourlyRate = rule.HourlyRate;
 
         var assignment = new SessionTableAssignment
         {
@@ -498,7 +553,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
         if (session.Status == 2)
         {
-            throw new ConflictException("Session is already closed.");
+            return await BuildCloseSessionResponseAsync(session, false, ct);
         }
 
         if (endedAtUtc <= session.StartedAtUtc)
@@ -548,36 +603,35 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         EntityInvoice? invoice = null;
         if (request.GenerateInvoice)
         {
-            var hasInvoice = await db.Invoices.AnyAsync(x => x.SessionId == sessionId, ct);
-            if (hasInvoice)
+            invoice = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId, ct);
+
+            if (invoice is null)
             {
-                throw new ConflictException("Invoice already exists for this session.");
+                invoice = new EntityInvoice
+                {
+                    SessionId = sessionId,
+                    CustomerId = session.CustomerId,
+                    InvoiceCode = $"INV{DateTime.UtcNow:yyyyMMddHHmmss}",
+                    TimeSubtotalAmount = timeSubtotal,
+                    ProductSubtotalAmount = productSubtotal,
+                    SubtotalAmount = timeSubtotal + productSubtotal,
+                    DiscountAmount = 0,
+                    TaxAmount = 0,
+                    GrandTotalAmount = timeSubtotal + productSubtotal,
+                    PaidAmount = 0,
+                    PaymentStatus = 1,
+                    Status = 1,
+                    IssuedByUserId = closedByUserId,
+                    IssuedAtUtc = DateTime.UtcNow
+                };
+
+                db.Invoices.Add(invoice);
             }
-
-            invoice = new EntityInvoice
-            {
-                SessionId = sessionId,
-                CustomerId = session.CustomerId,
-                InvoiceCode = $"INV{DateTime.UtcNow:yyyyMMddHHmmss}",
-                TimeSubtotalAmount = timeSubtotal,
-                ProductSubtotalAmount = productSubtotal,
-                SubtotalAmount = timeSubtotal + productSubtotal,
-                DiscountAmount = 0,
-                TaxAmount = 0,
-                GrandTotalAmount = timeSubtotal + productSubtotal,
-                PaidAmount = 0,
-                PaymentStatus = 1,
-                Status = 1,
-                IssuedByUserId = closedByUserId,
-                IssuedAtUtc = DateTime.UtcNow
-            };
-
-            db.Invoices.Add(invoice);
         }
 
         await db.SaveChangesAsync(ct);
 
-        if (invoice is not null)
+        if (invoice is not null && !await db.InvoiceLines.AnyAsync(x => x.InvoiceId == invoice.InvoiceId, ct))
         {
             foreach (var assignment in assignments)
             {
@@ -633,9 +687,48 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             EndedAtUtc = endedAtUtc,
             TotalDurationMinutes = totalDurationMinutes,
             TimeSubtotalAmount = timeSubtotal,
+            ProductSubtotalAmount = productSubtotal,
+            SubtotalAmount = timeSubtotal + productSubtotal,
+            DiscountAmount = invoice?.DiscountAmount ?? 0,
+            GrandTotalAmount = invoice?.GrandTotalAmount ?? timeSubtotal + productSubtotal,
             InvoiceId = invoice?.InvoiceId,
             InvoiceCode = invoice?.InvoiceCode,
             InvoiceGenerated = invoice is not null
+        };
+    }
+
+    private async Task<CloseSessionResponse> BuildCloseSessionResponseAsync(EntitySession session, bool invoiceGenerated, CancellationToken ct)
+    {
+        var assignments = await db.SessionTableAssignments.AsNoTracking()
+            .Where(x => x.SessionId == session.SessionId)
+            .Select(x => new { x.DurationMinutes, x.Amount })
+            .ToListAsync(ct);
+        var invoice = await db.Invoices.AsNoTracking()
+            .Where(x => x.SessionId == session.SessionId)
+            .OrderByDescending(x => x.InvoiceId)
+            .FirstOrDefaultAsync(ct);
+        var productSubtotal = await db.Orders.AsNoTracking()
+            .Where(x => x.SessionId == session.SessionId && x.Status != 3)
+            .SumAsync(x => x.SubtotalAmount, ct);
+        var timeSubtotal = assignments.Sum(x => x.Amount ?? 0);
+        var subtotal = timeSubtotal + productSubtotal;
+
+        return new CloseSessionResponse
+        {
+            SessionId = session.SessionId,
+            SessionCode = session.SessionCode,
+            Status = session.Status,
+            StartedAtUtc = session.StartedAtUtc,
+            EndedAtUtc = session.EndedAtUtc ?? DateTime.UtcNow,
+            TotalDurationMinutes = assignments.Sum(x => x.DurationMinutes ?? 0),
+            TimeSubtotalAmount = invoice?.TimeSubtotalAmount ?? timeSubtotal,
+            ProductSubtotalAmount = invoice?.ProductSubtotalAmount ?? productSubtotal,
+            SubtotalAmount = invoice?.SubtotalAmount ?? subtotal,
+            DiscountAmount = invoice?.DiscountAmount ?? 0,
+            GrandTotalAmount = invoice?.GrandTotalAmount ?? subtotal,
+            InvoiceId = invoice?.InvoiceId,
+            InvoiceCode = invoice?.InvoiceCode,
+            InvoiceGenerated = invoiceGenerated || invoice is not null
         };
     }
 
@@ -763,8 +856,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         newTable.OperationalStatus = 2; // Occupied
 
         // 6. Create new assignment for the new table
-        var rule = await FindActiveRuleAsync(newTable.TableTypeId, endedAtUtc, ct);
-        var hourlyRate = rule?.HourlyRate ?? 50000;
+        var rule = await FindActiveRuleAsync(newTable.TableTypeId, endedAtUtc, ct)
+            ?? throw new ConflictException($"No active pricing rule found for table {newTable.TableCode} at transfer time.");
+        var hourlyRate = rule.HourlyRate;
 
         var newAssignment = new SessionTableAssignment
         {
@@ -796,7 +890,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         if (!activePlans.Any()) return null;
 
-        var planIds = activePlans.OrderBy(p => p.IsDefault).Select(p => p.PricingPlanId).ToList();
+        var planIds = activePlans.OrderByDescending(p => p.IsDefault).Select(p => p.PricingPlanId).ToList();
 
         foreach (var planId in planIds)
         {
@@ -860,25 +954,16 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         }
         else
         {
-            decimal fallbackRate = 50000;
-            assignment.HourlyRateSnapshot = fallbackRate;
-            assignment.Amount = ((decimal)durationMinutes / 60m) * fallbackRate;
+            throw new ConflictException($"No active pricing rule found for table {table.TableCode} at assignment start time.");
         }
     }
 
-    private async Task<decimal> CalculatePreviewAmountAsync(SessionTableAssignment assignment, VenueTable table, int durationMinutes, CancellationToken ct)
-    {
-        var charge = await CalculatePreviewChargeAsync(assignment, table, durationMinutes, ct);
-        return charge.Amount;
-    }
-
-    private async Task<(int BillableMinutes, decimal Amount, long? PricingPlanRuleId)> CalculatePreviewChargeAsync(SessionTableAssignment assignment, VenueTable table, int durationMinutes, CancellationToken ct)
+    private async Task<PricingCharge> CalculatePreviewChargeAsync(SessionTableAssignment assignment, VenueTable table, int durationMinutes, CancellationToken ct)
     {
         var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct);
         if (rule is null)
         {
-            var fallbackRate = assignment.HourlyRateSnapshot > 0 ? assignment.HourlyRateSnapshot : 50000m;
-            return (durationMinutes, ((decimal)durationMinutes / 60m) * fallbackRate, assignment.PricingPlanRuleId);
+            throw new ConflictException($"No active pricing rule found for table {table.TableCode} at assignment start time.");
         }
 
         var billableMinutes = durationMinutes;
@@ -896,7 +981,29 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             }
         }
 
-        return (billableMinutes, ((decimal)billableMinutes / 60m) * rule.HourlyRate, rule.PricingPlanRuleId);
+        var pricingPlanName = await db.PricingPlans.AsNoTracking()
+            .Where(x => x.PricingPlanId == rule.PricingPlanId)
+            .Select(x => x.Name)
+            .FirstOrDefaultAsync(ct);
+
+        return new PricingCharge(
+            billableMinutes,
+            ((decimal)billableMinutes / 60m) * rule.HourlyRate,
+            rule.PricingPlanRuleId,
+            rule.HourlyRate,
+            rule.MinimumMinutes,
+            rule.BillingBlockMinutes,
+            pricingPlanName);
+    }
+
+    private static int GetDurationMinutes(DateTime startedAtUtc, DateTime endedAtUtc, int? storedDurationMinutes = null)
+    {
+        if (storedDurationMinutes.HasValue)
+        {
+            return Math.Max(0, storedDurationMinutes.Value);
+        }
+
+        return Math.Max(0, (int)Math.Ceiling((endedAtUtc - startedAtUtc).TotalMinutes));
     }
 
     private async Task CalculateAssignmentAmountStrictAsync(SessionTableAssignment assignment, VenueTable table, DateTime endedAtUtc, CancellationToken ct)
@@ -933,5 +1040,25 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         }
 
         assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+    }
+
+    private sealed record PricingCharge(
+        int BillableMinutes,
+        decimal Amount,
+        long PricingPlanRuleId,
+        decimal HourlyRate,
+        int MinimumMinutes,
+        int BillingBlockMinutes,
+        string? PricingPlanName);
+
+    private sealed class NoOpPosNotificationService : IPosNotificationService
+    {
+        public Task NotifyTableUpdateAsync(int tableId, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task NotifyBookingUpdateAsync(int bookingId, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task NotifySessionUpdateAsync(int sessionId, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task NotifyRefreshPosAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 }

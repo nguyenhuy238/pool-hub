@@ -118,4 +118,147 @@ public class SessionServiceTests
         var exception = await Assert.ThrowsAsync<ConflictException>(() => service.TransferTableAsync(1, 2, 99, CancellationToken.None));
         Assert.Equal("New table already has an active session.", exception.Message);
     }
+
+    [Fact]
+    public async Task GetActiveSessionsAsync_ReturnsTotalDurationAcrossAssignments()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        var now = DateTime.UtcNow;
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1", IsActive = true });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1", IsActive = true });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        db.VenueTables.Add(new VenueTable { TableId = 2, ZoneId = 1, TableCode = "T2", TableName = "Table 2", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 1, StartedAtUtc = now.AddMinutes(-35), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment
+        {
+            SessionId = 1,
+            TableId = 1,
+            StartedAtUtc = now.AddMinutes(-35),
+            EndedAtUtc = now.AddMinutes(-5),
+            DurationMinutes = 30
+        });
+        db.SessionTableAssignments.Add(new SessionTableAssignment
+        {
+            SessionId = 1,
+            TableId = 2,
+            StartedAtUtc = now.AddMinutes(-5),
+            EndedAtUtc = null
+        });
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db);
+
+        var result = await service.GetActiveSessionsAsync(null, null, null, CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.True(result[0].DurationMinutes >= 35);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenMinimumSixtyMinutesApplies_ReturnsBillableSixtyMinutes()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 25000, minimumMinutes: 60, billingBlockMinutes: 15);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(1), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(1) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(1, summary.CurrentDurationMinutes);
+        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(25000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenBillingBlockThirtyApplies_RoundsUpToSixtyMinutes()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 30);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(31), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(31) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(31, summary.Assignments[0].ActualDurationMinutes);
+        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(60000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenMultipleAssignments_SumsEachAssignmentAmount()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 30);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        db.VenueTables.Add(new VenueTable { TableId = 2, ZoneId = 1, TableCode = "T2", TableName = "Table 2", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(61), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(31) });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 2, StartedAtUtc = startedAt.AddMinutes(31), EndedAtUtc = startedAt.AddMinutes(61) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(2, summary.Assignments.Count);
+        Assert.Equal(90000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenPricingRuleMissing_ThrowsConflictException()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(10), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(10) });
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => new SessionService(db).GetSummaryAsync(1, CancellationToken.None));
+
+        Assert.Contains("No active pricing rule", exception.Message);
+    }
+
+    private static PoolHubDbContext CreateDb()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new PoolHubDbContext(options);
+    }
+
+    private static void SeedPricing(PoolHubDbContext db, DateTime startedAt, decimal hourlyRate, int minimumMinutes, int billingBlockMinutes)
+    {
+        db.PricingPlans.Add(new PricingPlan { PricingPlanId = 1, Name = "Default Plan", IsDefault = true, IsActive = true, StartsAtUtc = startedAt.AddDays(-1) });
+        db.PricingPlanRules.Add(new PricingPlanRule
+        {
+            PricingPlanRuleId = 1,
+            PricingPlanId = 1,
+            TableTypeId = 1,
+            DayOfWeek = (int)startedAt.DayOfWeek,
+            StartTime = TimeSpan.Zero,
+            EndTime = new TimeSpan(23, 59, 59),
+            HourlyRate = hourlyRate,
+            MinimumMinutes = minimumMinutes,
+            BillingBlockMinutes = billingBlockMinutes,
+            IsActive = true
+        });
+    }
 }

@@ -6,6 +6,7 @@ public class ActiveSessionResponse
     public string SessionCode { get; set; } = string.Empty;
     public int Status { get; set; }
     public DateTime StartedAtUtc { get; set; }
+    public int DurationMinutes { get; set; }
     public long? CustomerId { get; set; }
     public long? BookingId { get; set; }
     public ActiveSessionTableDto? CurrentTable { get; set; }

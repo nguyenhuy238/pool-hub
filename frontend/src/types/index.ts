@@ -149,6 +149,13 @@ export type SessionTableAssignment = {
   startedAtUtc?: string;
   endedAtUtc?: string;
   durationMinutes?: number;
+  actualDurationMinutes?: number;
+  billableDurationMinutes?: number;
+  hourlyRate?: number;
+  hourlyRateSnapshot?: number;
+  minimumMinutes?: number;
+  billingBlockMinutes?: number;
+  pricingPlanName?: string;
   amount?: number;
 };
 

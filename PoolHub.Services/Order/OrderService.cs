@@ -15,6 +15,10 @@ namespace PoolHub.Services.Order;
 
 public class OrderService(PoolHubDbContext db, IPosNotificationService posNotificationService) : IOrderService
 {
+    public OrderService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService())
+    {
+    }
+
     public async Task<OrderDetailDto> GetOrderByIdAsync(long orderId, CancellationToken ct)
     {
         var order = await db.Orders.FindAsync([orderId], ct) ?? throw new NotFoundException("Order not found.");
@@ -307,4 +311,15 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
             throw new BusinessRuleException("Cannot modify orders for a closed session.");
         }
     }
+}
+
+internal sealed class NoOpPosNotificationService : IPosNotificationService
+{
+    public Task NotifyTableUpdateAsync(int tableId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task NotifyBookingUpdateAsync(int bookingId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task NotifySessionUpdateAsync(int sessionId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task NotifyRefreshPosAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
