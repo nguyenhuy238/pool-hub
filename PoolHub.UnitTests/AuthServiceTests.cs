@@ -27,6 +27,7 @@ public class AuthServiceTests
         var jwt = Options.Create(new JwtSettings { SecretKey = "UNIT_TEST_SECRET_KEY_12345678901234567890", Issuer = "PoolHub.API", Audience = "PoolHub.Client", AccessTokenExpirationMinutes = 480 });
         var accessor = new HttpContextAccessor();
         ITokenService tokenService = new TokenService(jwt);
+        IRefreshTokenStore refreshTokenStore = new TestRefreshTokenStore();
         IAuditService auditService = new AuditService(db, accessor);
         IEmailService emailService = new TestEmailService();
         var emailSettings = Options.Create(new EmailSettings
@@ -35,7 +36,7 @@ public class AuthServiceTests
             FromEmail = "noreply@poolhub.test",
             FrontendBaseUrl = "http://localhost:3000"
         });
-        var service = new AuthService(db, tokenService, auditService, emailService, emailSettings, accessor, NullLogger<AuthService>.Instance);
+        var service = new AuthService(db, tokenService, refreshTokenStore, auditService, emailService, emailSettings, accessor, NullLogger<AuthService>.Instance);
 
         var result = await service.LoginAsync(new LoginRequest { Email = " Admin@PoolHub.com ", Password = "Admin@123" }, default);
 
@@ -72,6 +73,7 @@ public class AuthServiceTests
         var service = new AuthService(
             db,
             new TokenService(jwt),
+            new TestRefreshTokenStore(),
             new AuditService(db, accessor),
             new TestEmailService(),
             Options.Create(new EmailSettings
@@ -98,6 +100,37 @@ public class AuthServiceTests
         public Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct) =>
             Task.CompletedTask;
         public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class TestRefreshTokenStore : IRefreshTokenStore
+    {
+        public Task<RefreshTokenIssueResult> IssueRefreshTokenAsync(long userId, Guid? familyId, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
+        {
+            var record = new RefreshTokenRecord
+            {
+                SessionId = Guid.NewGuid().ToString("N"),
+                UserId = userId,
+                TokenHash = "test-token-hash",
+                FamilyId = (familyId ?? Guid.NewGuid()).ToString("N"),
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(7),
+                CreatedByIp = ipAddress,
+                CreatedByUserAgent = userAgent
+            };
+            return Task.FromResult(new RefreshTokenIssueResult { PlainValue = $"{record.SessionId}.test-secret", Record = record });
+        }
+
+        public Task<RefreshTokenValidationResult> ValidateRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken) =>
+            Task.FromResult(new RefreshTokenValidationResult());
+
+        public Task<RefreshTokenIssueResult> RotateRefreshTokenAsync(RefreshTokenRecord current, string? ipAddress, string? userAgent, CancellationToken cancellationToken) =>
+            IssueRefreshTokenAsync(current.UserId, Guid.ParseExact(current.FamilyId, "N"), ipAddress, userAgent, cancellationToken);
+
+        public Task RevokeRefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task RevokeFamilyAsync(string familyId, string? ipAddress, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 }

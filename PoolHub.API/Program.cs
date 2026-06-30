@@ -29,6 +29,7 @@ builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLi
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPoolHubDatabase(builder.Configuration);
 builder.Services.AddPoolHubCors(builder.Configuration);
+builder.Services.AddPoolHubRedis(builder.Configuration);
 builder.Services.AddPoolHubJwtAuthentication(builder.Configuration);
 builder.Services.AddPoolHubRepositories();
 builder.Services.AddPoolHubServices();

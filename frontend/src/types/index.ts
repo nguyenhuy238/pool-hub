@@ -28,8 +28,6 @@ export type AuthUser = {
 };
 
 export type AuthResponse = AuthUser & {
-  accessToken: string;
-  refreshToken: string;
   expiresAtUtc: string;
   user?: AuthUser;
 };

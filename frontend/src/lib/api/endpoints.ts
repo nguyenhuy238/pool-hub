@@ -91,7 +91,11 @@ export const sessionApi = {
   summary: (id: number) => apiFetch<any>(`/api/sessions/${id}/summary`),
   start: (body: { tableId: number; bookingId?: number; customerId?: number }) => apiFetch<Session>("/api/sessions/start", { method: "POST", body: JSON.stringify(body) }),
   end: (id: number) => apiFetch<any>(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ endedAtUtc: null, generateInvoice: true }) }),
-  switchTable: (id: number, newTableId: number) => apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify({ newTableId }) })
+  switchTable: (id: number, newTableId: number) => apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify({ newTableId }) }),
+  transfer: (id: number, body: { toTableId: number; reason?: string; note?: string; markOldTableMaintenance?: boolean }) =>
+    apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify(body) }),
+  reopen: (id: number, body: { reason: string; reopenLastTable?: boolean }) =>
+    apiFetch<Session>(`/api/sessions/${id}/reopen`, { method: "POST", body: JSON.stringify(body) })
 };
 
 export const orderApi = {

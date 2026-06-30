@@ -141,7 +141,7 @@ public class HealthTests
         public Task<AuthResponse> RefreshTokenAsync(string token, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task LogoutAsync(long userId, string token, CancellationToken cancellationToken) =>
+        public Task LogoutAsync(long? userId, string token, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task ForgotPasswordAsync(

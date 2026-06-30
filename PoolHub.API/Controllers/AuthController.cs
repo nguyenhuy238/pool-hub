@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(IAuthService authService) : ControllerBase
+public class AuthController(IAuthService authService, IAuthCookieService authCookieService) : ControllerBase
 {
     [HttpPost("register")]
     [AllowAnonymous]
@@ -20,6 +20,7 @@ public class AuthController(IAuthService authService) : ControllerBase
         // Public registration always receives the safe Customer role in the service.
         request.RoleIds = [];
         var result = await authService.RegisterAsync(request, null, ct);
+        WriteAuthCookies(result);
         return StatusCode(StatusCodes.Status201Created,
             ApiResponse<AuthResponse>.Ok(result, "Register successfully"));
     }
@@ -37,6 +38,7 @@ public class AuthController(IAuthService authService) : ControllerBase
                 ["Invalid email or password."]));
         }
 
+        WriteAuthCookies(result);
         return Ok(ApiResponse<AuthResponse>.Ok(result, "Login successfully"));
     }
 
@@ -57,17 +59,29 @@ public class AuthController(IAuthService authService) : ControllerBase
     [HttpPost("refresh-token")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> RefreshToken(
-        [FromBody] RefreshTokenRequest request, CancellationToken ct) =>
-        Ok(ApiResponse<AuthResponse>.Ok(
-            await authService.RefreshTokenAsync(request.RefreshToken, ct),
-            "Refresh token rotated successfully"));
+        [FromBody] RefreshTokenRequest? request, CancellationToken ct)
+    {
+        var refreshToken = authCookieService.ReadRefreshTokenFromCookie(Request) ?? request?.RefreshToken;
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            authCookieService.ClearAuthCookies(Response);
+            return Unauthorized(ApiResponse<AuthResponse>.Fail("Invalid refresh token.", ["Invalid refresh token."]));
+        }
+
+        var result = await authService.RefreshTokenAsync(refreshToken, ct);
+        WriteAuthCookies(result);
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Refresh token rotated successfully"));
+    }
 
     [HttpPost("logout")]
-    [Authorize]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object>>> Logout(
-        [FromBody] RefreshTokenRequest request, CancellationToken ct)
+        [FromBody] RefreshTokenRequest? request, CancellationToken ct)
     {
-        await authService.LogoutAsync(User.GetUserId(), request.RefreshToken, ct);
+        var refreshToken = authCookieService.ReadRefreshTokenFromCookie(Request) ?? request?.RefreshToken ?? string.Empty;
+        long? userId = User.Identity?.IsAuthenticated == true ? User.GetUserId() : null;
+        await authService.LogoutAsync(userId, refreshToken, ct);
+        authCookieService.ClearAuthCookies(Response);
         return Ok(ApiResponse<object>.Ok(new { }, "Logout successfully"));
     }
 
@@ -90,5 +104,11 @@ public class AuthController(IAuthService authService) : ControllerBase
     {
         await authService.ResetPasswordAsync(request, ct);
         return Ok(ApiResponse<object>.Ok(new { }, "Password reset successfully"));
+    }
+
+    private void WriteAuthCookies(AuthResponse result)
+    {
+        authCookieService.CreateAccessTokenCookie(Response, result.AccessToken, result.ExpiresAtUtc);
+        authCookieService.CreateRefreshTokenCookie(Response, result.RefreshToken, result.RefreshTokenExpiresAtUtc);
     }
 }

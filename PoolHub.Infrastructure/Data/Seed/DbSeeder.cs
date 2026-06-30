@@ -20,6 +20,7 @@ public static class DbSeeder
         if (await db.Floors.AnyAsync(ct))
         {
             await EnsureDemoVenueLayoutAsync(db, ct);
+            await EnsureDefaultPricingCoverageAsync(db, ct);
             return;
         }
 
@@ -137,6 +138,7 @@ public static class DbSeeder
             }
         }
         await db.SaveChangesAsync(ct);
+        await EnsureDefaultPricingCoverageAsync(db, ct);
 
         var customers = new[]
         {
@@ -437,6 +439,109 @@ public static class DbSeeder
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDefaultPricingCoverageAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var activePlans = await db.PricingPlans
+            .Where(x => x.IsActive)
+            .OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.PricingPlanId)
+            .ToListAsync(ct);
+        var defaultPlan = activePlans.FirstOrDefault();
+
+        if (defaultPlan is null)
+        {
+            defaultPlan = new PricingPlan
+            {
+                Name = "Default 2026",
+                IsDefault = true,
+                IsActive = true,
+                StartsAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            };
+            db.PricingPlans.Add(defaultPlan);
+            await db.SaveChangesAsync(ct);
+            activePlans.Add(defaultPlan);
+        }
+
+        var activePlanIds = activePlans.Select(x => x.PricingPlanId).ToList();
+        var tableTypes = await db.TableTypes
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.TableTypeId)
+            .ToListAsync(ct);
+        var existingRules = await db.PricingPlanRules
+            .Where(x => activePlanIds.Contains(x.PricingPlanId))
+            .ToListAsync(ct);
+
+        var startOfDay = TimeSpan.Zero;
+        var firstDemoShift = TimeSpan.FromHours(8);
+        var lastDemoShiftEnd = new TimeSpan(23, 59, 59);
+        var endOfDay = TimeSpan.FromTicks(TimeSpan.TicksPerDay - 1);
+
+        foreach (var tableType in tableTypes)
+        {
+            var fallbackRate = GetDefaultHourlyRate(tableType);
+            for (var day = 0; day <= 6; day++)
+            {
+                var dayRules = existingRules
+                    .Where(x => x.TableTypeId == tableType.TableTypeId && x.DayOfWeek == day && x.IsActive)
+                    .ToList();
+
+                if (dayRules.Count == 0)
+                {
+                    AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, day, startOfDay, endOfDay, fallbackRate);
+                    continue;
+                }
+
+                foreach (var planRules in dayRules.GroupBy(x => x.PricingPlanId))
+                {
+                    var rate = planRules.OrderBy(x => x.StartTime).FirstOrDefault()?.HourlyRate ?? fallbackRate;
+                    AddRuleIfMissing(planRules.Key, tableType.TableTypeId, day, startOfDay, firstDemoShift, rate);
+                    AddRuleIfMissing(planRules.Key, tableType.TableTypeId, day, lastDemoShiftEnd, endOfDay, rate);
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        void AddRuleIfMissing(long pricingPlanId, long tableTypeId, int dayOfWeek, TimeSpan startTime, TimeSpan endTime, decimal hourlyRate)
+        {
+            var exists = existingRules.Any(x =>
+                x.PricingPlanId == pricingPlanId &&
+                x.TableTypeId == tableTypeId &&
+                x.DayOfWeek == dayOfWeek &&
+                x.StartTime == startTime);
+            if (exists)
+            {
+                return;
+            }
+
+            var rule = new PricingPlanRule
+            {
+                PricingPlanId = pricingPlanId,
+                TableTypeId = tableTypeId,
+                DayOfWeek = dayOfWeek,
+                StartTime = startTime,
+                EndTime = endTime,
+                HourlyRate = hourlyRate,
+                MinimumMinutes = 30,
+                BillingBlockMinutes = 15,
+                IsActive = true
+            };
+            existingRules.Add(rule);
+            db.PricingPlanRules.Add(rule);
+        }
+    }
+
+    private static decimal GetDefaultHourlyRate(TableType tableType)
+    {
+        return tableType.Code.ToUpperInvariant() switch
+        {
+            "POOL_VIP" => 90000,
+            "CAROM" => 60000,
+            "SNOOKER" => 90000,
+            _ => 50000
+        };
     }
 
     private static async Task EnsurePermissionsAsync(PoolHubDbContext db, CancellationToken ct)

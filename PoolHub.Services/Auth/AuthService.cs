@@ -17,6 +17,7 @@ namespace PoolHub.Services.Auth;
 public class AuthService(
     PoolHubDbContext db,
     ITokenService tokenService,
+    IRefreshTokenStore refreshTokenStore,
     IAuditService auditService,
     IEmailService emailService,
     IOptions<EmailSettings> emailOptions,
@@ -128,51 +129,37 @@ public class AuthService(
 
     public async Task<AuthResponse> RefreshTokenAsync(string token, CancellationToken ct)
     {
-        var hash = tokenService.HashToken(token);
-        var current = await db.RefreshTokens.FirstOrDefaultAsync(
-            x => x.TokenHash == hash, ct)
-            ?? throw new UnauthorizedException("Invalid refresh token.");
-        if (current.IsRevoked)
+        var validation = await refreshTokenStore.ValidateRefreshTokenAsync(token, ct);
+        if (validation.IsReuseDetected && validation.Record is not null)
         {
-            await RevokeTokenFamilyAsync(current.UserId, current.FamilyId, ct);
-            await auditService.LogAsync(current.UserId, "AUTH_REFRESH_TOKEN_REUSE", "RefreshToken",
-                current.RefreshTokenId, description: "Refresh token reuse detected; token family revoked.", ct: ct);
+            await refreshTokenStore.RevokeFamilyAsync(validation.Record.FamilyId, GetIpAddress(), ct);
+            await auditService.LogAsync(validation.Record.UserId, "AUTH_REFRESH_TOKEN_REUSE", "RefreshToken",
+                description: "Refresh token reuse detected; token family revoked.", ct: ct);
             throw new UnauthorizedException("Refresh token reuse detected.");
         }
-        if (current.ExpiresAtUtc <= DateTime.UtcNow)
-            throw new UnauthorizedException("Refresh token expired.");
 
-        var user = await db.Users.FindAsync([current.UserId], ct)
+        if (!validation.IsValid || validation.Record is null)
+            throw new UnauthorizedException("Invalid refresh token.");
+
+        var user = await db.Users.FindAsync([validation.Record.UserId], ct)
             ?? throw new UnauthorizedException("Invalid refresh token.");
         if (user.Status != UserStatus.Active)
             throw new UnauthorizedException("Account is not active.");
 
-        current.IsRevoked = true;
-        current.RevokedAtUtc = DateTime.UtcNow;
-        current.RevokedByIp = GetIpAddress();
-        var response = await BuildAuthResponseAsync(user, ct, current.FamilyId);
-        current.ReplacedByTokenHash = tokenService.HashToken(response.RefreshToken);
+        var response = await BuildAuthResponseAsync(user, ct, Guid.ParseExact(validation.Record.FamilyId, "N"), validation.Record);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(user.UserId, AuditActions.RefreshToken, "RefreshToken",
-            current.RefreshTokenId, description: "Refresh token rotated.", ct: ct);
+            description: "Refresh token rotated.", ct: ct);
         return response;
     }
 
-    public async Task LogoutAsync(long userId, string token, CancellationToken ct)
+    public async Task LogoutAsync(long? userId, string token, CancellationToken ct)
     {
-        var hash = tokenService.HashToken(token);
-        var current = await db.RefreshTokens.FirstOrDefaultAsync(
-            x => x.TokenHash == hash && x.UserId == userId && !x.IsRevoked, ct);
-        if (current is not null)
-        {
-            current.IsRevoked = true;
-            current.RevokedAtUtc = DateTime.UtcNow;
-            current.RevokedByIp = GetIpAddress();
-            await db.SaveChangesAsync(ct);
-        }
+        if (!string.IsNullOrWhiteSpace(token))
+            await refreshTokenStore.RevokeRefreshTokenAsync(token, GetIpAddress(), ct);
 
         await auditService.LogAsync(userId, AuditActions.Logout, "RefreshToken",
-            current?.RefreshTokenId, description: "Logout completed.", ct: ct);
+            description: "Logout completed.", ct: ct);
     }
 
     public async Task ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct)
@@ -259,26 +246,25 @@ public class AuthService(
             user.UserId, user.PublicId, description: "Password reset successful.", ct: ct);
     }
 
-    private async Task<AuthResponse> BuildAuthResponseAsync(User user, CancellationToken ct, Guid? familyId = null)
+    private async Task<AuthResponse> BuildAuthResponseAsync(
+        User user,
+        CancellationToken ct,
+        Guid? familyId = null,
+        RefreshTokenRecord? currentRefreshToken = null)
     {
         var roles = await GetRolesAsync(user.UserId, ct);
         var permissions = await GetPermissionsAsync(user.UserId, ct);
         var pair = tokenService.CreateTokenPair(user, roles, permissions);
-        db.RefreshTokens.Add(new RefreshToken
-        {
-            UserId = user.UserId,
-            TokenHash = tokenService.HashToken(pair.RefreshToken),
-            ExpiresAtUtc = pair.RefreshTokenExpiresAtUtc,
-            CreatedByIp = GetIpAddress(),
-            FamilyId = familyId ?? Guid.NewGuid()
-        });
-        await db.SaveChangesAsync(ct);
+        var issuedRefreshToken = currentRefreshToken is null
+            ? await refreshTokenStore.IssueRefreshTokenAsync(user.UserId, familyId, GetIpAddress(), GetUserAgent(), ct)
+            : await refreshTokenStore.RotateRefreshTokenAsync(currentRefreshToken, GetIpAddress(), GetUserAgent(), ct);
 
         return new AuthResponse
         {
             AccessToken = pair.AccessToken,
-            RefreshToken = pair.RefreshToken,
+            RefreshToken = issuedRefreshToken.PlainValue,
             ExpiresAtUtc = pair.AccessTokenExpiresAtUtc,
+            RefreshTokenExpiresAtUtc = issuedRefreshToken.Record.ExpiresAtUtc,
             UserId = user.UserId,
             Email = user.Email,
             FullName = user.FullName,
@@ -362,4 +348,7 @@ public class AuthService(
 
     private string? GetIpAddress() =>
         httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+
+    private string? GetUserAgent() =>
+        httpContextAccessor.HttpContext?.Request.Headers.UserAgent.ToString();
 }

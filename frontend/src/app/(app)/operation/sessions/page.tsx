@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { bookingApi, customerApi, pricingApi, sessionApi, venueApi } from "@/lib/api/endpoints";
+import { ApiError } from "@/lib/api/client";
 import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso } from "@/lib/timeSlots";
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
@@ -196,6 +197,7 @@ export default function SessionsPage() {
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="secondary-btn" type="button" onClick={() => router.push(`/operation/sessions/${Number(row.sessionId)}`)}>Chi tiết</button>
                 <button className="ghost-btn" onClick={async () => {
                   try {
                     setPreviewingSessionId(Number(row.sessionId));
@@ -257,6 +259,7 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   }, []);
 
   const selectedTable = tables.find((table) => table.tableId === Number(tableId));
+  const tableLabel = selectedTable?.tableCode || selectedTable?.tableName || "đã chọn";
   const nightRules = rules.filter((rule) => {
     if (selectedTable && rule.tableTypeId !== selectedTable.tableTypeId) return false;
     const planName = plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name.toLowerCase() || "";
@@ -367,7 +370,7 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
       toast("Mở phiên thành công", "success");
       await onStarted(session);
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Không thể mở phiên.", "error");
+      toast(getStartSessionErrorMessage(err, tableLabel), "error");
     } finally {
       setSaving(false);
     }
@@ -425,6 +428,16 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
       </div>
     </Modal>
   );
+}
+
+function getStartSessionErrorMessage(error: unknown, tableLabel: string) {
+  if (error instanceof ApiError && error.status === 409) {
+    const details = error.errors.filter((item) => item && item !== error.message).join("; ");
+    const message = error.message || `Bàn ${tableLabel} chưa được cấu hình bảng giá cho thời điểm hiện tại. Vui lòng kiểm tra Pricing Plan.`;
+    return details ? `${message} (${details})` : message;
+  }
+
+  return error instanceof Error ? error.message : "Không thể mở phiên.";
 }
 
 function EndSessionModal({ session, summary, busy, onCancel, onAddOrder, onConfirm }: {

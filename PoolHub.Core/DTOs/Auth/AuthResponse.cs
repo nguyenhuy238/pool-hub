@@ -2,9 +2,13 @@ namespace PoolHub.Core.DTOs.Auth;
 
 public class AuthResponse
 {
+    [System.Text.Json.Serialization.JsonIgnore]
     public string AccessToken { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore]
     public string RefreshToken { get; set; } = string.Empty;
     public DateTime ExpiresAtUtc { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public DateTime RefreshTokenExpiresAtUtc { get; set; }
     public long UserId { get; set; }
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;

@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { tokenStore } from "@/lib/api/client";
 import { landingPathFor } from "@/lib/auth/constants";
 import { authService } from "@/services/auth-service";
 import type { AuthUser, RegisterRequest, RoleName } from "@/types";
@@ -10,7 +9,6 @@ import type { AuthUser, RegisterRequest, RoleName } from "@/types";
 type AuthContextValue = {
   user: AuthUser | null;
   roles: RoleName[];
-  accessToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
@@ -30,23 +28,13 @@ export const getLandingPath = landingPathFor;
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const clearAuth = useCallback(() => {
-    tokenStore.clear();
-    setAccessToken(null);
     setUser(null);
   }, []);
 
   const fetchMe = useCallback(async () => {
-    const token = tokenStore.getAccess();
-    setAccessToken(token);
-    if (!token) {
-      setUser(null);
-      setIsLoading(false);
-      return null;
-    }
     try {
       const currentUser = await authService.getMe();
       setUser(currentUser);
@@ -73,8 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [clearAuth, router]);
 
   const establishSession = useCallback(async (response: Awaited<ReturnType<typeof authService.login>>) => {
-    tokenStore.set(response.accessToken, response.refreshToken);
-    setAccessToken(response.accessToken);
     const fallback = response.user ?? {
       userId: response.userId,
       publicId: response.publicId,
@@ -100,18 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [establishSession, router]);
 
   const logout = useCallback(async () => {
-    const refreshToken = tokenStore.getRefresh();
-    if (refreshToken) await authService.logout(refreshToken).catch(() => undefined);
+    await authService.logout().catch(() => undefined);
     clearAuth();
     router.replace("/login");
   }, [clearAuth, router]);
 
   const refreshToken = useCallback(async () => {
     const refreshed = await authService.refreshToken();
-    setAccessToken(tokenStore.getAccess());
-    if (!refreshed) clearAuth();
+    if (refreshed) await fetchMe();
+    else clearAuth();
     return refreshed;
-  }, [clearAuth]);
+  }, [clearAuth, fetchMe]);
 
   const hasRole = useCallback((role: RoleName) => Boolean(user?.roles.includes(role)), [user]);
   const hasAnyRole = useCallback((roles: RoleName[]) => {
@@ -122,7 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     user,
     roles: user?.roles ?? [],
-    accessToken,
     isLoading,
     isAuthenticated: Boolean(user),
     login,
@@ -133,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hasRole,
     hasAnyRole,
     clearAuth
-  }), [accessToken, clearAuth, fetchMe, hasAnyRole, hasRole, isLoading, login, logout, refreshToken, register, user]);
+  }), [clearAuth, fetchMe, hasAnyRole, hasRole, isLoading, login, logout, refreshToken, register, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -115,7 +115,7 @@ public class SessionServiceTests
         var service = new SessionService(db);
 
         // Act & Assert: Transfer Session 1 to Table 2 (which is active under Session 2)
-        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.TransferTableAsync(1, 2, 99, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.TransferTableAsync(1, new TransferTableRequest { ToTableId = 2 }, 99, CancellationToken.None));
         Assert.Equal("New table already has an active session.", exception.Message);
     }
 
@@ -220,6 +220,30 @@ public class SessionServiceTests
     }
 
     [Fact]
+    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesMinimumAndBlockOnceForSession()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "A02", TableName = "A02", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        db.VenueTables.Add(new VenueTable { TableId = 2, ZoneId = 1, TableCode = "A01", TableName = "A01", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(31), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(29) });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 2, StartedAtUtc = startedAt.AddMinutes(29), EndedAtUtc = startedAt.AddMinutes(30) });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt.AddMinutes(30), EndedAtUtc = startedAt.AddMinutes(31) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(31, summary.ActualDurationMinutes);
+        Assert.Equal(45, summary.BillableDurationMinutes);
+        Assert.Equal(45, summary.Assignments.Sum(x => x.BillableDurationMinutes));
+        Assert.Equal(45000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
     public async Task GetSummaryAsync_WhenPricingRuleMissing_ThrowsConflictException()
     {
         using var db = CreateDb();
@@ -233,7 +257,9 @@ public class SessionServiceTests
 
         var exception = await Assert.ThrowsAsync<ConflictException>(() => new SessionService(db).GetSummaryAsync(1, CancellationToken.None));
 
-        Assert.Contains("No active pricing rule", exception.Message);
+        Assert.Contains("Không tìm thấy bảng giá", exception.Message);
+        Assert.Contains(exception.Errors, error => error == "tableCode=T1");
+        Assert.Contains(exception.Errors, error => error.StartsWith("venueLocalTime=", StringComparison.Ordinal));
     }
 
     private static PoolHubDbContext CreateDb()
