@@ -116,7 +116,9 @@ export const invoiceApi = {
   discount: (id: number, discountCode: string) => apiFetch(`/api/invoices/${id}/discounts`, { method: "POST", body: JSON.stringify({ discountCode }) }),
   removeDiscount: (id: number) => apiFetch(`/api/invoices/${id}/discounts`, { method: "DELETE" }),
   cancel: (id: number, reason: string) => apiFetch(`/api/invoices/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
-  exportPdf: (id: number) => apiFetch<{ url: string }>(`/api/invoices/${id}/export-pdf`)
+  exportPdf: (id: number) => apiFetch<{ url: string }>(`/api/invoices/${id}/export-pdf`),
+  updateProducts: (id: number, products: { productId: number; quantity: number }[]) => 
+    apiFetch(`/api/invoices/${id}/products`, { method: "PUT", body: JSON.stringify({ products }) })
 };
 
 export const productApi = {

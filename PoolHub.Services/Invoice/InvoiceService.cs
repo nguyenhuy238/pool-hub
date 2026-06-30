@@ -14,10 +14,15 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using EntityInvoice = PoolHub.Core.Entities.Invoice;
+using EntityOrder = PoolHub.Core.Entities.Order;
 
 namespace PoolHub.Services.Invoice;
 
-public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IInvoiceService
+public class InvoiceService(
+    PoolHubDbContext db, 
+    IConfiguration? config = null, 
+    IHttpClientFactory? httpClientFactory = null, 
+    IPosNotificationService? posNotificationService = null) : IInvoiceService
 {
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
@@ -219,20 +224,22 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
     {
         var invoice = await db.Invoices.FindAsync([id], ct) ?? throw new NotFoundException("Invoice not found.");
         
-        var lines = await db.InvoiceLines
-            .Where(x => x.InvoiceId == id)
-            .Select(x => new InvoiceLineDto
-            {
-                InvoiceLineId = x.InvoiceLineId,
-                InvoiceId = x.InvoiceId,
-                LineType = x.LineType,
-                ReferenceId = x.ReferenceId,
-                Description = x.Description,
-                Quantity = x.Quantity,
-                UnitPrice = x.UnitPrice,
-                LineTotalAmount = x.LineTotalAmount
-            })
-            .ToListAsync(ct);
+        var lines = await (from line in db.InvoiceLines
+                           where line.InvoiceId == id
+                           join item in db.OrderItems on line.ReferenceId equals item.OrderItemId into items
+                           from item in items.DefaultIfEmpty()
+                           select new InvoiceLineDto
+                           {
+                               InvoiceLineId = line.InvoiceLineId,
+                               InvoiceId = line.InvoiceId,
+                               LineType = line.LineType,
+                               ReferenceId = line.ReferenceId,
+                               Description = line.Description,
+                               Quantity = line.Quantity,
+                               UnitPrice = line.UnitPrice,
+                               LineTotalAmount = line.LineTotalAmount,
+                               ProductId = line.LineType == "PRODUCT" ? (item != null ? item.ProductId : (long?)null) : (long?)null
+                           }).ToListAsync(ct);
 
         var discounts = await db.InvoiceDiscounts
             .Where(x => x.InvoiceId == id)
@@ -652,5 +659,276 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
         }
 
         return $"https://img.vietqr.io/image/{bankCode}-{accountNo}-compact2.png?amount={amount}&addInfo={Uri.EscapeDataString(addInfo)}&accountName={Uri.EscapeDataString(accountName)}";
+    }
+
+    public async Task<InvoiceDto> UpdateInvoiceProductsAsync(long id, UpdateInvoiceProductsRequest request, long? userId, CancellationToken ct)
+    {
+        var invoice = await db.Invoices.FindAsync([id], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.Status == 3)
+        {
+            throw new BusinessRuleException("Cannot modify a cancelled invoice.");
+        }
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
+        {
+            throw new BusinessRuleException("Cannot modify a fully paid invoice.");
+        }
+
+        var session = await db.Sessions.FindAsync([invoice.SessionId], ct) ?? throw new NotFoundException("Session not found.");
+
+        var productIds = request.Products.Select(p => p.ProductId).Distinct().ToList();
+        var productsDb = await db.Products.Where(p => productIds.Contains(p.ProductId)).ToDictionaryAsync(p => p.ProductId, ct);
+
+        var invoiceLines = await db.InvoiceLines.Where(il => il.InvoiceId == id).ToListAsync(ct);
+
+        var orders = await db.Orders.Where(o => o.SessionId == invoice.SessionId && o.Status != 3).ToListAsync(ct);
+        EntityOrder order;
+        if (orders.Count > 0)
+        {
+            order = orders[0];
+        }
+        else
+        {
+            order = new EntityOrder
+            {
+                SessionId = invoice.SessionId,
+                OrderedByUserId = userId ?? 1,
+                OrderCode = $"OD{DateTime.UtcNow:yyyyMMddHHmmss}",
+                Status = 1,
+                SubtotalAmount = 0
+            };
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var orderItems = await db.OrderItems.Where(oi => oi.OrderId == order.OrderId).ToListAsync(ct);
+        var requestedProducts = request.Products
+            .GroupBy(p => p.ProductId)
+            .Select(g => new { ProductId = g.Key, Quantity = g.Sum(x => x.Quantity) })
+            .ToList();
+
+        var processedProductIds = new HashSet<long>();
+
+        foreach (var reqProd in requestedProducts)
+        {
+            var productId = reqProd.ProductId;
+            var newQty = reqProd.Quantity;
+            if (!productsDb.TryGetValue(productId, out var product))
+            {
+                throw new NotFoundException($"Product with ID {productId} not found.");
+            }
+            if (!product.IsActive)
+            {
+                throw new BusinessRuleException($"Product '{product.Name}' is inactive.");
+            }
+
+            processedProductIds.Add(productId);
+
+            var orderItem = orderItems.FirstOrDefault(oi => oi.ProductId == productId);
+            int oldQty = orderItem?.Quantity ?? 0;
+            int diff = newQty - oldQty;
+
+            if (diff == 0) continue;
+
+            if (diff > 0)
+            {
+                if (product.IsStockTracked && product.StockQuantity < diff)
+                {
+                    throw new BusinessRuleException($"Sản phẩm '{product.Name}' không đủ số lượng trong kho. Hiện có: {product.StockQuantity}, cần thêm: {diff}.");
+                }
+                if (product.IsStockTracked)
+                {
+                    product.StockQuantity -= diff;
+                }
+            }
+            else
+            {
+                if (product.IsStockTracked)
+                {
+                    product.StockQuantity += -diff;
+                }
+            }
+
+            if (orderItem != null)
+            {
+                if (newQty > 0)
+                {
+                    orderItem.Quantity = newQty;
+                    orderItem.LineTotalAmount = newQty * product.UnitPrice;
+                }
+                else
+                {
+                    db.OrderItems.Remove(orderItem);
+                }
+            }
+            else if (newQty > 0)
+            {
+                orderItem = new OrderItem
+                {
+                    OrderId = order.OrderId,
+                    ProductId = productId,
+                    ProductNameSnapshot = product.Name,
+                    Quantity = newQty,
+                    UnitPriceSnapshot = product.UnitPrice,
+                    LineTotalAmount = newQty * product.UnitPrice
+                };
+                db.OrderItems.Add(orderItem);
+            }
+
+            await db.SaveChangesAsync(ct);
+
+            var invoiceLine = invoiceLines.FirstOrDefault(il => il.LineType == "PRODUCT" && il.ReferenceId == orderItem?.OrderItemId);
+            if (invoiceLine != null)
+            {
+                if (newQty > 0)
+                {
+                    invoiceLine.Quantity = newQty;
+                    invoiceLine.UnitPrice = product.UnitPrice;
+                    invoiceLine.LineTotalAmount = newQty * product.UnitPrice;
+                }
+                else
+                {
+                    db.InvoiceLines.Remove(invoiceLine);
+                }
+            }
+            else if (newQty > 0 && orderItem != null)
+            {
+                invoiceLine = new InvoiceLine
+                {
+                    InvoiceId = id,
+                    LineType = "PRODUCT",
+                    ReferenceId = orderItem.OrderItemId,
+                    Description = product.Name,
+                    Quantity = newQty,
+                    UnitPrice = product.UnitPrice,
+                    LineTotalAmount = newQty * product.UnitPrice
+                };
+                db.InvoiceLines.Add(invoiceLine);
+            }
+
+            db.InventoryTransactions.Add(new InventoryTransaction
+            {
+                ProductId = productId,
+                TransactionType = 4, // Sale
+                Quantity = -diff,
+                ReferenceType = "ORDER",
+                ReferenceId = order.OrderId,
+                Note = $"INVOICE PRODUCT QUANTITY UPDATED (diff: {diff})",
+                CreatedByUserId = userId
+            });
+        }
+
+        // Clean up products that were NOT in the request
+        var invoiceLinesToDelete = invoiceLines
+            .Where(il => il.LineType == "PRODUCT")
+            .Where(il => !processedProductIds.Contains(db.OrderItems.FirstOrDefault(oi => oi.OrderItemId == il.ReferenceId)?.ProductId ?? 0))
+            .ToList();
+
+        foreach (var il in invoiceLinesToDelete)
+        {
+            var orderItem = orderItems.FirstOrDefault(oi => oi.OrderItemId == il.ReferenceId);
+            if (orderItem != null)
+            {
+                var product = await db.Products.FindAsync([orderItem.ProductId], ct);
+                if (product != null)
+                {
+                    if (product.IsStockTracked)
+                    {
+                        product.StockQuantity += orderItem.Quantity;
+                    }
+
+                    db.InventoryTransactions.Add(new InventoryTransaction
+                    {
+                        ProductId = product.ProductId,
+                        TransactionType = 4,
+                        Quantity = orderItem.Quantity,
+                        ReferenceType = "ORDER",
+                        ReferenceId = order.OrderId,
+                        Note = "INVOICE PRODUCT REMOVED",
+                        CreatedByUserId = userId
+                    });
+                }
+                db.OrderItems.Remove(orderItem);
+            }
+            db.InvoiceLines.Remove(il);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        var finalOrderItems = await db.OrderItems.Where(oi => oi.OrderId == order.OrderId).ToListAsync(ct);
+        order.SubtotalAmount = finalOrderItems.Sum(oi => oi.LineTotalAmount);
+
+        var currentLines = await db.InvoiceLines.Where(il => il.InvoiceId == id).ToListAsync(ct);
+        var newProductTotal = currentLines.Where(il => il.LineType == "PRODUCT").Sum(il => il.LineTotalAmount);
+        var newTimeTotal = currentLines.Where(il => il.LineType == "TIME").Sum(il => il.LineTotalAmount);
+
+        invoice.ProductSubtotalAmount = newProductTotal;
+        invoice.TimeSubtotalAmount = newTimeTotal;
+        invoice.SubtotalAmount = newProductTotal + newTimeTotal;
+
+        var existingDiscount = await db.InvoiceDiscounts.FirstOrDefaultAsync(x => x.InvoiceId == id, ct);
+        if (existingDiscount != null)
+        {
+            var discount = await db.Discounts.FindAsync([existingDiscount.DiscountId], ct);
+            if (discount != null)
+            {
+                if (discount.MinTimeSubtotal.HasValue && invoice.TimeSubtotalAmount < discount.MinTimeSubtotal.Value)
+                {
+                    db.InvoiceDiscounts.Remove(existingDiscount);
+                    invoice.DiscountAmount = 0;
+                }
+                else
+                {
+                    decimal baseAmount = invoice.SubtotalAmount;
+                    decimal discountAmt = 0;
+                    if (discount.DiscountType.Equals(DiscountTypes.Percentage, StringComparison.OrdinalIgnoreCase))
+                    {
+                        discountAmt = baseAmount * (discount.Value / 100m);
+                    }
+                    else if (discount.DiscountType.Equals(DiscountTypes.FixedAmount, StringComparison.OrdinalIgnoreCase)
+                             || discount.DiscountType.Equals("FIXED", StringComparison.OrdinalIgnoreCase))
+                    {
+                        discountAmt = discount.Value;
+                    }
+
+                    if (discount.MaxAmount.HasValue && discountAmt > discount.MaxAmount.Value)
+                    {
+                        discountAmt = discount.MaxAmount.Value;
+                    }
+
+                    if (discountAmt > baseAmount)
+                    {
+                        discountAmt = baseAmount;
+                    }
+
+                    existingDiscount.AmountApplied = discountAmt;
+                    invoice.DiscountAmount = discountAmt;
+                }
+            }
+        }
+
+        invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount - invoice.DiscountAmount + invoice.TaxAmount);
+
+        if (invoice.PaidAmount >= invoice.GrandTotalAmount)
+        {
+            invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
+            invoice.Status = 2; // Completed
+        }
+        else if (invoice.PaidAmount > 0)
+        {
+            invoice.PaymentStatus = InvoicePaymentStatuses.PartiallyPaid;
+        }
+        else
+        {
+            invoice.PaymentStatus = InvoicePaymentStatuses.Unpaid;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        if (posNotificationService != null)
+        {
+            await posNotificationService.NotifySessionUpdateAsync((int)invoice.SessionId, ct);
+        }
+
+        return new InvoiceDto { InvoiceId = invoice.InvoiceId, SessionId = invoice.SessionId, InvoiceCode = invoice.InvoiceCode, GrandTotalAmount = invoice.GrandTotalAmount };
     }
 }

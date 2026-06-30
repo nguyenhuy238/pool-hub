@@ -193,6 +193,7 @@ export type InvoiceLine = {
   invoiceId: number;
   lineType: string;
   referenceId?: number;
+  productId?: number;
   description: string;
   quantity: number;
   unitPrice: number;

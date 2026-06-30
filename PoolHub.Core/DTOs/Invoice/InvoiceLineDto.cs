@@ -10,4 +10,5 @@ public class InvoiceLineDto
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal LineTotalAmount { get; set; }
+    public long? ProductId { get; set; }
 }

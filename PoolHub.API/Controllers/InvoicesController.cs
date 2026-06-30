@@ -74,4 +74,11 @@ public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
         var url = await invoiceService.GetVietQrUrlAsync(id, ct);
         return Redirect(url);
     }
+
+    [HttpPut("{id:long}/products")]
+    public async Task<ActionResult<ApiResponse<InvoiceDto>>> UpdateProducts(long id, [FromBody] UpdateInvoiceProductsRequest request, CancellationToken ct)
+    {
+        var result = await invoiceService.UpdateInvoiceProductsAsync(id, request, User.GetUserId(), ct);
+        return Ok(ApiResponse<InvoiceDto>.Ok(result, "Products updated successfully."));
+    }
 }

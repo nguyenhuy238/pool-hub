@@ -52,7 +52,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
 
     public async Task<List<OrderDetailDto>> GetOrdersBySessionIdAsync(long sessionId, CancellationToken ct)
     {
-        var orders = await db.Orders.Where(x => x.SessionId == sessionId).ToListAsync(ct);
+        var orders = await db.Orders.Where(x => x.SessionId == sessionId && x.Status != 3).ToListAsync(ct);
         var details = new List<OrderDetailDto>();
 
         foreach (var order in orders)
