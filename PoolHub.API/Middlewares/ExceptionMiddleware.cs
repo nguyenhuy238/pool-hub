@@ -43,7 +43,10 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
 
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)code;
-        var response = ApiResponse<object>.Fail(message, [message]);
+        var errors = ex is AppException appException && appException.Errors.Count > 0
+            ? appException.Errors
+            : [message];
+        var response = ApiResponse<object>.Fail(message, errors);
         response.TraceId = context.TraceIdentifier;
         await context.Response.WriteAsJsonAsync(response, context.RequestAborted);
     }

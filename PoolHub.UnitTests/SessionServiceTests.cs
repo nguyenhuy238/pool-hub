@@ -257,7 +257,9 @@ public class SessionServiceTests
 
         var exception = await Assert.ThrowsAsync<ConflictException>(() => new SessionService(db).GetSummaryAsync(1, CancellationToken.None));
 
-        Assert.Contains("No active pricing rule", exception.Message);
+        Assert.Contains("Không tìm thấy bảng giá", exception.Message);
+        Assert.Contains(exception.Errors, error => error == "tableCode=T1");
+        Assert.Contains(exception.Errors, error => error.StartsWith("venueLocalTime=", StringComparison.Ordinal));
     }
 
     private static PoolHubDbContext CreateDb()

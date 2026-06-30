@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
@@ -12,9 +13,9 @@ using EntityInvoice = PoolHub.Core.Entities.Invoice;
 
 namespace PoolHub.Services.Session;
 
-public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService) : ISessionService
+public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null) : ISessionService
 {
-    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService())
+    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null)
     {
     }
 
@@ -383,7 +384,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         // Fetch pricing plan and active rule for the table at start time
         var rule = await FindActiveRuleAsync(table.TableTypeId, session.StartedAtUtc, ct)
-            ?? throw new ConflictException($"No active pricing rule found for table {table.TableCode} at session start time.");
+            ?? throw BuildMissingPricingRuleException(table, session.StartedAtUtc, "thời điểm mở phiên");
         var hourlyRate = rule.HourlyRate;
 
         var assignment = new SessionTableAssignment
@@ -836,7 +837,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         newTable.UpdatedAtUtc = endedAtUtc;
 
         var rule = await FindActiveRuleAsync(newTable.TableTypeId, endedAtUtc, ct)
-            ?? throw new ConflictException($"No active pricing rule found for table {newTable.TableCode} at transfer time.");
+            ?? throw BuildMissingPricingRuleException(newTable, endedAtUtc, "thời điểm chuyển bàn");
         var hourlyRate = rule.HourlyRate;
 
         var newAssignment = new SessionTableAssignment
@@ -1098,7 +1099,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     private async Task<PricingCharge> GetAssignmentPricingAsync(SessionTableAssignment assignment, VenueTable table, CancellationToken ct)
     {
         var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct)
-            ?? throw new ConflictException($"No active pricing rule found for table {table.TableCode} at assignment start time.");
+            ?? throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thời điểm bắt đầu gán bàn");
         var pricingPlanName = await db.PricingPlans.AsNoTracking()
             .Where(x => x.PricingPlanId == rule.PricingPlanId)
             .Select(x => x.Name)
@@ -1128,11 +1129,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
     private async Task<PricingPlanRule?> FindActiveRuleAsync(long tableTypeId, DateTime time, CancellationToken ct)
     {
-        int dayOfWeek = (int)time.DayOfWeek;
-        TimeSpan timeOfDay = time.TimeOfDay;
+        var utcTime = NormalizeUtc(time);
+        var localTime = ConvertUtcToVenueLocal(utcTime);
+        var dayOfWeek = (int)localTime.DayOfWeek;
+        var previousDayOfWeek = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+        var timeOfDay = localTime.TimeOfDay;
 
         var activePlans = await db.PricingPlans
-            .Where(p => p.IsActive && p.StartsAtUtc <= time && (p.EndsAtUtc == null || p.EndsAtUtc >= time))
+            .Where(p => p.IsActive && p.StartsAtUtc <= utcTime && (p.EndsAtUtc == null || p.EndsAtUtc >= utcTime))
             .ToListAsync(ct);
 
         if (!activePlans.Any()) return null;
@@ -1141,29 +1145,83 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         foreach (var planId in planIds)
         {
-            var rule = await db.PricingPlanRules
-                .FirstOrDefaultAsync(r => r.PricingPlanId == planId && 
-                                          r.TableTypeId == tableTypeId && 
-                                          r.DayOfWeek == dayOfWeek && 
-                                          r.StartTime <= timeOfDay && 
-                                          r.EndTime >= timeOfDay && 
-                                          r.IsActive, ct);
-            if (rule != null) return rule;
-        }
-
-        var defaultPlan = activePlans.FirstOrDefault(p => p.IsDefault);
-        if (defaultPlan != null)
-        {
-            var rule = await db.PricingPlanRules
-                .FirstOrDefaultAsync(r => r.PricingPlanId == defaultPlan.PricingPlanId && 
-                                          r.TableTypeId == tableTypeId && 
-                                          r.DayOfWeek == dayOfWeek && 
-                                          r.IsActive, ct);
+            var candidates = await db.PricingPlanRules
+                .Where(r => r.PricingPlanId == planId &&
+                            r.TableTypeId == tableTypeId &&
+                            r.IsActive &&
+                            (r.DayOfWeek == dayOfWeek || r.DayOfWeek == previousDayOfWeek))
+                .OrderByDescending(r => r.DayOfWeek == dayOfWeek)
+                .ThenByDescending(r => r.PricingPlanRuleId)
+                .ToListAsync(ct);
+            var rule = candidates.FirstOrDefault(r => RuleMatchesLocalTime(r, dayOfWeek, timeOfDay));
             if (rule != null) return rule;
         }
 
         return null;
     }
+
+    private static bool RuleMatchesLocalTime(PricingPlanRule rule, int localDayOfWeek, TimeSpan localTime)
+    {
+        if (rule.StartTime < rule.EndTime)
+        {
+            return rule.DayOfWeek == localDayOfWeek &&
+                   rule.StartTime <= localTime &&
+                   localTime < rule.EndTime;
+        }
+
+        if (rule.StartTime > rule.EndTime)
+        {
+            return (rule.DayOfWeek == localDayOfWeek && localTime >= rule.StartTime) ||
+                   (NextDay(rule.DayOfWeek) == localDayOfWeek && localTime < rule.EndTime);
+        }
+
+        return rule.DayOfWeek == localDayOfWeek;
+    }
+
+    private static int NextDay(int dayOfWeek) => dayOfWeek == 6 ? 0 : dayOfWeek + 1;
+
+    private ConflictException BuildMissingPricingRuleException(VenueTable table, DateTime startedAtUtc, string context)
+    {
+        var utcTime = NormalizeUtc(startedAtUtc);
+        var localTime = ConvertUtcToVenueLocal(utcTime);
+        var message = $"Không tìm thấy bảng giá đang áp dụng cho bàn {table.TableCode} tại {context}.";
+        return new ConflictException(message, [
+            $"tableCode={table.TableCode}",
+            $"tableTypeId={table.TableTypeId}",
+            $"startedAtUtc={utcTime:O}",
+            $"venueLocalTime={localTime:O}",
+            $"dayOfWeek={(int)localTime.DayOfWeek}",
+            $"localTime={localTime.TimeOfDay}"
+        ]);
+    }
+
+    private DateTime ConvertUtcToVenueLocal(DateTime utcTime)
+    {
+        return TimeZoneInfo.ConvertTimeFromUtc(NormalizeUtc(utcTime), GetVenueTimeZone());
+    }
+
+    private TimeZoneInfo GetVenueTimeZone()
+    {
+        var configuredId = config?["Venue:TimeZoneId"] ?? "Asia/Ho_Chi_Minh";
+        foreach (var id in new[] { configuredId, "Asia/Ho_Chi_Minh", "SE Asia Standard Time" }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.Utc;
+    }
+
+    private static DateTime NormalizeUtc(DateTime time) =>
+        time.Kind == DateTimeKind.Utc ? time : DateTime.SpecifyKind(time, DateTimeKind.Utc);
 
     private async Task EnsureSessionHasNoPaidInvoiceAsync(long sessionId, CancellationToken ct)
     {
@@ -1278,7 +1336,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         }
         else
         {
-            throw new ConflictException($"No active pricing rule found for table {table.TableCode} at assignment start time.");
+            throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thời điểm bắt đầu gán bàn");
         }
     }
 
@@ -1287,7 +1345,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct);
         if (rule is null)
         {
-            throw new ConflictException($"No active pricing rule found for table {table.TableCode} at assignment start time.");
+            throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thời điểm bắt đầu gán bàn");
         }
 
         var billableMinutes = durationMinutes;
@@ -1343,7 +1401,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         assignment.DurationMinutes = durationMinutes;
 
         var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct)
-            ?? throw new ConflictException($"No active pricing rule found for table {table.TableCode} at session start time.");
+            ?? throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thời điểm mở phiên");
 
         assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
         assignment.HourlyRateSnapshot = rule.HourlyRate;
