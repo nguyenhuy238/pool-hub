@@ -8,7 +8,7 @@ import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { Invoice, PaymentMethod, Session, Product } from "@/types";
+import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session } from "@/types";
 
 export default function InvoicesPage() {
   const toast = useToast();

@@ -208,6 +208,7 @@ export type Product = {
   sku: string;
   unitPrice: number;
   stockQuantity: number;
+  isStockTracked?: boolean;
 };
 
 export type ProductCategory = { productCategoryId: number; name: string; description?: string; isActive?: boolean };

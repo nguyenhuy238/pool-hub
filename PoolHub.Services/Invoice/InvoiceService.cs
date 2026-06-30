@@ -22,7 +22,8 @@ public class InvoiceService(
     PoolHubDbContext db, 
     IConfiguration? config = null, 
     IHttpClientFactory? httpClientFactory = null, 
-    IPosNotificationService? posNotificationService = null) : IInvoiceService
+    IPosNotificationService? posNotificationService = null,
+    ICustomerReviewService? customerReviewService = null) : IInvoiceService
 {
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
