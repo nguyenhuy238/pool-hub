@@ -23,4 +23,10 @@ public static class AuditActions
     public const string CustomerCreated = "CUSTOMER_CREATED";
     public const string CustomerUpdated = "CUSTOMER_UPDATED";
     public const string CustomerStatusChanged = "CUSTOMER_STATUS_CHANGED";
+    public const string CustomerReviewApproved = "CUSTOMER_REVIEW_APPROVED";
+    public const string CustomerReviewRejected = "CUSTOMER_REVIEW_REJECTED";
+    public const string CustomerReviewUpdated = "CUSTOMER_REVIEW_UPDATED";
+    public const string CustomerReviewHidden = "CUSTOMER_REVIEW_HIDDEN";
+    public const string CustomerReviewInvitationCreated = "CUSTOMER_REVIEW_INVITATION_CREATED";
+    public const string CustomerReviewInvitationUsed = "CUSTOMER_REVIEW_INVITATION_USED";
 }

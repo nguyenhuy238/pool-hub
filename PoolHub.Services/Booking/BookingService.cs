@@ -72,6 +72,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     {
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
         long customerId = 0;
+        var phone = PhoneNumberNormalizer.Normalize(request.PhoneNumber);
+        var email = NormalizeEmail(request.Email);
 
         if (request.CustomerId.HasValue && request.CustomerId > 0)
         {
@@ -81,22 +83,22 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             {
                 throw new BusinessRuleException("Customer is blocked or inactive.");
             }
-            if (!string.IsNullOrWhiteSpace(request.Email) && customer.Email != request.Email)
+            if (!string.IsNullOrWhiteSpace(email) && customer.Email != email)
             {
-                var emailTaken = await db.Customers.AnyAsync(c => c.Email == request.Email && c.CustomerId != customer.CustomerId, ct);
+                var emailTaken = await db.Customers.AnyAsync(c => c.Email == email && c.CustomerId != customer.CustomerId, ct);
                 if (!emailTaken)
                 {
-                    customer.Email = request.Email;
+                    customer.Email = email;
                     await db.SaveChangesAsync(ct);
                 }
             }
             customerId = customer.CustomerId;
         }
-        else if (!string.IsNullOrEmpty(request.PhoneNumber) || !string.IsNullOrEmpty(request.Email))
+        else if (!string.IsNullOrEmpty(phone) || !string.IsNullOrEmpty(email))
         {
             var customer = await db.Customers.FirstOrDefaultAsync(c =>
-                (!string.IsNullOrEmpty(request.PhoneNumber) && c.PhoneNumber == request.PhoneNumber) ||
-                (!string.IsNullOrEmpty(request.Email) && c.Email == request.Email), ct);
+                (!string.IsNullOrEmpty(phone) && c.PhoneNumber == phone) ||
+                (!string.IsNullOrEmpty(email) && c.Email == email), ct);
 
             if (customer != null)
             {
@@ -104,20 +106,20 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                 {
                     throw new BusinessRuleException("Customer is blocked or inactive.");
                 }
-                if (!string.IsNullOrWhiteSpace(request.Email) && customer.Email != request.Email)
+                if (!string.IsNullOrWhiteSpace(email) && customer.Email != email)
                 {
-                    var emailTaken = await db.Customers.AnyAsync(c => c.Email == request.Email && c.CustomerId != customer.CustomerId, ct);
+                    var emailTaken = await db.Customers.AnyAsync(c => c.Email == email && c.CustomerId != customer.CustomerId, ct);
                     if (!emailTaken)
                     {
-                        customer.Email = request.Email;
+                        customer.Email = email;
                     }
                 }
-                if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && customer.PhoneNumber != request.PhoneNumber)
+                if (!string.IsNullOrWhiteSpace(phone) && customer.PhoneNumber != phone)
                 {
-                    var phoneTaken = await db.Customers.AnyAsync(c => c.PhoneNumber == request.PhoneNumber && c.CustomerId != customer.CustomerId, ct);
+                    var phoneTaken = await db.Customers.AnyAsync(c => c.PhoneNumber == phone && c.CustomerId != customer.CustomerId, ct);
                     if (!phoneTaken)
                     {
-                        customer.PhoneNumber = request.PhoneNumber;
+                        customer.PhoneNumber = phone;
                     }
                 }
                 await db.SaveChangesAsync(ct);
@@ -125,7 +127,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             }
             else
             {
-                var newCustomer = new EntityCustomer { PhoneNumber = request.PhoneNumber ?? "", FullName = request.CustomerName ?? "Anonymous", Email = request.Email };
+                var newCustomer = new EntityCustomer { PhoneNumber = phone, FullName = request.CustomerName?.Trim() ?? "Anonymous", Email = email };
                 db.Customers.Add(newCustomer);
                 await db.SaveChangesAsync(ct);
                 customerId = newCustomer.CustomerId;
@@ -571,6 +573,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (endTimeUtc <= startTimeUtc)
             throw new ValidationException("End time must be after start time.");
     }
+
+    private static string? NormalizeEmail(string? email) =>
+        string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
 }
 
 internal sealed class NoOpPosNotificationService : IPosNotificationService

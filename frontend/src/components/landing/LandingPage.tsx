@@ -11,16 +11,22 @@ import { ReviewSection } from "@/components/landing/ReviewSection";
 import { ServicesSection } from "@/components/landing/ServicesSection";
 import { USPSection } from "@/components/landing/USPSection";
 import { AboutSection } from "@/components/landing/AboutSection";
-import { defaultLandingSettings, landingSettingsApi, type LandingPageSettings } from "@/lib/api/landingSettingsApi";
+import { activeSorted, defaultLandingSettings, landingSettingsApi, type LandingPageSettings } from "@/lib/api/landingSettingsApi";
+import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
+import type { PublicReview } from "@/types";
 
 export function LandingPage() {
   const [settings, setSettings] = useState<LandingPageSettings>(defaultLandingSettings);
+  const [reviews, setReviews] = useState<PublicReview[]>([]);
 
   useEffect(() => {
     landingSettingsApi.public().then(setSettings).catch((error) => {
       console.error("Failed to load landing page settings", error);
       setSettings(defaultLandingSettings);
     });
+    customerReviewsApi.publicList({ pageNumber: 1, pageSize: 6 })
+      .then((value) => setReviews(value.items || value.data || []))
+      .catch(() => setReviews([]));
   }, []);
 
   const themeStyle = {
@@ -36,7 +42,7 @@ export function LandingPage() {
       <ServicesSection items={settings.services} />
       <PricingSection />
       <BookingWizard policy={settings.bookingPolicy} />
-      <ReviewSection items={settings.reviews} />
+      <ReviewSection items={reviews.length ? reviews : activeSorted(settings.reviews).filter((item) => item.isFeatured)} />
       <GallerySection items={settings.gallery} />
       <ContactSection info={settings.generalInfo} />
       <LandingFooter info={settings.generalInfo} bookingPolicy={settings.bookingPolicy} socialLinks={settings.socialLinks || []} footer={settings.footer} legal={settings.legal} qrCode={settings.qrCode} />

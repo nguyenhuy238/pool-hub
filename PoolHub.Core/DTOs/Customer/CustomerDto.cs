@@ -8,6 +8,8 @@ public class CustomerDto
     /// <summary>ID khách hàng.</summary>
     public long CustomerId { get; set; }
 
+    public Guid PublicId { get; set; }
+
     /// <summary>Tên đầy đủ.</summary>
     public string FullName { get; set; } = string.Empty;
 

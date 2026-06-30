@@ -43,6 +43,7 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService) : 
             .Select(c => new CustomerDto
             {
                 CustomerId = c.CustomerId,
+                PublicId = c.PublicId,
                 FullName = c.FullName,
                 PhoneNumber = c.PhoneNumber,
                 Email = c.Email,
@@ -70,6 +71,7 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService) : 
             .Select(c => new CustomerDto
             {
                 CustomerId = c.CustomerId,
+                PublicId = c.PublicId,
                 FullName = c.FullName,
                 PhoneNumber = c.PhoneNumber,
                 Email = c.Email,
@@ -86,7 +88,9 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService) : 
 
     public async Task<CustomerDto> CreateCustomerAsync(CreateCustomerRequest request, long actorUserId, CancellationToken ct)
     {
-        var phone = request.PhoneNumber.Trim();
+        var phone = PhoneNumberNormalizer.Normalize(request.PhoneNumber);
+        if (string.IsNullOrWhiteSpace(phone))
+            throw new ValidationException("Phone number is required.");
         var email = NormalizeEmail(request.Email);
         if (await db.Customers.AnyAsync(x => x.PhoneNumber == phone, ct))
             throw new ConflictException("Customer phone number already exists.");

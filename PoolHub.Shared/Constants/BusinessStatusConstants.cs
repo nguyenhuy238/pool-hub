@@ -17,6 +17,29 @@ public static class InvoicePaymentStatuses
     public const int Refunded = 4;
 }
 
+public static class CustomerReviewStatuses
+{
+    public const int Pending = 1;
+    public const int Approved = 2;
+    public const int Rejected = 3;
+    public const int Hidden = 4;
+}
+
+public static class CustomerReviewSources
+{
+    public const string Public = "Public";
+    public const string Staff = "Staff";
+    public const string AdminImport = "AdminImport";
+}
+
+public static class CustomerReviewInvitationStatuses
+{
+    public const int Active = 1;
+    public const int Used = 2;
+    public const int Expired = 3;
+    public const int Revoked = 4;
+}
+
 public static class PaymentStatuses
 {
     public const int Pending = 1;

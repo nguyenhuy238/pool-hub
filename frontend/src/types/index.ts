@@ -74,6 +74,50 @@ export type Customer = {
   status: boolean;
 };
 
+export type PublicReview = {
+  publicId: string;
+  rating: number;
+  content: string;
+  displayName: string;
+  avatarUrl?: string;
+  checkInImageUrl?: string;
+  isFeatured?: boolean;
+  displayOrder?: number;
+  createdAtUtc?: string;
+};
+
+export type CustomerReview = PublicReview & {
+  customerId?: number;
+  customerPublicId?: string;
+  customerName?: string;
+  phoneNumber?: string;
+  bookingCode?: string;
+  sessionCode?: string;
+  invoiceCode?: string;
+  status: number;
+  source?: string;
+  approvedAtUtc?: string;
+  rejectedReason?: string;
+  note?: string;
+};
+
+export type ReviewInvitation = {
+  publicId: string;
+  customerDisplayName: string;
+  invoiceCode: string;
+  sessionCode: string;
+  playedAt?: string;
+  tableName?: string;
+  canSubmit: boolean;
+  reason?: string;
+};
+
+export type ReviewInvitationLink = {
+  publicId: string;
+  reviewUrl: string;
+  expiresAtUtc: string;
+};
+
 export type Role = {
   roleId?: number;
   name?: string;
@@ -238,6 +282,7 @@ export type Invoice = {
   lines?: InvoiceLine[];
   discounts?: InvoiceDiscount[];
   payments?: InvoicePayment[];
+  reviewInvitation?: ReviewInvitationLink;
 };
 
 export type PaymentMethod = {

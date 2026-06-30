@@ -15,6 +15,7 @@ using PoolHub.Services.Auth;
 using PoolHub.Services.BackgroundJobs;
 using PoolHub.Services.Booking;
 using PoolHub.Services.Customer;
+using PoolHub.Services.CustomerReview;
 using PoolHub.Services.Dashboard;
 using PoolHub.Services.Common;
 using PoolHub.Services.Invoice;
@@ -209,6 +210,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<ICustomerReviewService, CustomerReviewService>();
         services.AddScoped<IVenueService, VenueService>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<IProductService, ProductService>();

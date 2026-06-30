@@ -17,7 +17,7 @@ using EntityInvoice = PoolHub.Core.Entities.Invoice;
 
 namespace PoolHub.Services.Invoice;
 
-public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IInvoiceService
+public class InvoiceService(PoolHubDbContext db, ICustomerReviewService? customerReviewService = null, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IInvoiceService
 {
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
@@ -151,7 +151,7 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
         return new InvoiceDto { InvoiceId = invoice.InvoiceId, SessionId = invoice.SessionId, InvoiceCode = invoice.InvoiceCode, GrandTotalAmount = invoice.GrandTotalAmount };
     }
 
-    public async Task CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct)
+    public async Task<CreatePaymentResponse> CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct)
     {
         if (request.Amount <= 0)
         {
@@ -192,13 +192,38 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
         db.Payments.Add(payment);
 
         invoice.PaidAmount += request.Amount;
+        var becamePaid = false;
         if (invoice.PaidAmount >= invoice.GrandTotalAmount)
         {
             invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
             invoice.Status = 2; // Completed
+            becamePaid = true;
         }
 
         await db.SaveChangesAsync(ct);
+
+        PoolHub.Core.DTOs.CustomerReview.ReviewInvitationLinkDto? invitation = null;
+        if (becamePaid && customerReviewService is not null)
+        {
+            try
+            {
+                invitation = await customerReviewService.CreateInvitationForInvoiceAsync(invoice.InvoiceId, receivedByUserId, ct);
+            }
+            catch (ConflictException)
+            {
+                invitation = null;
+            }
+        }
+
+        return new CreatePaymentResponse
+        {
+            InvoiceId = invoice.InvoiceId,
+            InvoiceCode = invoice.InvoiceCode,
+            PaymentStatus = invoice.PaymentStatus,
+            PaidAmount = invoice.PaidAmount,
+            GrandTotalAmount = invoice.GrandTotalAmount,
+            ReviewInvitation = invitation
+        };
     }
 
     public Task<List<PaymentMethodDto>> GetPaymentMethodsAsync(CancellationToken ct)
