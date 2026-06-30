@@ -51,6 +51,8 @@ export default function BookingsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
   const [cancelling, setCancelling] = useState<Booking | null>(null);
+  const [startingSession, setStartingSession] = useState<Booking | null>(null);
+  const [noShowing, setNoShowing] = useState<Booking | null>(null);
 
   const { data, loading, error, reload } = useLoad(async () => {
     const [bookingsRes, tablesRes, typesRes] = await Promise.all([
@@ -156,15 +158,18 @@ export default function BookingsPage() {
         ]}
         actions={(row) => {
           const statusValue = Number(row.status);
-          const now = Date.now();
-          const pendingStillValid = statusValue === BOOKING_PENDING && new Date(String(row.startTimeUtc)).getTime() > now;
-          const confirmedStillValid = statusValue === BOOKING_CONFIRMED && new Date(String(row.endTimeUtc)).getTime() > now;
           const hasSession = hasStartedSession(row);
-          const canConfirm = pendingStillValid && !hasSession;
-          const canEdit = (pendingStillValid || confirmedStillValid) && !hasSession;
-          const canCancel = (pendingStillValid || confirmedStillValid) && !hasSession;
+          const isPending = statusValue === BOOKING_PENDING;
+          const isConfirmed = statusValue === BOOKING_CONFIRMED;
+
+          const canConfirm = isPending && !hasSession;
+          const canStartSession = isConfirmed && !hasSession;
+          const canEdit = (isPending || isConfirmed) && !hasSession;
+          const canNoShow = isConfirmed && !hasSession;
+          const canCancel = (isPending || isConfirmed) && !hasSession;
+
           return (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", minWidth: 240 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", minWidth: 270 }}>
               {canConfirm && (
                 <button
                   className="primary-btn compact"
@@ -172,6 +177,21 @@ export default function BookingsPage() {
                   onClick={() => action(bookingApi.confirm(Number(row.bookingId)), "Đã xác nhận booking.")}
                 >
                   Xác nhận
+                </button>
+              )}
+              {canStartSession && (
+                <button
+                  className="primary-btn compact"
+                  style={{ whiteSpace: "nowrap", background: "#10b981", borderColor: "#059669" }}
+                  onClick={() => {
+                    if (!row.tableId) {
+                      toast("Booking chưa xếp bàn. Vui lòng ấn Chỉnh sửa để chọn bàn trước.", "error");
+                      return;
+                    }
+                    setStartingSession(row as unknown as Booking);
+                  }}
+                >
+                  Nhận bàn
                 </button>
               )}
               {canEdit && (
@@ -183,6 +203,15 @@ export default function BookingsPage() {
                   Chỉnh sửa
                 </button>
               )}
+              {canNoShow && (
+                <button
+                  className="ghost-btn compact"
+                  style={{ whiteSpace: "nowrap", borderColor: "#fcd34d", color: "#b45309", background: "#fffbeb" }}
+                  onClick={() => setNoShowing(row as unknown as Booking)}
+                >
+                  Không đến
+                </button>
+              )}
               {canCancel && (
                 <button
                   className="danger-btn compact"
@@ -192,6 +221,15 @@ export default function BookingsPage() {
                   Hủy
                 </button>
               )}
+              {hasSession && row.sessionId ? (
+                <a
+                  href={`/operation/sessions/${row.sessionId}`}
+                  className="ghost-btn compact"
+                  style={{ whiteSpace: "nowrap", textDecoration: "none", borderColor: "#cbd5e1", color: "#475569" }}
+                >
+                  Xem phiên
+                </a>
+              ) : null}
             </div>
           );
         }}
@@ -201,6 +239,34 @@ export default function BookingsPage() {
         totalPages={getTotalPages(data?.bookings, params.pageSize)}
         onChange={(page) => setParams((prev) => ({ ...prev, pageNumber: page }))}
       />
+      {startingSession ? (
+        <ConfirmDialog
+          title="Nhận bàn / Mở bàn"
+          message={`Xác nhận mở bàn bắt đầu phiên chơi cho booking ${startingSession.bookingCode || startingSession.bookingId}?`}
+          confirmLabel="Mở bàn"
+          onCancel={() => setStartingSession(null)}
+          onConfirm={async () => {
+            await action(
+              bookingApi.startSession(Number(startingSession.bookingId), startingSession.tableId ? Number(startingSession.tableId) : undefined),
+              "Đã nhận bàn và mở phiên chơi thành công."
+            );
+            setStartingSession(null);
+          }}
+        />
+      ) : null}
+      {noShowing ? (
+        <ConfirmDialog
+          title="Khách không đến"
+          message={`Xác nhận đánh dấu booking ${noShowing.bookingCode || noShowing.bookingId} là khách không đến (No-Show)?`}
+          confirmLabel="Xác nhận"
+          danger
+          onCancel={() => setNoShowing(null)}
+          onConfirm={async () => {
+            await action(bookingApi.noShow(Number(noShowing.bookingId)), "Đã đánh dấu khách không đến.");
+            setNoShowing(null);
+          }}
+        />
+      ) : null}
       {cancelling ? <ConfirmDialog title="Hủy đặt bàn" message={`Xác nhận hủy đặt bàn ${cancelling.bookingCode || cancelling.bookingId}?`} confirmLabel="Hủy đặt bàn" danger onCancel={() => setCancelling(null)} onConfirm={async () => { await action(bookingApi.cancel(cancelling.bookingId), "Đã hủy booking."); setCancelling(null); }} /> : null}
     </>
   );
