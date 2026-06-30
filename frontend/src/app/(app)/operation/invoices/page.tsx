@@ -4,17 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { invoiceApi, sessionApi, productApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
+import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { Invoice, PaymentMethod, Session, Product } from "@/types";
+import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session } from "@/types";
 
 export default function InvoicesPage() {
   const toast = useToast();
-  const router = useRouter();
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [reviewInvitation, setReviewInvitation] = useState<ReviewInvitationLink | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState<number | "">("");
   const [confirmPayment, setConfirmPayment] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -61,6 +62,7 @@ export default function InvoicesPage() {
 
   const loadDetail = useCallback(async (id: number) => {
     setInvoice(await invoiceApi.detail(id));
+    setReviewInvitation(null);
   }, []);
 
   useEffect(() => {
@@ -77,10 +79,12 @@ export default function InvoicesPage() {
       return;
     }
     try {
-      await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: invoice.grandTotalAmount || 0 });
+      const payment = await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: invoice.grandTotalAmount || 0 });
       toast("Đã ghi nhận thanh toán.", "success");
+      const detail = await invoiceApi.detail(invoice.invoiceId);
+      setReviewInvitation(payment.reviewInvitation || null);
+      setInvoice({ ...detail, reviewInvitation: payment.reviewInvitation });
       await reload();
-      router.push("/operation/floor-map");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể ghi nhận thanh toán.", "error");
       await loadDetail(invoice.invoiceId);
@@ -521,9 +525,19 @@ export default function InvoicesPage() {
               })()}
             </div>
           ) : (
-            <div className="state-card" style={{ background: '#e4f7ec', color: '#187344', border: '1px solid #c2ebd5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              Hóa đơn này đã được thanh toán hoàn tất. Không thể sửa đổi hay thanh toán thêm.
-            </div>
+            <>
+              <div className="state-card" style={{ background: '#e4f7ec', color: '#187344', border: '1px solid #c2ebd5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                Hóa đơn này đã được thanh toán hoàn tất. Không thể sửa đổi hay thanh toán thêm.
+              </div>
+              <ReviewInvitationPanel
+                invoiceId={invoice.invoiceId}
+                invitation={reviewInvitation || invoice.reviewInvitation || null}
+                onCreated={(value) => {
+                  setReviewInvitation(value);
+                  setInvoice((current) => current ? { ...current, reviewInvitation: value } : current);
+                }}
+              />
+            </>
           )}
         </Modal>
       ) : null}
@@ -627,5 +641,53 @@ export default function InvoicesPage() {
         </Modal>
       ) : null}
     </>
+  );
+}
+
+function ReviewInvitationPanel({ invoiceId, invitation, onCreated }: {
+  invoiceId: number;
+  invitation: ReviewInvitationLink | null;
+  onCreated: (value: ReviewInvitationLink) => void;
+}) {
+  const toast = useToast();
+  const [creating, setCreating] = useState(false);
+
+  async function createInvitation() {
+    setCreating(true);
+    try {
+      const value = await customerReviewsApi.createInvitationForInvoice(invoiceId);
+      onCreated(value);
+      toast("Đã tạo link đánh giá.", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không tạo được link đánh giá.", "error");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  if (!invitation) {
+    return (
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Mời khách đánh giá</h3>
+        <p className="muted-text">Tạo link đánh giá dùng một lần cho hóa đơn đã thanh toán này.</p>
+        <button className="primary-btn" onClick={createInvitation} disabled={creating}>{creating ? "Đang tạo..." : "Tạo link đánh giá"}</button>
+      </div>
+    );
+  }
+
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(invitation.reviewUrl)}`;
+  return (
+    <div className="card" style={{ marginTop: 16, display: "grid", gridTemplateColumns: "180px 1fr", gap: 18, alignItems: "center" }}>
+      <img src={qrUrl} alt="QR đánh giá" style={{ width: 180, height: 180, borderRadius: 8, border: "1px solid var(--line)", padding: 8, background: "white" }} />
+      <div>
+        <h3 style={{ marginTop: 0 }}>Mời khách đánh giá</h3>
+        <p className="muted-text">Link đánh giá dùng một lần, hết hạn lúc {new Date(invitation.expiresAtUtc).toLocaleString("vi-VN")}.</p>
+        <div style={{ wordBreak: "break-all", padding: 10, border: "1px solid var(--line)", borderRadius: 8, background: "var(--soft)", marginBottom: 12 }}>{invitation.reviewUrl}</div>
+        <div className="actions">
+          <button className="secondary-btn" onClick={() => navigator.clipboard.writeText(invitation.reviewUrl).then(() => toast("Đã sao chép link đánh giá.", "success"))}>Copy link</button>
+          <a className="primary-btn" href={invitation.reviewUrl} target="_blank">Mở form đánh giá</a>
+        </div>
+      </div>
+    </div>
   );
 }

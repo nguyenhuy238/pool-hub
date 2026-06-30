@@ -21,6 +21,7 @@ public static class DbSeeder
         {
             await EnsureDemoVenueLayoutAsync(db, ct);
             await EnsureDefaultPricingCoverageAsync(db, ct);
+            await EnsureDemoCustomerReviewsAsync(db, ct);
             return;
         }
 
@@ -439,6 +440,7 @@ public static class DbSeeder
         }
 
         await db.SaveChangesAsync(ct);
+        await EnsureDemoCustomerReviewsAsync(db, ct);
     }
 
     private static async Task EnsureDefaultPricingCoverageAsync(PoolHubDbContext db, CancellationToken ct)
@@ -542,6 +544,37 @@ public static class DbSeeder
             "SNOOKER" => 90000,
             _ => 50000
         };
+    }
+
+    private static async Task EnsureDemoCustomerReviewsAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        if (await db.CustomerReviews.AnyAsync(ct)) return;
+
+        var customers = await db.Customers.OrderBy(x => x.CustomerId).Take(3).ToListAsync(ct);
+        if (customers.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var reviews = customers.Select((customer, index) => new CustomerReview
+        {
+            CustomerId = customer.CustomerId,
+            Rating = index == 2 ? 4 : 5,
+            Content = index switch
+            {
+                0 => "Đặt bàn nhanh, tới nơi có bàn sẵn và nhân viên hỗ trợ rất gọn.",
+                1 => "Không gian sạch, đồ uống lên nhanh, nhóm mình chơi rất thoải mái.",
+                _ => "Bàn VIP ổn, cơ gậy mới và thanh toán cuối ca rõ ràng."
+            },
+            DisplayName = customer.FullName,
+            Status = CustomerReviewStatuses.Approved,
+            IsFeatured = true,
+            DisplayOrder = index + 1,
+            Source = CustomerReviewSources.AdminImport,
+            ApprovedAtUtc = now,
+            CreatedAtUtc = now.AddDays(-(index + 1))
+        }).ToList();
+
+        db.CustomerReviews.AddRange(reviews);
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task EnsurePermissionsAsync(PoolHubDbContext db, CancellationToken ct)

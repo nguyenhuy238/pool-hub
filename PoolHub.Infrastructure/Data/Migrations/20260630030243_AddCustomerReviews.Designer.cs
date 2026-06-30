@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PoolHub.Infrastructure.Data;
 
 #nullable disable
 
-namespace PoolHub.Infrastructure.Migrations
+namespace PoolHub.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(PoolHubDbContext))]
-    partial class PoolHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260630030243_AddCustomerReviews")]
+    partial class AddCustomerReviews
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -372,83 +375,6 @@ namespace PoolHub.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_customer_reviews_rating", "[rating] >= 1 AND [rating] <= 5");
 
                             t.HasCheckConstraint("CK_customer_reviews_status", "[status] IN (1, 2, 3, 4)");
-                        });
-                });
-
-            modelBuilder.Entity("PoolHub.Core.Entities.CustomerReviewInvitation", b =>
-                {
-                    b.Property<long>("CustomerReviewInvitationId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("customer_review_invitation_id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("CustomerReviewInvitationId"));
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<long?>("CreatedByUserId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("created_by_user_id");
-
-                    b.Property<long?>("CustomerId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("customer_id");
-
-                    b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("expires_at_utc");
-
-                    b.Property<long>("InvoiceId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("invoice_id");
-
-                    b.Property<Guid>("PublicId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("public_id");
-
-                    b.Property<long>("SessionId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("session_id");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int")
-                        .HasColumnName("status");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)")
-                        .HasColumnName("token_hash");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("updated_at_utc");
-
-                    b.Property<DateTime?>("UsedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("used_at_utc");
-
-                    b.HasKey("CustomerReviewInvitationId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("CustomerId");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.HasIndex("SessionId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.HasIndex("InvoiceId", "Status");
-
-                    b.ToTable("customer_review_invitations", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_customer_review_invitations_status", "[status] IN (1, 2, 3, 4)");
                         });
                 });
 
@@ -2220,31 +2146,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("SessionId")
                         .OnDelete(DeleteBehavior.NoAction);
-                });
-
-            modelBuilder.Entity("PoolHub.Core.Entities.CustomerReviewInvitation", b =>
-                {
-                    b.HasOne("PoolHub.Core.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("PoolHub.Core.Entities.Customer", null)
-                        .WithMany()
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("PoolHub.Core.Entities.Invoice", null)
-                        .WithMany()
-                        .HasForeignKey("InvoiceId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("PoolHub.Core.Entities.Session", null)
-                        .WithMany()
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.InventoryTransaction", b =>

@@ -13,7 +13,7 @@ public class PoolHubDbContext(
     private static readonly HashSet<string> ExplicitlyAuditedEntities =
     [
         nameof(AuditLog), nameof(User), nameof(Role), nameof(Customer), nameof(RefreshToken),
-        nameof(PasswordResetToken), nameof(SiteSetting), nameof(MediaAsset), nameof(Discount),
+        nameof(PasswordResetToken), nameof(SiteSetting), nameof(MediaAsset), nameof(Discount), nameof(CustomerReview), nameof(CustomerReviewInvitation),
         nameof(PaymentMethod), nameof(Permission), nameof(RolePermission)
     ];
 
@@ -49,6 +49,8 @@ public class PoolHubDbContext(
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
+    public DbSet<CustomerReview> CustomerReviews => Set<CustomerReview>();
+    public DbSet<CustomerReviewInvitation> CustomerReviewInvitations => Set<CustomerReviewInvitation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

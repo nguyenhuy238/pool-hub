@@ -32,10 +32,10 @@ public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
         Ok(ApiResponse<InvoiceDto>.Ok(await invoiceService.GenerateFromSessionAsync(sessionId, User.GetUserId(), ct)));
 
     [HttpPost("payments")] 
-    public async Task<ActionResult<ApiResponse<object>>> Payment([FromBody] CreatePaymentRequest request, CancellationToken ct) 
+    public async Task<ActionResult<ApiResponse<CreatePaymentResponse>>> Payment([FromBody] CreatePaymentRequest request, CancellationToken ct) 
     { 
-        await invoiceService.CreatePaymentAsync(request, User.GetUserId(), ct); 
-        return Ok(ApiResponse<object>.Ok(new { }, "Payment created")); 
+        var response = await invoiceService.CreatePaymentAsync(request, User.GetUserId(), ct); 
+        return Ok(ApiResponse<CreatePaymentResponse>.Ok(response, "Payment created")); 
     }
 
     [HttpPost("{id:long}/discounts")]
