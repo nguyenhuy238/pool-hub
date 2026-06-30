@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { invoiceApi, sessionApi } from "@/lib/api/endpoints";
+import { useRouter } from "next/navigation";
+import { invoiceApi, sessionApi, productApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { Invoice, PaymentMethod, ReviewInvitationLink, Session } from "@/types";
+import type { Invoice, PaymentMethod, Session, Product } from "@/types";
 
 export default function InvoicesPage() {
   const toast = useToast();
@@ -21,6 +22,12 @@ export default function InvoicesPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editProducts, setEditProducts] = useState<{ productId: number; name: string; quantity: number; unitPrice: number }[]>([]);
+  const [allProductsList, setAllProductsList] = useState<Product[]>([]);
+  const [selectedAddProductId, setSelectedAddProductId] = useState("");
+  const [addQty, setAddQty] = useState(1);
+  const [savingProducts, setSavingProducts] = useState(false);
   const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "" });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods, sessions, allInvoices] = await Promise.all([
@@ -127,6 +134,90 @@ export default function InvoicesPage() {
       .catch(err => toast(err.message, "error"));
   }
 
+  useEffect(() => {
+    if (editModalOpen) {
+      productApi.list({ PageSize: 1000 })
+        .then((res) => {
+          const items = Array.isArray(res) ? res : (res as any)?.items || [];
+          setAllProductsList(items);
+        })
+        .catch((err) => toast(err.message || "Không tải được danh sách sản phẩm.", "error"));
+    }
+  }, [editModalOpen, toast]);
+
+  const updateEditQty = (productId: number, qty: number) => {
+    if (qty < 0) qty = 0;
+    
+    const found = allProductsList.find((p) => p.productId === productId);
+    const originalLine = (invoice?.lines || []).find(l => l.lineType === "PRODUCT" && l.productId === productId);
+    const originalQty = originalLine ? Number(originalLine.quantity) : 0;
+
+    if (found?.isStockTracked && (qty - originalQty) > found.stockQuantity) {
+      toast(`Không đủ số lượng trong kho. Hiện chỉ còn ${found.stockQuantity} sản phẩm.`, "error");
+      qty = originalQty + found.stockQuantity;
+    }
+
+    setEditProducts((prev) =>
+      prev.map((p) => (p.productId === productId ? { ...p, quantity: qty } : p)).filter((p) => p.quantity > 0)
+    );
+  };
+
+  const removeProductFromEdit = (productId: number) => {
+    setEditProducts((prev) => prev.filter((p) => p.productId !== productId));
+  };
+
+  const addProductToEdit = () => {
+    if (!selectedAddProductId) {
+      toast("Vui lòng chọn sản phẩm.", "error");
+      return;
+    }
+    const prodId = Number(selectedAddProductId);
+    const found = allProductsList.find((p) => p.productId === prodId);
+    if (!found) return;
+
+    const existing = editProducts.find((p) => p.productId === prodId);
+    const originalLine = (invoice?.lines || []).find(l => l.lineType === "PRODUCT" && l.productId === prodId);
+    const originalQty = originalLine ? Number(originalLine.quantity) : 0;
+    const currentEditQty = existing ? existing.quantity : 0;
+    const newQty = currentEditQty + addQty;
+
+    if (found.isStockTracked && (newQty - originalQty) > found.stockQuantity) {
+      toast(`Không đủ số lượng trong kho. Hiện chỉ còn ${found.stockQuantity} sản phẩm.`, "error");
+      return;
+    }
+
+    if (existing) {
+      setEditProducts((prev) =>
+        prev.map((p) => (p.productId === prodId ? { ...p, quantity: newQty } : p))
+      );
+    } else {
+      setEditProducts((prev) => [
+        ...prev,
+        { productId: prodId, name: found.name, quantity: addQty, unitPrice: found.unitPrice }
+      ]);
+    }
+    setSelectedAddProductId("");
+    setAddQty(1);
+    toast("Đã thêm sản phẩm vào danh sách chỉnh sửa.", "success");
+  };
+
+  const saveInvoiceProducts = async () => {
+    if (!invoice) return;
+    setSavingProducts(true);
+    try {
+      const payload = editProducts.map((p) => ({ productId: p.productId, quantity: p.quantity }));
+      await invoiceApi.updateProducts(invoice.invoiceId, payload);
+      toast("Đã cập nhật sản phẩm trong hóa đơn.", "success");
+      setEditModalOpen(false);
+      await loadDetail(invoice.invoiceId);
+      await reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Cập nhật thất bại.", "error");
+    } finally {
+      setSavingProducts(false);
+    }
+  };
+
   return (
     <>
       <PageHeader title="Hóa đơn và thanh toán" description="Tạo hóa đơn, xem chi tiết và ghi nhận thanh toán." />
@@ -208,53 +299,69 @@ export default function InvoicesPage() {
               </div>
               <p style={{ fontSize: '13px', color: 'var(--muted)', margin: 0 }}>Mã phiên chơi: #{invoice.sessionId}</p>
             </div>
-            <button className="ghost-btn" onClick={() => {
-              const invitation = reviewInvitation || invoice.reviewInvitation;
-              const linesHtml = (invoice.lines || []).map(l => `
-                <tr>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.lineType === 'TIME' ? 'Tiền giờ bàn' : 'Dịch vụ/Sản phẩm'}</td>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.description}</td>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${l.lineType === 'TIME' ? `${Math.round(Number(l.quantity) * 60)} phút` : l.quantity}</td>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${l.lineType === 'TIME' ? `${money(l.unitPrice)}/giờ` : money(l.unitPrice)}</td>
-                  <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${money(l.lineTotalAmount)}</td>
-                </tr>
-              `).join('');
+            <div style={{ display: "flex", gap: "8px" }}>
+              {Number(invoice.paymentStatus) !== 3 && Number(invoice.status) !== 3 && (
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => {
+                    const initialProducts = (invoice.lines || [])
+                      .filter((l) => l.lineType === "PRODUCT")
+                      .map((l) => ({
+                        productId: l.productId || 0,
+                        name: l.description,
+                        quantity: Number(l.quantity),
+                        unitPrice: Number(l.unitPrice)
+                      }));
+                    setEditProducts(initialProducts);
+                    setEditModalOpen(true);
+                  }}
+                >
+                  ✏️ Chỉnh sửa dịch vụ/sản phẩm
+                </button>
+              )}
+              <button className="ghost-btn" onClick={() => {
+                const linesHtml = (invoice.lines || []).map(l => `
+                  <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.lineType === 'TIME' ? 'Tiền giờ bàn' : 'Dịch vụ/Sản phẩm'}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.description}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${l.lineType === 'TIME' ? `${Math.round(Number(l.quantity) * 60)} phút` : l.quantity}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${l.lineType === 'TIME' ? `${money(l.unitPrice)}/giờ` : money(l.unitPrice)}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${money(l.lineTotalAmount)}</td>
+                  </tr>
+                `).join('');
 
-              const printWindow = window.open("", "_blank");
-              if (printWindow) {
-                printWindow.document.write(`<html><head><title>Hoa don ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 30px; max-width: 700px; margin: 0 auto; color: #333;">
-                    <h1 style="text-align:center; margin-bottom: 4px;">HÓA ĐƠN THANH TOÁN</h1>
-                    <h3 style="text-align:center; color: #666; margin-top: 0; font-weight: normal;">Mã: ${invoice.invoiceCode || invoice.invoiceId} (Phiên: #${invoice.sessionId})</h3>
-                    <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
-                      <thead>
-                        <tr style="background: #f8f9fa; text-align: left;">
-                          <th style="padding: 8px; border-bottom: 2px solid #ddd;">Loại</th>
-                          <th style="padding: 8px; border-bottom: 2px solid #ddd;">Diễn giải</th>
-                          <th style="padding: 8px; border-bottom: 2px solid #ddd; text-align: center;">SL</th>
-                          <th style="padding: 8px; border-bottom: 2px solid #ddd; text-align: right;">Đơn giá</th>
-                          <th style="padding: 8px; border-bottom: 2px solid #ddd; text-align: right;">Thành tiền</th>
-                        </tr>
-                      </thead>
-                      <tbody>${linesHtml || '<tr><td colspan="5" style="text-align:center; padding: 12px;">Không có dữ liệu chi tiết</td></tr>'}</tbody>
-                    </table>
-                    <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 15px;"><span>Tổng tiền giờ chơi:</span> <span>${money(invoice.timeSubtotalAmount || 0)}</span></div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 15px;"><span>Tổng tiền dịch vụ/sản phẩm:</span> <span>${money(invoice.productSubtotalAmount || 0)}</span></div>
-                    ${(invoice.discountAmount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 15px; color: #d9534f;"><span>Giảm giá:</span> <span>-${money(invoice.discountAmount || 0)}</span></div>` : ''}
-                    <hr style="border: 1px solid #333; margin: 16px 0;"/>
-                    <div style="display:flex; justify-content:space-between; font-size: 20px; font-weight: bold;"><span>TỔNG THANH TOÁN:</span> <span>${money(invoice.grandTotalAmount || 0)}</span></div>
-                    ${invitation?.reviewUrl ? `<div style="margin: 26px auto 0; text-align:center; padding: 16px; border: 1px solid #ddd; border-radius: 10px; max-width: 360px;">
-                      <strong>Mời quý khách đánh giá trải nghiệm</strong>
-                      <p style="font-size:12px; color:#666; word-break:break-all;">${invitation.reviewUrl}</p>
-                      <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(invitation.reviewUrl)}" alt="QR đánh giá" style="width:150px;height:150px;" />
-                    </div>` : ''}
-                    <p style="text-align:center; margin-top: 40px; font-style: italic; color: #777;">Cảm ơn quý khách và hẹn gặp lại!</p>
-                    <script>setTimeout(() => window.print(), 500);</script>
-                  </body></html>`);
-                printWindow.document.close();
-              }
-            }}>🖨️ In bill chi tiết</button>
+                const printWindow = window.open("", "_blank");
+                if (printWindow) {
+                  printWindow.document.write(`<html><head><title>Hoa don ${invoice.invoiceCode || invoice.invoiceId}</title></head><body style="font-family: Arial, sans-serif; padding: 30px; max-width: 700px; margin: 0 auto; color: #333;">
+                      <h1 style="text-align:center; margin-bottom: 4px;">HÓA ĐƠN THANH TOÁN</h1>
+                      <h3 style="text-align:center; color: #666; margin-top: 0; font-weight: normal;">Mã: ${invoice.invoiceCode || invoice.invoiceId} (Phiên: #${invoice.sessionId})</h3>
+                      <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
+                      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
+                        <thead>
+                          <tr style="background: #f8f9fa; text-align: left;">
+                            <th style="padding: 8px; border-bottom: 2px solid #ddd;">Loại</th>
+                            <th style="padding: 8px; border-bottom: 2px solid #ddd;">Diễn giải</th>
+                            <th style="padding: 8px; border-bottom: 2px solid #ddd; text-align: center;">SL</th>
+                            <th style="padding: 8px; border-bottom: 2px solid #ddd; text-align: right;">Đơn giá</th>
+                            <th style="padding: 8px; border-bottom: 2px solid #ddd; text-align: right;">Thành tiền</th>
+                          </tr>
+                        </thead>
+                        <tbody>${linesHtml || '<tr><td colspan="5" style="text-align:center; padding: 12px;">Không có dữ liệu chi tiết</td></tr>'}</tbody>
+                      </table>
+                      <hr style="border: 1px dashed #ccc; margin: 20px 0;"/>
+                      <div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 15px;"><span>Tổng tiền giờ chơi:</span> <span>${money(invoice.timeSubtotalAmount || 0)}</span></div>
+                      <div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 15px;"><span>Tổng tiền dịch vụ/sản phẩm:</span> <span>${money(invoice.productSubtotalAmount || 0)}</span></div>
+                      ${(invoice.discountAmount || 0) > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 15px; color: #d9534f;"><span>Giảm giá:</span> <span>-${money(invoice.discountAmount || 0)}</span></div>` : ''}
+                      <hr style="border: 1px solid #333; margin: 16px 0;"/>
+                      <div style="display:flex; justify-content:space-between; font-size: 20px; font-weight: bold;"><span>TỔNG THANH TOÁN:</span> <span>${money(invoice.grandTotalAmount || 0)}</span></div>
+                      <p style="text-align:center; margin-top: 40px; font-style: italic; color: #777;">Cảm ơn quý khách và hẹn gặp lại!</p>
+                      <script>setTimeout(() => window.print(), 500);</script>
+                    </body></html>`);
+                  printWindow.document.close();
+                }
+              }}>🖨️ In bill chi tiết</button>
+            </div>
           </div>
 
           <div style={{ marginBottom: '24px' }}>
@@ -447,6 +554,92 @@ export default function InvoicesPage() {
           <div className="modal-actions"><button className="ghost-btn" onClick={() => setCancelOpen(false)}>Hủy</button><button className="danger-btn" onClick={cancelInvoice}>Xác nhận hủy hóa đơn</button></div>
         </div>
       </Modal> : null}
+      {editModalOpen && invoice ? (
+        <Modal title={`Chỉnh sửa dịch vụ/sản phẩm - ${invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`}`} onClose={() => setEditModalOpen(false)} size="large">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--line)', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead style={{ background: 'var(--soft)', borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
+                  <tr>
+                    <th style={{ padding: '10px 14px' }}>Tên sản phẩm</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Đơn giá</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Số lượng</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Thành tiền</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {editProducts.length > 0 ? editProducts.map((p) => (
+                    <tr key={p.productId} style={{ borderBottom: '1px solid var(--line)' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 500 }}>{p.name}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>{money(p.unitPrice)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                          <button className="ghost-btn compact" type="button" style={{ padding: '2px 8px', fontSize: '14px', minWidth: '24px' }} onClick={() => updateEditQty(p.productId, p.quantity - 1)}>-</button>
+                          <input
+                            type="number"
+                            min={1}
+                            style={{ width: '60px', textAlign: 'center', padding: '2px 4px', border: '1px solid var(--line)', borderRadius: '4px' }}
+                            value={p.quantity}
+                            onChange={(e) => updateEditQty(p.productId, Math.max(1, Number(e.target.value)))}
+                          />
+                          <button className="ghost-btn compact" type="button" style={{ padding: '2px 8px', fontSize: '14px', minWidth: '24px' }} onClick={() => updateEditQty(p.productId, p.quantity + 1)}>+</button>
+                        </div>
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>{money(p.quantity * p.unitPrice)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                        <button className="ghost-btn" type="button" style={{ color: 'var(--danger)', padding: '2px 8px' }} onClick={() => removeProductFromEdit(p.productId)}>🗑️ Xóa</button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>Không có sản phẩm nào. Vui lòng thêm sản phẩm bên dưới.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ background: 'var(--soft)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+              <h5 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600 }}>Thêm sản phẩm mới</h5>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 250px' }}>
+                  <span style={{ fontSize: '13px', display: 'block', marginBottom: '4px', color: 'var(--muted)' }}>Chọn sản phẩm</span>
+                  <SearchableSelect
+                    options={allProductsList.map((prod) => ({
+                      value: String(prod.productId),
+                      label: `${prod.name} - ${money(prod.unitPrice)} (Tồn: ${prod.stockQuantity})`
+                    }))}
+                    value={selectedAddProductId}
+                    onChange={setSelectedAddProductId}
+                    placeholder="-- Tìm kiếm sản phẩm để thêm --"
+                  />
+                </div>
+                <div style={{ width: '100px' }}>
+                  <span style={{ fontSize: '13px', display: 'block', marginBottom: '4px', color: 'var(--muted)' }}>Số lượng</span>
+                  <input
+                    type="number"
+                    min={1}
+                    style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--line)', borderRadius: '6px', height: '38px' }}
+                    value={addQty}
+                    onChange={(e) => setAddQty(Math.max(1, Number(e.target.value)))}
+                  />
+                </div>
+                <button className="primary-btn" type="button" style={{ height: '38px' }} onClick={addProductToEdit}>
+                  Thêm vào list
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button className="ghost-btn" onClick={() => setEditModalOpen(false)}>Hủy</button>
+              <button className="primary-btn" onClick={saveInvoiceProducts} disabled={savingProducts}>
+                {savingProducts ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </>
   );
 }

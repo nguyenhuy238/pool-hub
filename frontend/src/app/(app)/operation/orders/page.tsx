@@ -290,7 +290,7 @@ export default function OrdersPage() {
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => setSelectedOrderId(Number(row.orderId))}>Chọn</button>
+                <button className="ghost-btn" type="button" onClick={() => setSelectedOrderId(Number(row.orderId))}>Chọn</button>
                 <button className="danger-btn" type="button" disabled={!canEditOrder} onClick={() => setCancellingOrder(row as unknown as Order)}>Hủy</button>
               </div>
             )}
@@ -334,6 +334,7 @@ export default function OrdersPage() {
                             <td>{money(item.lineTotalAmount ?? 0)}</td>
                             <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               <button
+                                className="ghost-btn"
                                 type="button"
                                 disabled={!canEditOrder}
                                 onClick={() => updateItem(item, quantity)}

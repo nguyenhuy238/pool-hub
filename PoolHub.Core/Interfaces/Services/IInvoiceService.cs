@@ -18,4 +18,5 @@ public interface IInvoiceService
     Task<string> ExportPdfAsync(long invoiceId, CancellationToken ct);
     Task RefundPaymentAsync(long paymentId, string reason, long userId, CancellationToken ct);
     Task<string> GetVietQrUrlAsync(long invoiceId, CancellationToken ct);
+    Task<InvoiceDto> UpdateInvoiceProductsAsync(long id, UpdateInvoiceProductsRequest request, long? userId, CancellationToken ct);
 }
