@@ -70,7 +70,7 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
 
     public async Task<InvoiceDto> GenerateFromSessionAsync(long sessionId, long? issuedByUserId, CancellationToken ct)
     {
-        var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId, ct);
+        var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.Status != 3, ct);
         if (exists is not null) 
         {
             return new InvoiceDto { InvoiceId = exists.InvoiceId, SessionId = exists.SessionId, InvoiceCode = exists.InvoiceCode, GrandTotalAmount = exists.GrandTotalAmount };
@@ -81,7 +81,8 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
         // If session is still active, close it automatically so everything is calculated
         if (session.Status == 1)
         {
-            await CloseSessionInternalAsync(sessionId, issuedByUserId, DateTime.UtcNow, ct);
+            var sessionService = new PoolHub.Services.Session.SessionService(db);
+            await sessionService.CloseAsync(sessionId, issuedByUserId, ct);
             await db.SaveChangesAsync(ct);
         }
 
@@ -121,7 +122,7 @@ public class InvoiceService(PoolHubDbContext db, IConfiguration? config = null, 
                 LineType = "TIME",
                 ReferenceId = assignment.SessionTableAssignmentId,
                 Description = $"Time played on table {(table != null ? table.TableName : assignment.TableId.ToString())}",
-                Quantity = (decimal)(assignment.DurationMinutes ?? 0) / 60m,
+                Quantity = assignment.HourlyRateSnapshot > 0 ? (assignment.Amount ?? 0) / assignment.HourlyRateSnapshot : (decimal)(assignment.DurationMinutes ?? 0) / 60m,
                 UnitPrice = assignment.HourlyRateSnapshot,
                 LineTotalAmount = assignment.Amount ?? 0
             });

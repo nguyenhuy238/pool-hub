@@ -196,6 +196,7 @@ export default function SessionsPage() {
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="secondary-btn" type="button" onClick={() => router.push(`/operation/sessions/${Number(row.sessionId)}`)}>Chi tiết</button>
                 <button className="ghost-btn" onClick={async () => {
                   try {
                     setPreviewingSessionId(Number(row.sessionId));

@@ -66,9 +66,15 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
             "Session cancelled"));
 
     [HttpPost("{id:long}/transfer")]
-    public async Task<ActionResult<ApiResponse<object>>> Transfer(long id, [FromBody] TransferTableRequest request, CancellationToken ct)
-    {
-        await sessionService.TransferTableAsync(id, request.NewTableId, User.GetUserId(), ct);
-        return Ok(ApiResponse<object>.Ok(new { }, "Transferred"));
-    }
+    public async Task<ActionResult<ApiResponse<TransferTableResponse>>> Transfer(long id, [FromBody] TransferTableRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<TransferTableResponse>.Ok(
+            await sessionService.TransferTableAsync(id, request, User.GetUserId(), ct),
+            "Transferred"));
+
+    [HttpPost("{id:long}/reopen")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<SessionDetailDto>>> Reopen(long id, [FromBody] ReopenSessionRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<SessionDetailDto>.Ok(
+            await sessionService.ReopenAsync(id, request, User.GetUserId(), ct),
+            "Session reopened"));
 }
