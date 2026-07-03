@@ -16,6 +16,9 @@ public class InvoiceDetailDto
     public decimal TaxAmount { get; set; }
     public decimal GrandTotalAmount { get; set; }
     public decimal PaidAmount { get; set; }
+    public decimal DepositAppliedAmount { get; set; }
+    public decimal DepositRefundAmount { get; set; }
+    public decimal RemainingAmount { get; set; }
     public int PaymentStatus { get; set; }
     public int Status { get; set; }
     public long? IssuedByUserId { get; set; }

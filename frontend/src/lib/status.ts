@@ -3,7 +3,22 @@ export const bookingStatus: Record<number, string> = {
   2: "Đã xác nhận",
   3: "Đã hủy",
   4: "Đã hoàn thành",
-  5: "Không đến"
+  5: "Không đến",
+  6: "Chờ thanh toán cọc",
+  7: "Chờ quản lý duyệt",
+  8: "Hết hạn"
+};
+
+export const depositStatus: Record<number, string> = {
+  1: "Không yêu cầu cọc",
+  2: "Chờ thanh toán cọc",
+  3: "Đã thanh toán cọc",
+  4: "Đã áp dụng vào hóa đơn",
+  5: "Đã hoàn cọc",
+  6: "Đã hoàn một phần",
+  7: "Đã mất cọc",
+  8: "Hết hạn",
+  9: "Chờ xác minh cọc"
 };
 
 export const sessionStatus: Record<number, string> = {

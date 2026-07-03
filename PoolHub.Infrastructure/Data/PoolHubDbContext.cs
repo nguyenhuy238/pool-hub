@@ -32,6 +32,8 @@ public class PoolHubDbContext(
     public DbSet<PricingPlan> PricingPlans => Set<PricingPlan>();
     public DbSet<PricingPlanRule> PricingPlanRules => Set<PricingPlanRule>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingDeposit> BookingDeposits => Set<BookingDeposit>();
+    public DbSet<BookingTable> BookingTables => Set<BookingTable>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<SessionTableAssignment> SessionTableAssignments => Set<SessionTableAssignment>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();

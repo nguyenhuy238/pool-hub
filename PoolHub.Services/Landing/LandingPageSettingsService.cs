@@ -4,6 +4,7 @@ using PoolHub.Core.DTOs.Landing;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Services.Payments;
 using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Landing;
@@ -18,6 +19,32 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
 
     public async Task<LandingPageSettingsDto> GetAdminSettingsAsync(CancellationToken ct)
         => await GetOrCreateSettingsAsync(ct);
+
+    public async Task<DepositPaymentSettingsDto> GetDepositPaymentSettingsAsync(CancellationToken ct)
+    {
+        var methods = await db.PaymentMethods.AsNoTracking().Where(x => x.IsActive).ToListAsync(ct);
+        var config = methods
+            .Select(BankTransferQrHelper.Parse)
+            .FirstOrDefault(x => x is not null && (x.CanBuildDynamicQr || !string.IsNullOrWhiteSpace(x.QrImageUrl)));
+
+        if (config is null)
+        {
+            return new DepositPaymentSettingsDto { IsDepositTransferEnabled = false };
+        }
+
+        return new DepositPaymentSettingsDto
+        {
+            IsDepositTransferEnabled = true,
+            PaymentMethodCode = config.PaymentMethodCode,
+            PaymentMethodName = config.PaymentMethodName,
+            BankName = string.IsNullOrWhiteSpace(config.BankName) ? config.BankCode : config.BankName,
+            BankCode = config.BankCode,
+            BankAccountNumber = config.AccountNumber,
+            BankAccountName = config.AccountName,
+            DepositQrImageUrl = config.QrImageUrl,
+            TransferContentTemplate = "POOLHUB {BookingCode} {PhoneNumber}"
+        };
+    }
 
     public async Task<PublicPricingSummaryDto> GetPricingSummaryAsync(CancellationToken ct)
     {
@@ -167,6 +194,7 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         ValidateMediaExtension(dto.GeneralInfo.LogoUrl, "Logo", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         ValidateMediaExtension(dto.GeneralInfo.FaviconUrl, "Favicon", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         ValidateMediaExtension(dto.Seo.OgImageUrl, "OG image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
+        ValidateDepositPayment(dto.DepositPayment);
         ValidateMediaExtension(dto.Hero.BackgroundImageUrl, "Hero background image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         ValidateMediaExtension(dto.Hero.FallbackImageUrl, "Hero fallback image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         ValidateMediaExtension(dto.Hero.BackgroundVideoUrl, "Hero video", [".mp4", ".webm"]);
@@ -254,6 +282,17 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         {
             throw new ValidationException($"{fieldName} has an unsupported file format.");
         }
+    }
+
+    private static void ValidateDepositPayment(DepositPaymentSettingsDto settings)
+    {
+        if (!settings.IsDepositTransferEnabled) return;
+        if (string.IsNullOrWhiteSpace(settings.BankName)) throw new ValidationException("Deposit bank name is required.");
+        if (string.IsNullOrWhiteSpace(settings.BankAccountNumber)) throw new ValidationException("Deposit bank account number is required.");
+        if (string.IsNullOrWhiteSpace(settings.BankAccountName)) throw new ValidationException("Deposit bank account name is required.");
+        if (string.IsNullOrWhiteSpace(settings.TransferContentTemplate)) throw new ValidationException("Deposit transfer content template is required.");
+        ValidateUrl(settings.DepositQrImageUrl, "Deposit QR image", allowRelative: true);
+        ValidateMediaExtension(settings.DepositQrImageUrl, "Deposit QR image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
     }
 
     private static void ValidateGoogleMaps(GeneralInfoDto info)
@@ -395,6 +434,15 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         Footer = new FooterSettingsDto(),
         Legal = new LegalSettingsDto(),
         Theme = new ThemeSettingsDto(),
-        QrCode = new QrCodeSettingsDto()
+        QrCode = new QrCodeSettingsDto(),
+        DepositPayment = new DepositPaymentSettingsDto
+        {
+            BankName = "MB Bank",
+            BankAccountNumber = "989420048989",
+            BankAccountName = "POOLHUB",
+            DepositQrImageUrl = "/images/poolhub/hero.png",
+            TransferContentTemplate = "POOLHUB {BookingCode} {PhoneNumber}",
+            IsDepositTransferEnabled = true
+        }
     };
 }

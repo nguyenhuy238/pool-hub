@@ -20,6 +20,7 @@ public class LandingPageSettingsDto
     public LegalSettingsDto Legal { get; set; } = new();
     public ThemeSettingsDto Theme { get; set; } = new();
     public QrCodeSettingsDto QrCode { get; set; } = new();
+    public DepositPaymentSettingsDto DepositPayment { get; set; } = new();
 }
 
 public class PublicPricingSummaryDto
@@ -95,6 +96,34 @@ public class QrCodeSettingsDto
     public bool IsEnabled { get; set; }
     public string? ImageUrl { get; set; }
     public string? Caption { get; set; }
+}
+
+public class DepositPaymentSettingsDto
+{
+    public bool IsDepositTransferEnabled { get; set; } = true;
+    public string PaymentMethodCode { get; set; } = string.Empty;
+    public string PaymentMethodName { get; set; } = string.Empty;
+    public string BankName { get; set; } = "MB Bank";
+    public string BankCode { get; set; } = "MB";
+    public string BankAccountNumber { get; set; } = "989420048989";
+    public string BankAccountName { get; set; } = "POOLHUB";
+    public string? DepositQrImageUrl { get; set; }
+    public string TransferContentTemplate { get; set; } = "POOLHUB {BookingCode} {PhoneNumber}";
+}
+
+public class DepositPaymentInstructionDto
+{
+    public string PaymentMethodCode { get; set; } = string.Empty;
+    public string PaymentMethodName { get; set; } = string.Empty;
+    public string BankName { get; set; } = string.Empty;
+    public string BankCode { get; set; } = string.Empty;
+    public string BankAccountNumber { get; set; } = string.Empty;
+    public string BankAccountName { get; set; } = string.Empty;
+    public string? QrImageUrl { get; set; }
+    public string? VietQrUrl { get; set; }
+    public decimal Amount { get; set; }
+    public string TransferContent { get; set; } = string.Empty;
+    public DateTime? ExpiresAtUtc { get; set; }
 }
 
 public class GeneralInfoDto

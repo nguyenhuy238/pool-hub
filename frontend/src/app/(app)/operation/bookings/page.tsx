@@ -5,7 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { getTotalPages } from "@/lib/api/client";
 import { utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
-import { dateTime, label, bookingStatus } from "@/lib/status";
+import { dateTime, label, bookingStatus, depositStatus, money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Booking } from "@/types";
@@ -16,6 +16,14 @@ const BOOKING_CONFIRMED = 2;
 const BOOKING_CANCELLED = 3;
 const BOOKING_COMPLETED = 4;
 const BOOKING_NO_SHOW = 5;
+const BOOKING_PENDING_DEPOSIT = 6;
+const BOOKING_PENDING_APPROVAL = 7;
+const BOOKING_EXPIRED = 8;
+const DEPOSIT_PENDING_VERIFICATION = 9;
+const DEPOSIT_PENDING = 2;
+const DEPOSIT_PAID = 3;
+const DEPOSIT_APPLIED_TO_INVOICE = 4;
+const DEPOSIT_FORFEITED = 7;
 
 type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number };
 type TableTypeOption = { tableTypeId: number; name?: string };
@@ -42,6 +50,16 @@ function getBookingCustomerDisplay(row: Record<string, unknown>) {
     .find((value) => value && !placeholders.has(value.toLocaleLowerCase("vi-VN")));
 
   return name || "Khách vãng lai";
+}
+
+function getDepositFlowLabel(bookingStatusValue: number, depositStatusValue?: number) {
+  if (bookingStatusValue === BOOKING_PENDING_DEPOSIT && depositStatusValue === DEPOSIT_PENDING) return "Chờ khách chuyển khoản";
+  if (bookingStatusValue === BOOKING_PENDING_DEPOSIT && depositStatusValue === DEPOSIT_PENDING_VERIFICATION) return "Chờ xác minh cọc";
+  if (bookingStatusValue === BOOKING_CONFIRMED && depositStatusValue === DEPOSIT_PAID) return "Đã nhận cọc";
+  if (bookingStatusValue === BOOKING_EXPIRED) return "Hết hạn thanh toán cọc";
+  if (bookingStatusValue === BOOKING_NO_SHOW && depositStatusValue === DEPOSIT_FORFEITED) return "Đã mất cọc";
+  if (bookingStatusValue === BOOKING_COMPLETED && depositStatusValue === DEPOSIT_APPLIED_TO_INVOICE) return "Đã trừ vào hóa đơn";
+  return depositStatusValue ? label(depositStatus, depositStatusValue) : "-";
 }
 
 export default function BookingsPage() {
@@ -92,6 +110,9 @@ export default function BookingsPage() {
               <option value="3">Đã hủy</option>
               <option value="4">Hoàn thành</option>
               <option value="5">Khách không đến</option>
+              <option value="6">Chờ thanh toán cọc</option>
+              <option value="7">Chờ quản lý duyệt</option>
+              <option value="8">Hết hạn</option>
             </select>
           </div>
         }
@@ -153,20 +174,40 @@ export default function BookingsPage() {
           { key: "endTimeUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endTimeUtc)) },
           { key: "status", label: "Trạng thái", render: (row) => {
             const statusValue = Number(row.status);
-            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
+            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW || statusValue === BOOKING_EXPIRED ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
+          } },
+          { key: "deposit", label: "Cọc", render: (row) => {
+            const deposit = row.deposit as { requiredAmount?: number; paidAmount?: number; appliedAmount?: number; refundedAmount?: number; forfeitedAmount?: number; status?: number } | undefined;
+            return (
+              <div style={{ display: "grid", gap: 3, fontSize: 13 }}>
+                <span>Tạm tính: <strong>{money(Number(row.estimatedAmount || 0))}</strong></span>
+                <span>Cần cọc: <strong>{money(deposit?.requiredAmount)}</strong></span>
+                <span>Đã cọc: <strong>{money(deposit?.paidAmount)}</strong></span>
+                <span>Đã trừ HĐ: <strong>{money(deposit?.appliedAmount)}</strong></span>
+                <span>Hoàn / mất: <strong>{money(deposit?.refundedAmount)} / {money(deposit?.forfeitedAmount)}</strong></span>
+                <span>Trạng thái cọc: {getDepositFlowLabel(Number(row.status), deposit?.status)}</span>
+              </div>
+            );
           } }
         ]}
         actions={(row) => {
           const statusValue = Number(row.status);
           const hasSession = hasStartedSession(row);
           const isPending = statusValue === BOOKING_PENDING;
+          const isPendingDeposit = statusValue === BOOKING_PENDING_DEPOSIT;
+          const isPendingApproval = statusValue === BOOKING_PENDING_APPROVAL;
           const isConfirmed = statusValue === BOOKING_CONFIRMED;
+          const deposit = row.deposit as { requiredAmount?: number; status?: number } | undefined;
+          const depositStatusValue = Number(deposit?.status || 0);
 
           const canConfirm = isPending && !hasSession;
+          const canApprove = isPendingApproval && !hasSession;
+          const canConfirmDeposit = isPendingDeposit && !hasSession;
+          const canRejectDeposit = isPendingDeposit && depositStatusValue === DEPOSIT_PENDING_VERIFICATION && !hasSession;
           const canStartSession = isConfirmed && !hasSession;
-          const canEdit = (isPending || isConfirmed) && !hasSession;
+          const canEdit = (isPending || isPendingDeposit || isPendingApproval || isConfirmed) && !hasSession;
           const canNoShow = isConfirmed && !hasSession;
-          const canCancel = (isPending || isConfirmed) && !hasSession;
+          const canCancel = (isPending || isPendingDeposit || isPendingApproval || isConfirmed) && !hasSession;
 
           return (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", minWidth: 270 }}>
@@ -177,6 +218,36 @@ export default function BookingsPage() {
                   onClick={() => action(bookingApi.confirm(Number(row.bookingId)), "Đã xác nhận booking.")}
                 >
                   Xác nhận
+                </button>
+              )}
+              {canApprove && (
+                <button
+                  className="primary-btn compact"
+                  style={{ whiteSpace: "nowrap", background: "#7c3aed", borderColor: "#6d28d9" }}
+                  onClick={() => action(bookingApi.approve(Number(row.bookingId)), "Đã duyệt booking.")}
+                >
+                  Duyệt
+                </button>
+              )}
+              {canConfirmDeposit && (
+                <button
+                  className="primary-btn compact"
+                  style={{ whiteSpace: "nowrap", background: "#0f766e", borderColor: "#0f766e" }}
+                  onClick={() => action(
+                    bookingApi.confirmDeposit(Number(row.bookingId), Number(deposit?.requiredAmount || 0)),
+                    "Đã xác nhận nhận cọc và xác nhận booking."
+                  )}
+                >
+                  Xác nhận cọc
+                </button>
+              )}
+              {canRejectDeposit && (
+                <button
+                  className="ghost-btn compact"
+                  style={{ whiteSpace: "nowrap", borderColor: "#f59e0b", color: "#92400e", background: "#fffbeb" }}
+                  onClick={() => action(bookingApi.rejectDepositTransfer(Number(row.bookingId), "Staff rejected deposit verification."), "Đã từ chối xác minh cọc.")}
+                >
+                  Từ chối cọc
                 </button>
               )}
               {canStartSession && (

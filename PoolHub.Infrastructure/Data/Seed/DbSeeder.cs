@@ -14,6 +14,8 @@ public static class DbSeeder
         await EnsurePermissionsAsync(db, ct);
         await EnsureDemoUsersAsync(db, ct);
         await EnsureDemoDiscountsAsync(db, ct);
+        await EnsureBankTransferPaymentMethodAsync(db, ct);
+        await EnsureDepositPaymentMethodAsync(db, ct);
 
         var userMap = await db.Users.ToDictionaryAsync(x => x.Email, x => x.UserId, ct);
 
@@ -54,7 +56,7 @@ public static class DbSeeder
 
         db.PaymentMethods.AddRange(
             new PaymentMethod { Name = "Cash", Code = "CASH" },
-            new PaymentMethod { Name = "BankTransfer", Code = "BANK" },
+            new PaymentMethod { Name = "BankTransfer", Code = "BANK", Description = DefaultBankTransferDescription },
             new PaymentMethod { Name = "EWallet", Code = "EWALLET" }
         );
 
@@ -646,5 +648,46 @@ public static class DbSeeder
         };
         db.Discounts.AddRange(discounts);
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDepositPaymentMethodAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        if (await db.PaymentMethods.AnyAsync(x => x.Code == "DEPOSIT", ct)) return;
+
+        db.PaymentMethods.Add(new PaymentMethod
+        {
+            Name = "Deposit Applied",
+            Code = "DEPOSIT",
+            Description = "System payment method used when applying booking deposits to invoices.",
+            IsActive = true
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private const string DefaultBankTransferDescription =
+        "{\"vietqr\":true,\"bankCode\":\"MB\",\"bankName\":\"MB Bank\",\"accountNo\":\"989420048989\",\"accountName\":\"POOLHUB\"}";
+
+    private static async Task EnsureBankTransferPaymentMethodAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var method = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "BANK", ct);
+        if (method is null)
+        {
+            db.PaymentMethods.Add(new PaymentMethod
+            {
+                Name = "BankTransfer",
+                Code = "BANK",
+                Description = DefaultBankTransferDescription,
+                IsActive = true
+            });
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(method.Description) || !method.Description.TrimStart().StartsWith('{'))
+        {
+            method.Description = DefaultBankTransferDescription;
+            method.IsActive = true;
+            await db.SaveChangesAsync(ct);
+        }
     }
 }

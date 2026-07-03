@@ -116,7 +116,7 @@ public class BookingsController(IBookingService bookingService, ISessionService 
     [HttpPost("public")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object>>> CreatePublic([FromBody] CreateBookingRequest request, CancellationToken ct) =>
-        StatusCode(201, ApiResponse<object>.Ok(await bookingService.CreateAsync(request, ct)));
+        StatusCode(201, ApiResponse<object>.Ok(await bookingService.CreatePublicAsync(request, ct)));
 
     [HttpPut("{id:long}")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
@@ -132,6 +132,31 @@ public class BookingsController(IBookingService bookingService, ISessionService 
     [HttpPut("{id:int}/confirm")] 
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + ",Staff")] 
     public async Task<ActionResult<ApiResponse<object>>> Confirm(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.ConfirmAsync(id, User.GetUserId(), ct)));
+
+    [HttpPost("{id:long}/approve")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+    public async Task<ActionResult<ApiResponse<object>>> Approve(long id, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.ApproveAsync(id, User.GetUserId(), ct)));
+
+    [HttpPost("{id:long}/deposit/submit-transfer")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> SubmitDepositTransfer(long id, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.SubmitDepositTransferAsync(id, ct)));
+
+    [HttpPost("{id:long}/deposit/confirm")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> ConfirmDeposit(long id, [FromBody] ConfirmDepositRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.ConfirmDepositAsync(id, request, User.GetUserId(), ct)));
+
+    [HttpPost("{id:long}/deposit/reject")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
+    public async Task<ActionResult<ApiResponse<object>>> RejectDepositTransfer(long id, [FromBody] RejectDepositTransferRequest? request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.RejectDepositTransferAsync(id, request ?? new RejectDepositTransferRequest(), User.GetUserId(), ct)));
+
+    [HttpPost("{id:long}/deposit/mock-pay")]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+    public async Task<ActionResult<ApiResponse<object>>> MockPayDeposit(long id, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.MockPayDepositAsync(id, ct)));
     
     /// <summary>
     /// Huy mot lich dat ban (Pending hoac Confirmed).
@@ -141,12 +166,13 @@ public class BookingsController(IBookingService bookingService, ISessionService 
     /// <returns>Lich dat ban da duoc cap nhat.</returns>
     [HttpPut("{id:int}/cancel")] 
     [Authorize] 
-    public async Task<ActionResult<ApiResponse<object>>> Cancel(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await bookingService.CancelAsync(id, ct)));
+    public async Task<ActionResult<ApiResponse<object>>> Cancel(int id, [FromBody] CancelBookingRequest? request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.CancelAsync(id, request ?? new CancelBookingRequest(), ct)));
 
     [HttpPut("{id:int}/no-show")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
-    public async Task<ActionResult<ApiResponse<object>>> NoShow(int id, CancellationToken ct) =>
-        Ok(ApiResponse<object>.Ok(await bookingService.MarkNoShowAsync(id, ct)));
+    public async Task<ActionResult<ApiResponse<object>>> NoShow(int id, [FromBody] NoShowBookingRequest? request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await bookingService.MarkNoShowAsync(id, request ?? new NoShowBookingRequest(), ct)));
 
     [HttpPatch("{id:int}/completed")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
