@@ -15,6 +15,7 @@ public class CreateBookingRequest
     public string? Email { get; set; }
 
     public long? TableId { get; set; }
+    public List<long>? TableIds { get; set; }
     public long? TableTypeId { get; set; }
 
     [Required]
@@ -25,4 +26,6 @@ public class CreateBookingRequest
 
     [Range(1, 20)]
     public int NumberOfGuests { get; set; }
+
+    public string? Note { get; set; }
 }

@@ -67,7 +67,14 @@ export const bookingApi = {
   create: (body: Partial<Booking>) => apiFetch<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
   update: (id: number, body: Partial<Booking>) => apiFetch<Booking>(`/api/bookings/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   confirm: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/confirm`, { method: "PUT" }),
-  cancel: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/cancel`, { method: "PUT" }),
+  approve: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/approve`, { method: "POST" }),
+  submitDepositTransfer: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/deposit/submit-transfer`, { method: "POST", skipAuth: true }),
+  confirmDeposit: (id: number, paidAmount: number, transactionCode?: string) =>
+    apiFetch<Booking>(`/api/bookings/${id}/deposit/confirm`, { method: "POST", body: JSON.stringify({ paidAmount, transactionCode }) }),
+  rejectDepositTransfer: (id: number, reason?: string) =>
+    apiFetch<Booking>(`/api/bookings/${id}/deposit/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  mockPayDeposit: (id: number) => apiFetch<Booking>(`/api/bookings/${id}/deposit/mock-pay`, { method: "POST" }),
+  cancel: (id: number, reason?: string, cancelledByVenue?: boolean) => apiFetch<Booking>(`/api/bookings/${id}/cancel`, { method: "PUT", body: JSON.stringify({ reason, cancelledByVenue }) }),
   noShow: (id: number, reason?: string) => apiFetch<Booking>(`/api/bookings/${id}/no-show`, { method: "PUT", body: JSON.stringify({ reason }) }),
   startSession: (id: number, tableId?: number) => apiFetch<Session>(`/api/bookings/${id}/start-session`, { method: "POST", body: JSON.stringify(tableId ? { tableId } : {}) }),
   delete: (id: number) => apiFetch(`/api/bookings/${id}`, { method: "DELETE" })

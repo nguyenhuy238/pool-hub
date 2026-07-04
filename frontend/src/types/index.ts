@@ -138,6 +138,7 @@ export type Booking = {
   phoneNumber?: string;
   email?: string;
   tableId?: number;
+  tableIds?: number[];
   tableTypeId?: number;
   startTimeUtc: string;
   endTimeUtc: string;
@@ -145,6 +146,43 @@ export type Booking = {
   note?: string;
   hasSession?: boolean;
   status: number;
+  estimatedAmount?: number;
+  requiresApproval?: boolean;
+  approvedAtUtc?: string;
+  holdExpiresAtUtc?: string;
+  cancellationReason?: string;
+  noShowAtUtc?: string;
+  source?: string;
+  deposit?: BookingDeposit;
+  depositPaymentInstruction?: DepositPaymentInstruction;
+  statusText?: string;
+  depositStatusText?: string;
+};
+
+export type BookingDeposit = {
+  bookingDepositId: number;
+  requiredAmount: number;
+  paidAmount: number;
+  appliedAmount: number;
+  refundedAmount: number;
+  forfeitedAmount: number;
+  status: number;
+  dueAtUtc: string;
+  paidAtUtc?: string;
+};
+
+export type DepositPaymentInstruction = {
+  paymentMethodCode?: string;
+  paymentMethodName?: string;
+  bankName: string;
+  bankCode?: string;
+  bankAccountNumber: string;
+  bankAccountName: string;
+  qrImageUrl?: string;
+  vietQrUrl?: string;
+  amount: number;
+  transferContent: string;
+  expiresAtUtc?: string;
 };
 
 export type BookingCalendarItem = {
@@ -279,6 +317,9 @@ export type Invoice = {
   taxAmount?: number;
   grandTotalAmount?: number;
   paidAmount?: number;
+  depositAppliedAmount?: number;
+  depositRefundAmount?: number;
+  remainingAmount?: number;
   paymentStatus?: number;
   status?: number;
   lines?: InvoiceLine[];

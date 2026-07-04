@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using EntityNotification = PoolHub.Core.Entities.Notification;
 
@@ -72,8 +73,15 @@ public class BookingReminderService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PoolHubDbContext>();
+        var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
 
         var now = DateTime.UtcNow;
+        var expiredCount = await bookingService.ExpirePendingDepositsAsync(now, ct);
+        if (expiredCount > 0)
+        {
+            _logger.LogInformation("[BookingReminderService] Expired {count} pending-deposit booking(s).", expiredCount);
+        }
+
         var windowStart = now.Add(ReminderWindow - ReminderTolerance); // now + 25min
         var windowEnd = now.Add(ReminderWindow + ReminderTolerance);   // now + 35min
 

@@ -67,7 +67,7 @@ export default function PaymentMethodsPage() {
       setNote(row.description || "");
       setBankCode("MB");
       setAccountNo("989420048989");
-      setAccountName("TRAN CONG DINH");
+      setAccountName("POOLHUB");
     }
 
     setIsModalOpen(true);
@@ -184,7 +184,7 @@ export default function PaymentMethodsPage() {
                 </div>
                 <label>
                   <span>Tên chủ tài khoản (Viết hoa không dấu) <strong style={{ color: "red" }}>*</strong></span>
-                  <input value={accountName} onChange={e => setAccountName(e.target.value.toUpperCase())} placeholder="VD: TRAN CONG DINH" required={isVietQR} />
+                  <input value={accountName} onChange={e => setAccountName(e.target.value.toUpperCase())} placeholder="VD: POOLHUB" required={isVietQR} />
                 </label>
               </div>
             )}

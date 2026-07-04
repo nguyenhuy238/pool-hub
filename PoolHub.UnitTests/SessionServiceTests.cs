@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Entities;
+using PoolHub.Core.Interfaces.Services;
 using PoolHub.Services.Session;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using System;
 using System.Threading;
@@ -83,6 +86,59 @@ public class SessionServiceTests
             service.StartAsync(99, new StartSessionRequest { TableId = 1, CustomerId = 1 }, CancellationToken.None));
 
         Assert.Equal("Customer is blocked or inactive.", exception.Message);
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenConfirmedBookingIsBeforeEarlyCheckInWindow_ThrowsBusinessRuleException()
+    {
+        using var db = CreateSessionStartDb();
+        var now = DateTime.UtcNow;
+        SeedSessionStartData(db, now.AddMinutes(30), now.AddMinutes(90));
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
+
+        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None));
+
+        Assert.Equal("Chưa đến giờ nhận bàn. Chỉ có thể nhận bàn trước giờ đặt tối đa 15 phút.", exception.Message);
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenConfirmedBookingIsInsideEarlyCheckInWindow_StartsAtActualNowAndMarksBookingCompleted()
+    {
+        using var db = CreateSessionStartDb();
+        var now = DateTime.UtcNow;
+        SeedSessionStartData(db, now.AddMinutes(15), now.AddMinutes(75));
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
+
+        var result = await service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None);
+
+        var booking = await db.Bookings.FindAsync(1L);
+        var table = await db.VenueTables.FindAsync(1L);
+        Assert.Equal(BookingStatuses.Completed, booking!.Status);
+        Assert.Equal(2, table!.OperationalStatus);
+        Assert.True(result.StartedAtUtc >= now);
+        Assert.True(result.StartedAtUtc < now.AddSeconds(10));
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenBookingAlreadyHasSession_ThrowsConflictException()
+    {
+        using var db = CreateSessionStartDb();
+        var now = DateTime.UtcNow;
+        SeedSessionStartData(db, now.AddMinutes(-5), now.AddMinutes(55));
+        db.Sessions.Add(new Session { SessionId = 10, SessionCode = "SS10", BookingId = 1, Status = 1, StartedAtUtc = now, OpenedByUserId = 99 });
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None));
+
+        Assert.Equal("Booking already has a session.", exception.Message);
     }
 
     [Fact]
@@ -270,6 +326,41 @@ public class SessionServiceTests
         return new PoolHubDbContext(options);
     }
 
+    private static PoolHubDbContext CreateSessionStartDb()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        return new PoolHubDbContext(options);
+    }
+
+    private static void SeedSessionStartData(PoolHubDbContext db, DateTime startUtc, DateTime endUtc)
+    {
+        db.Customers.Add(new Customer { CustomerId = 1, FullName = "Test Customer", PhoneNumber = "0900000000", Status = true });
+        db.VenueTables.Add(new VenueTable { TableId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        db.Bookings.Add(new Booking
+        {
+            BookingId = 1,
+            BookingCode = "BK1",
+            CustomerId = 1,
+            TableId = 1,
+            StartTimeUtc = DateTime.SpecifyKind(startUtc, DateTimeKind.Utc),
+            EndTimeUtc = DateTime.SpecifyKind(endUtc, DateTimeKind.Utc),
+            NumberOfGuests = 2,
+            Status = BookingStatuses.Confirmed
+        });
+        SeedPricing(db, startUtc, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
+    }
+
+    private static IConfiguration BuildBookingRulesConfig(int earlyCheckInMinutes) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BookingRules:EarlyCheckInMinutes"] = earlyCheckInMinutes.ToString()
+            })
+            .Build();
+
     private static void SeedPricing(PoolHubDbContext db, DateTime startedAt, decimal hourlyRate, int minimumMinutes, int billingBlockMinutes)
     {
         db.PricingPlans.Add(new PricingPlan { PricingPlanId = 1, Name = "Default Plan", IsDefault = true, IsActive = true, StartsAtUtc = startedAt.AddDays(-1) });
@@ -286,5 +377,14 @@ public class SessionServiceTests
             BillingBlockMinutes = billingBlockMinutes,
             IsActive = true
         });
+    }
+
+    private sealed class TestPosNotificationService : IPosNotificationService
+    {
+        public Task NotifyTableUpdateAsync(int tableId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyBookingUpdateAsync(int bookingId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifySessionUpdateAsync(int sessionId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyRefreshPosAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifySessionStartedAsync(int sessionId, int tableId, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

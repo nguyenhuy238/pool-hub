@@ -55,6 +55,17 @@ export type FooterSettings = { menuTitle: string; policyTitle: string; copyright
 export type LegalSettings = { privacyPolicy: string; termsOfService: string };
 export type ThemeSettings = { primaryColor: string; accentColor: string };
 export type QrCodeSettings = { isEnabled: boolean; imageUrl?: string; caption?: string };
+export type DepositPaymentSettings = {
+  isDepositTransferEnabled: boolean;
+  paymentMethodCode?: string;
+  paymentMethodName?: string;
+  bankName: string;
+  bankCode?: string;
+  bankAccountNumber: string;
+  bankAccountName: string;
+  depositQrImageUrl?: string;
+  transferContentTemplate: string;
+};
 
 export type OrderedLandingItem = {
   title: string;
@@ -125,6 +136,7 @@ export type LandingPageSettings = {
   legal: LegalSettings;
   theme: ThemeSettings;
   qrCode: QrCodeSettings;
+  depositPayment: DepositPaymentSettings;
 };
 
 export type PublicPricingSummary = {
@@ -251,7 +263,15 @@ export const defaultLandingSettings: LandingPageSettings = {
   footer: { menuTitle: "Menu nhanh", policyTitle: "Chính sách", copyright: "Copyright 2026 PoolHub." },
   legal: { privacyPolicy: "", termsOfService: "" },
   theme: { primaryColor: "#0f5d4b", accentColor: "#c89d3f" },
-  qrCode: { isEnabled: false, imageUrl: "", caption: "" }
+  qrCode: { isEnabled: false, imageUrl: "", caption: "" },
+  depositPayment: {
+    isDepositTransferEnabled: true,
+    bankName: "MB Bank",
+    bankAccountNumber: "989420048989",
+    bankAccountName: "POOLHUB",
+    depositQrImageUrl: "/images/poolhub/hero.png",
+    transferContentTemplate: "POOLHUB {BookingCode} {PhoneNumber}"
+  }
 };
 
 export function activeSorted<T extends { displayOrder: number; isActive?: boolean }>(items: T[]) {
@@ -260,6 +280,7 @@ export function activeSorted<T extends { displayOrder: number; isActive?: boolea
 
 export const landingSettingsApi = {
   public: async () => apiFetch<LandingPageSettings>("/api/public/landing-settings", { skipAuth: true }),
+  depositPaymentSettings: async () => apiFetch<DepositPaymentSettings>("/api/public/deposit-payment-settings", { skipAuth: true }),
   pricingSummary: async () => apiFetch<PublicPricingSummary>("/api/public/pricing-summary", { skipAuth: true }),
   admin: async () => apiFetch<LandingPageSettings>("/api/admin/landing-settings"),
   update: async (body: LandingPageSettings) => apiFetch<LandingPageSettings>("/api/admin/landing-settings", { method: "PUT", body: JSON.stringify(body) }),

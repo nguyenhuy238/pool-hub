@@ -7,7 +7,9 @@ import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slo
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
+import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import type { VenueTableLayoutItem } from '@/types';
+import type { Booking } from "@/types";
 function getTableTypeColors(name: string) {
   const n = name.toLowerCase();
   if (n.includes('vip')) return { color: '#8b5cf6', background: '#ede9fe' };
@@ -39,6 +41,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const [bookedSlots, setBookedSlots] = useState<Set<number>>(new Set());
   const [pastSlots, setPastSlots] = useState<Set<number>>(new Set());
   const [loadingBookings, setLoadingBookings] = useState(false);
+  const [bookingLoadError, setBookingLoadError] = useState("");
   const [checkingRange, setCheckingRange] = useState(false);
   const [rangeConflict, setRangeConflict] = useState(false);
   
@@ -51,6 +54,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   });
 
   const [saving, setSaving] = useState(false);
+  const [createdBooking, setCreatedBooking] = useState<Booking | null>(null);
+  const [depositCountdown, setDepositCountdown] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -81,6 +86,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const fetchExistingBookings = async () => {
     if (!selectedTable) return;
     setLoadingBookings(true);
+    setBookingLoadError("");
     try {
       const requests = [publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate)];
       if (overnightEnabled) requests.push(publicBookingApi.getPublicCalendar(selectedTable.tableId, addDaysToVietnamDateInput(bookingDate, 1)));
@@ -104,6 +110,9 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     } catch (err) {
       console.error(err);
       setBookedSlots(new Set());
+      const message = err instanceof Error ? err.message : "Không tải được lịch đặt bàn.";
+      setBookingLoadError(message);
+      toast(message, "error");
     } finally {
       setLoadingBookings(false);
     }
@@ -184,7 +193,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
         toast("Bàn đã có booking hoặc phiên chơi trong khung giờ này.", "error");
         return;
       }
-      await publicBookingApi.create({
+      const booking = await publicBookingApi.create({
         customerName: customerInfo.customerName.trim(),
         phoneNumber: customerInfo.phoneNumber.trim(),
         email: customerInfo.email.trim() || undefined,
@@ -196,10 +205,47 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
         numberOfGuests: Number(customerInfo.numberOfGuests),
         note: customerInfo.note.trim() || undefined
       });
+      setCreatedBooking(booking);
       toast(policy.successMessage, "success");
       setStep(5); // Success step
     } catch (err) {
       toast(err instanceof Error ? err.message : "Gửi yêu cầu đặt bàn thất bại.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!createdBooking?.holdExpiresAtUtc || createdBooking.status !== 6) {
+      setDepositCountdown("");
+      return;
+    }
+
+    const update = () => {
+      const remaining = new Date(createdBooking.holdExpiresAtUtc!).getTime() - Date.now();
+      if (remaining <= 0) {
+        setDepositCountdown("00:00");
+        return;
+      }
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      setDepositCountdown(`${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`);
+    };
+
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [createdBooking]);
+
+  const submitDepositTransfer = async () => {
+    if (!createdBooking) return;
+    setSaving(true);
+    try {
+      const updated = await publicBookingApi.submitDepositTransfer(createdBooking.bookingId);
+      setCreatedBooking(updated);
+      toast("Đã ghi nhận thông tin chuyển khoản. Nhân viên sẽ xác minh cọc.", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Gửi thông tin chuyển khoản thất bại.", "error");
     } finally {
       setSaving(false);
     }
@@ -407,6 +453,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           </p>
           {loadingBookings ? (
             <div style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>Đang tải lịch đặt...</div>
+          ) : bookingLoadError ? (
+            <div className="inline-alert error">{bookingLoadError}</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(65px, 1fr))', gap: '6px' }}>
               {timeSlots.map((slot, index) => {
@@ -501,6 +549,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           <div className="bw-summary-row"><span>Khu vực/Bàn:</span> <strong>{selectedTable?.tableName} ({selectedTable?.tableTypeName})</strong></div>
           {customerInfo.note && <div className="bw-summary-row"><span>Ghi chú:</span> <strong>{customerInfo.note}</strong></div>}
           <div className="bw-summary-row"><span>Tạm tính:</span> <strong className="highlight-price">{estimatedPrice.toLocaleString('vi-VN')} đ</strong></div>
+          <div className="bw-summary-row"><span>Tiền cọc dự kiến:</span> <strong>{Math.max(Math.ceil((estimatedPrice * 0.3) / 1000) * 1000, 50000).toLocaleString('vi-VN')} đ</strong></div>
+          <div className="inline-note">Tiền cọc sẽ được trừ vào hóa đơn cuối cùng.</div>
         </div>
         
         <div className="bw-actions bw-actions-center">
@@ -516,11 +566,53 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const renderStep5 = () => (
     <div className="bw-step bw-step-5 bw-success">
       <div className="bw-success-icon">✓</div>
-      <h3>Đặt bàn thành công!</h3>
-      <p>{policy.successMessage}</p>
+      <h3>{createdBooking?.status === 2 ? "Đặt bàn đã xác nhận!" : "Đặt bàn thành công!"}</h3>
+      {createdBooking?.bookingCode ? <p>Mã booking: <strong>{createdBooking.bookingCode}</strong></p> : null}
+      {createdBooking?.status === 7 ? (
+        <p>Yêu cầu đặt nhiều bàn đang chờ quản lý duyệt.</p>
+      ) : createdBooking?.status === 6 ? (
+        <>
+          <p>
+            {createdBooking.deposit?.status === 9
+              ? "Bạn đã báo chuyển khoản. Booking đang chờ nhân viên xác minh cọc."
+              : "Vui lòng chuyển khoản tiền cọc theo thông tin bên dưới để giữ bàn."}
+          </p>
+          <div className="bw-pricing-box" style={{ marginBottom: 16 }}>
+            <h4>Tiền cọc cần thanh toán</h4>
+            <div className="bw-price-amount">{(createdBooking.depositPaymentInstruction?.amount || createdBooking.deposit?.requiredAmount || 0).toLocaleString("vi-VN")} đ</div>
+            {createdBooking.depositPaymentInstruction ? (
+              <PaymentQrCard
+                title="Quét mã chuyển khoản đặt cọc"
+                qrUrl={createdBooking.depositPaymentInstruction.vietQrUrl || createdBooking.depositPaymentInstruction.qrImageUrl}
+                bankName={createdBooking.depositPaymentInstruction.bankName}
+                bankCode={createdBooking.depositPaymentInstruction.bankCode}
+                accountNumber={createdBooking.depositPaymentInstruction.bankAccountNumber}
+                accountName={createdBooking.depositPaymentInstruction.bankAccountName}
+                amount={createdBooking.depositPaymentInstruction.amount}
+                transferContent={createdBooking.depositPaymentInstruction.transferContent}
+                note="Tiền cọc sẽ được trừ vào hóa đơn cuối cùng."
+                onCopy={(message) => toast(message, "success")}
+              />
+            ) : (
+              <div className="inline-alert error">Chưa cấu hình phương thức chuyển khoản. Vui lòng liên hệ nhân viên.</div>
+            )}
+            <p className="bw-price-note">Tiền cọc sẽ được trừ vào hóa đơn cuối cùng. Thời hạn giữ bàn: {depositCountdown || "--:--"}</p>
+          </div>
+          {createdBooking.deposit?.status === 9 ? (
+            <div className="inline-note">Nhân viên sẽ kiểm tra giao dịch và xác nhận booking sau khi nhận đủ cọc.</div>
+          ) : createdBooking.depositPaymentInstruction ? (
+            <button className="primary-btn" onClick={submitDepositTransfer} disabled={saving}>
+              {saving ? "Đang xử lý..." : "Tôi đã chuyển khoản"}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p>{policy.successMessage}</p>
+      )}
       <button className="outline-btn" onClick={() => {
         setStep(1);
         setSelectedTable(null);
+        setCreatedBooking(null);
         setCustomerInfo({ customerName: '', phoneNumber: '', email: '', numberOfGuests: 4, note: '' });
       }}>
         Đặt bàn khác

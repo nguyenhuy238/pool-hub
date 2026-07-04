@@ -77,6 +77,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<PosHub>("/hubs/pos");
+app.MapHub<OperationHub>("/hubs/operation");
 
 var disableSeed = builder.Configuration.GetValue<bool>("DisableDbSeed") || string.Equals(Environment.GetEnvironmentVariable("DisableDbSeed"), "true", StringComparison.OrdinalIgnoreCase);
 if (!disableSeed && !app.Environment.IsEnvironment("Testing"))

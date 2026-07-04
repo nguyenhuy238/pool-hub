@@ -7,6 +7,22 @@ public static class BookingStatuses
     public const int Cancelled = 3;
     public const int Completed = 4;
     public const int NoShow = 5;
+    public const int PendingDeposit = 6;
+    public const int PendingApproval = 7;
+    public const int Expired = 8;
+}
+
+public static class BookingDepositStatuses
+{
+    public const int NotRequired = 1;
+    public const int Pending = 2;
+    public const int Paid = 3;
+    public const int AppliedToInvoice = 4;
+    public const int Refunded = 5;
+    public const int PartiallyRefunded = 6;
+    public const int Forfeited = 7;
+    public const int Expired = 8;
+    public const int PendingVerification = 9;
 }
 
 public static class InvoicePaymentStatuses

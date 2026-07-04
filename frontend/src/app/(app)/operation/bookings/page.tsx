@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { getTotalPages } from "@/lib/api/client";
-import { utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
-import { dateTime, label, bookingStatus } from "@/lib/status";
+import { formatVietnamTime, utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
+import { dateTime, label, bookingStatus, depositStatus, money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Booking } from "@/types";
@@ -16,6 +16,15 @@ const BOOKING_CONFIRMED = 2;
 const BOOKING_CANCELLED = 3;
 const BOOKING_COMPLETED = 4;
 const BOOKING_NO_SHOW = 5;
+const BOOKING_PENDING_DEPOSIT = 6;
+const BOOKING_PENDING_APPROVAL = 7;
+const BOOKING_EXPIRED = 8;
+const DEPOSIT_PENDING_VERIFICATION = 9;
+const DEPOSIT_PENDING = 2;
+const DEPOSIT_PAID = 3;
+const DEPOSIT_APPLIED_TO_INVOICE = 4;
+const DEPOSIT_FORFEITED = 7;
+const EARLY_CHECK_IN_MINUTES = 15;
 
 type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number };
 type TableTypeOption = { tableTypeId: number; name?: string };
@@ -44,6 +53,41 @@ function getBookingCustomerDisplay(row: Record<string, unknown>) {
   return name || "Khách vãng lai";
 }
 
+function getDepositFlowLabel(bookingStatusValue: number, depositStatusValue?: number) {
+  if (bookingStatusValue === BOOKING_PENDING_DEPOSIT && depositStatusValue === DEPOSIT_PENDING) return "Chờ khách chuyển khoản";
+  if (bookingStatusValue === BOOKING_PENDING_DEPOSIT && depositStatusValue === DEPOSIT_PENDING_VERIFICATION) return "Chờ xác minh cọc";
+  if (bookingStatusValue === BOOKING_CONFIRMED && depositStatusValue === DEPOSIT_PAID) return "Đã nhận cọc";
+  if (bookingStatusValue === BOOKING_EXPIRED) return "Hết hạn thanh toán cọc";
+  if (bookingStatusValue === BOOKING_NO_SHOW && depositStatusValue === DEPOSIT_FORFEITED) return "Đã mất cọc";
+  if (bookingStatusValue === BOOKING_COMPLETED && depositStatusValue === DEPOSIT_APPLIED_TO_INVOICE) return "Đã trừ vào hóa đơn";
+  return depositStatusValue ? label(depositStatus, depositStatusValue) : "-";
+}
+
+function getStartSessionState(row: Record<string, unknown>, nowMs: number) {
+  const startTimeUtc = typeof row.startTimeUtc === "string" ? row.startTimeUtc : "";
+  const endTimeUtc = typeof row.endTimeUtc === "string" ? row.endTimeUtc : "";
+  const startMs = new Date(startTimeUtc).getTime();
+  const endMs = new Date(endTimeUtc).getTime();
+
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return { canStart: false, message: "Thời gian booking không hợp lệ." };
+  }
+
+  const earliestStartMs = startMs - EARLY_CHECK_IN_MINUTES * 60 * 1000;
+  if (nowMs < earliestStartMs) {
+    return {
+      canStart: false,
+      message: `Có thể nhận bàn từ ${formatVietnamTime(new Date(earliestStartMs).toISOString())}.`
+    };
+  }
+
+  if (nowMs >= endMs) {
+    return { canStart: false, message: "Booking đã quá giờ kết thúc." };
+  }
+
+  return { canStart: true, message: "" };
+}
+
 export default function BookingsPage() {
   const toast = useToast();
   const [status, setStatus] = useState("");
@@ -53,6 +97,12 @@ export default function BookingsPage() {
   const [cancelling, setCancelling] = useState<Booking | null>(null);
   const [startingSession, setStartingSession] = useState<Booking | null>(null);
   const [noShowing, setNoShowing] = useState<Booking | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const { data, loading, error, reload } = useLoad(async () => {
     const [bookingsRes, tablesRes, typesRes] = await Promise.all([
@@ -92,6 +142,9 @@ export default function BookingsPage() {
               <option value="3">Đã hủy</option>
               <option value="4">Hoàn thành</option>
               <option value="5">Khách không đến</option>
+              <option value="6">Chờ thanh toán cọc</option>
+              <option value="7">Chờ quản lý duyệt</option>
+              <option value="8">Hết hạn</option>
             </select>
           </div>
         }
@@ -153,20 +206,41 @@ export default function BookingsPage() {
           { key: "endTimeUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endTimeUtc)) },
           { key: "status", label: "Trạng thái", render: (row) => {
             const statusValue = Number(row.status);
-            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
+            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW || statusValue === BOOKING_EXPIRED ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
+          } },
+          { key: "deposit", label: "Cọc", render: (row) => {
+            const deposit = row.deposit as { requiredAmount?: number; paidAmount?: number; appliedAmount?: number; refundedAmount?: number; forfeitedAmount?: number; status?: number } | undefined;
+            return (
+              <div style={{ display: "grid", gap: 3, fontSize: 13 }}>
+                <span>Tạm tính: <strong>{money(Number(row.estimatedAmount || 0))}</strong></span>
+                <span>Cần cọc: <strong>{money(deposit?.requiredAmount)}</strong></span>
+                <span>Đã cọc: <strong>{money(deposit?.paidAmount)}</strong></span>
+                <span>Đã trừ HĐ: <strong>{money(deposit?.appliedAmount)}</strong></span>
+                <span>Hoàn / mất: <strong>{money(deposit?.refundedAmount)} / {money(deposit?.forfeitedAmount)}</strong></span>
+                <span>Trạng thái cọc: {getDepositFlowLabel(Number(row.status), deposit?.status)}</span>
+              </div>
+            );
           } }
         ]}
         actions={(row) => {
           const statusValue = Number(row.status);
           const hasSession = hasStartedSession(row);
           const isPending = statusValue === BOOKING_PENDING;
+          const isPendingDeposit = statusValue === BOOKING_PENDING_DEPOSIT;
+          const isPendingApproval = statusValue === BOOKING_PENDING_APPROVAL;
           const isConfirmed = statusValue === BOOKING_CONFIRMED;
+          const deposit = row.deposit as { requiredAmount?: number; status?: number } | undefined;
+          const depositStatusValue = Number(deposit?.status || 0);
 
           const canConfirm = isPending && !hasSession;
+          const canApprove = isPendingApproval && !hasSession;
+          const canConfirmDeposit = isPendingDeposit && !hasSession;
+          const canRejectDeposit = isPendingDeposit && depositStatusValue === DEPOSIT_PENDING_VERIFICATION && !hasSession;
+          const startSessionState = getStartSessionState(row, nowMs);
           const canStartSession = isConfirmed && !hasSession;
-          const canEdit = (isPending || isConfirmed) && !hasSession;
+          const canEdit = (isPending || isPendingDeposit || isPendingApproval || isConfirmed) && !hasSession;
           const canNoShow = isConfirmed && !hasSession;
-          const canCancel = (isPending || isConfirmed) && !hasSession;
+          const canCancel = (isPending || isPendingDeposit || isPendingApproval || isConfirmed) && !hasSession;
 
           return (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-start", minWidth: 270 }}>
@@ -179,20 +253,62 @@ export default function BookingsPage() {
                   Xác nhận
                 </button>
               )}
-              {canStartSession && (
+              {canApprove && (
                 <button
                   className="primary-btn compact"
-                  style={{ whiteSpace: "nowrap", background: "#10b981", borderColor: "#059669" }}
-                  onClick={() => {
-                    if (!row.tableId) {
-                      toast("Booking chưa xếp bàn. Vui lòng ấn Chỉnh sửa để chọn bàn trước.", "error");
-                      return;
-                    }
-                    setStartingSession(row as unknown as Booking);
-                  }}
+                  style={{ whiteSpace: "nowrap", background: "#7c3aed", borderColor: "#6d28d9" }}
+                  onClick={() => action(bookingApi.approve(Number(row.bookingId)), "Đã duyệt booking.")}
                 >
-                  Nhận bàn
+                  Duyệt
                 </button>
+              )}
+              {canConfirmDeposit && (
+                <button
+                  className="primary-btn compact"
+                  style={{ whiteSpace: "nowrap", background: "#0f766e", borderColor: "#0f766e" }}
+                  onClick={() => action(
+                    bookingApi.confirmDeposit(Number(row.bookingId), Number(deposit?.requiredAmount || 0)),
+                    "Đã xác nhận nhận cọc và xác nhận booking."
+                  )}
+                >
+                  Xác nhận cọc
+                </button>
+              )}
+              {canRejectDeposit && (
+                <button
+                  className="ghost-btn compact"
+                  style={{ whiteSpace: "nowrap", borderColor: "#f59e0b", color: "#92400e", background: "#fffbeb" }}
+                  onClick={() => action(bookingApi.rejectDepositTransfer(Number(row.bookingId), "Staff rejected deposit verification."), "Đã từ chối xác minh cọc.")}
+                >
+                  Từ chối cọc
+                </button>
+              )}
+              {canStartSession && (
+                <span title={startSessionState.message || undefined}>
+                  <button
+                    className="primary-btn compact"
+                    disabled={!startSessionState.canStart}
+                    style={{
+                      whiteSpace: "nowrap",
+                      background: startSessionState.canStart ? "#10b981" : "#94a3b8",
+                      borderColor: startSessionState.canStart ? "#059669" : "#94a3b8",
+                      cursor: startSessionState.canStart ? "pointer" : "not-allowed"
+                    }}
+                    onClick={() => {
+                      if (!startSessionState.canStart) {
+                        toast(startSessionState.message || "Chưa thể nhận bàn.", "error");
+                        return;
+                      }
+                      if (!row.tableId) {
+                        toast("Booking chưa xếp bàn. Vui lòng ấn Chỉnh sửa để chọn bàn trước.", "error");
+                        return;
+                      }
+                      setStartingSession(row as unknown as Booking);
+                    }}
+                  >
+                    Nhận bàn
+                  </button>
+                </span>
               )}
               {canEdit && (
                 <button
@@ -246,6 +362,12 @@ export default function BookingsPage() {
           confirmLabel="Mở bàn"
           onCancel={() => setStartingSession(null)}
           onConfirm={async () => {
+            const startState = getStartSessionState(startingSession as unknown as Record<string, unknown>, Date.now());
+            if (!startState.canStart) {
+              toast(startState.message || "Chưa thể nhận bàn.", "error");
+              setStartingSession(null);
+              return;
+            }
             await action(
               bookingApi.startSession(Number(startingSession.bookingId), startingSession.tableId ? Number(startingSession.tableId) : undefined),
               "Đã nhận bàn và mở phiên chơi thành công."

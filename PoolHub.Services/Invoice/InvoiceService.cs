@@ -7,6 +7,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Services.Payments;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -79,7 +80,7 @@ public class InvoiceService(
         var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.Status != 3, ct);
         if (exists is not null) 
         {
-            return new InvoiceDto { InvoiceId = exists.InvoiceId, SessionId = exists.SessionId, InvoiceCode = exists.InvoiceCode, GrandTotalAmount = exists.GrandTotalAmount };
+            return MapInvoiceDto(exists);
         }
 
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
@@ -153,8 +154,10 @@ public class InvoiceService(
             }
         }
 
+        await ApplyBookingDepositToInvoiceAsync(session, invoice, ct);
+
         await db.SaveChangesAsync(ct);
-        return new InvoiceDto { InvoiceId = invoice.InvoiceId, SessionId = invoice.SessionId, InvoiceCode = invoice.InvoiceCode, GrandTotalAmount = invoice.GrandTotalAmount };
+        return MapInvoiceDto(invoice);
     }
 
     public async Task<CreatePaymentResponse> CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct)
@@ -234,7 +237,7 @@ public class InvoiceService(
 
     public Task<List<PaymentMethodDto>> GetPaymentMethodsAsync(CancellationToken ct)
         => db.PaymentMethods
-            .Where(x => x.IsActive)
+            .Where(x => x.IsActive && x.Code != "DEPOSIT")
             .OrderBy(x => x.PaymentMethodId)
             .Select(x => new PaymentMethodDto
             {
@@ -311,6 +314,9 @@ public class InvoiceService(
             TaxAmount = invoice.TaxAmount,
             GrandTotalAmount = invoice.GrandTotalAmount,
             PaidAmount = invoice.PaidAmount,
+            DepositAppliedAmount = await db.BookingDeposits.AsNoTracking().Where(x => x.AppliedToInvoiceId == invoice.InvoiceId).SumAsync(x => x.AppliedAmount, ct),
+            DepositRefundAmount = await db.BookingDeposits.AsNoTracking().Where(x => x.AppliedToInvoiceId == invoice.InvoiceId).SumAsync(x => x.RefundedAmount, ct),
+            RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount),
             PaymentStatus = invoice.PaymentStatus,
             Status = invoice.Status,
             IssuedByUserId = invoice.IssuedByUserId,
@@ -625,21 +631,14 @@ public class InvoiceService(
     public async Task<string> GetVietQrUrlAsync(long invoiceId, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
-        var bankMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "BANK" || x.Name.Contains("Chuyển") || x.Name.Contains("QR") || x.Name.Contains("Bank"), ct);
-        var desc = bankMethod?.Description ?? "";
-        
-        string bankCode = "MB";
-        string accountNo = "989420048989";
-        string accountName = "POOLHUB";
-
-        try {
-            using var doc = System.Text.Json.JsonDocument.Parse(desc);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("bankCode", out var bc) && !string.IsNullOrEmpty(bc.GetString())) bankCode = bc.GetString()!;
-            if (root.TryGetProperty("accountNo", out var ac) && !string.IsNullOrEmpty(ac.GetString())) accountNo = ac.GetString()!;
-            if (root.TryGetProperty("accountName", out var an) && !string.IsNullOrEmpty(an.GetString())) accountName = an.GetString()!;
-        } catch {}
-
+        var bankMethod = await db.PaymentMethods
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .ToListAsync(ct);
+        var qrConfig = bankMethod
+            .Select(BankTransferQrHelper.Parse)
+            .FirstOrDefault(x => x is not null && x.CanBuildDynamicQr)
+            ?? throw new BusinessRuleException("Active bank transfer payment method is not configured for VietQR.");
         var amount = (long)(invoice.GrandTotalAmount - invoice.PaidAmount);
         if (amount <= 0) amount = (long)invoice.GrandTotalAmount;
         var addInfo = $"HD{invoiceId}";
@@ -684,7 +683,7 @@ public class InvoiceService(
             catch {}
         }
 
-        return $"https://img.vietqr.io/image/{bankCode}-{accountNo}-compact2.png?amount={amount}&addInfo={Uri.EscapeDataString(addInfo)}&accountName={Uri.EscapeDataString(accountName)}";
+        return BankTransferQrHelper.BuildVietQrUrl(qrConfig, amount, addInfo);
     }
 
     public async Task<InvoiceDto> UpdateInvoiceProductsAsync(long id, UpdateInvoiceProductsRequest request, long? userId, CancellationToken ct)
@@ -955,6 +954,79 @@ public class InvoiceService(
             await posNotificationService.NotifySessionUpdateAsync((int)invoice.SessionId, ct);
         }
 
-        return new InvoiceDto { InvoiceId = invoice.InvoiceId, SessionId = invoice.SessionId, InvoiceCode = invoice.InvoiceCode, GrandTotalAmount = invoice.GrandTotalAmount };
+        return MapInvoiceDto(invoice);
     }
+
+    private async Task ApplyBookingDepositToInvoiceAsync(PoolHub.Core.Entities.Session session, EntityInvoice invoice, CancellationToken ct)
+    {
+        if (!session.BookingId.HasValue) return;
+
+        var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x =>
+            x.BookingId == session.BookingId.Value &&
+            x.Status == BookingDepositStatuses.Paid &&
+            x.PaidAmount > 0, ct);
+        if (deposit is null) return;
+
+        var appliedAmount = Math.Min(deposit.PaidAmount, invoice.GrandTotalAmount);
+        if (appliedAmount <= 0) return;
+
+        var paymentMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "DEPOSIT", ct);
+        if (paymentMethod is null)
+        {
+            paymentMethod = new PaymentMethod
+            {
+                Code = "DEPOSIT",
+                Name = "Deposit Applied",
+                Description = "System payment method used when applying booking deposits to invoices.",
+                IsActive = true
+            };
+            db.PaymentMethods.Add(paymentMethod);
+            await db.SaveChangesAsync(ct);
+        }
+
+        db.Payments.Add(new Payment
+        {
+            InvoiceId = invoice.InvoiceId,
+            PaymentMethodId = paymentMethod.PaymentMethodId,
+            Amount = appliedAmount,
+            PaymentStatus = PaymentStatuses.Completed,
+            TransactionCode = deposit.TransactionCode,
+            PaidAtUtc = DateTime.UtcNow,
+            Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
+        });
+
+        invoice.PaidAmount += appliedAmount;
+        invoice.PaymentStatus = invoice.PaidAmount >= invoice.GrandTotalAmount
+            ? InvoicePaymentStatuses.Paid
+            : InvoicePaymentStatuses.PartiallyPaid;
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
+        {
+            invoice.Status = 2;
+        }
+
+        deposit.AppliedAmount = appliedAmount;
+        deposit.AppliedToInvoiceId = invoice.InvoiceId;
+        if (deposit.PaidAmount > invoice.GrandTotalAmount)
+        {
+            deposit.RefundedAmount = deposit.PaidAmount - invoice.GrandTotalAmount;
+            deposit.RefundedAtUtc = DateTime.UtcNow;
+            deposit.Status = BookingDepositStatuses.PartiallyRefunded;
+        }
+        else
+        {
+            deposit.Status = BookingDepositStatuses.AppliedToInvoice;
+        }
+    }
+
+    private static InvoiceDto MapInvoiceDto(EntityInvoice invoice) => new()
+    {
+        InvoiceId = invoice.InvoiceId,
+        SessionId = invoice.SessionId,
+        InvoiceCode = invoice.InvoiceCode,
+        GrandTotalAmount = invoice.GrandTotalAmount,
+        PaymentStatus = invoice.PaymentStatus,
+        Status = invoice.Status,
+        PaidAmount = invoice.PaidAmount,
+        RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount)
+    };
 }

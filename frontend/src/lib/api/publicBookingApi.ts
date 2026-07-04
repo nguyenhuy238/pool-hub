@@ -37,12 +37,25 @@ export interface PublicBookingSlot {
   status?: number;
 }
 
+export interface BookingAvailabilityItem {
+  tableId: number;
+  estimatedAmount?: number;
+  depositRequiredAmount?: number;
+  depositPercent?: number;
+  requiresApproval?: boolean;
+  conflictDetails?: string[];
+}
+
 export const publicBookingApi = {
   availability: (tableId: number, startTimeUtc: string, endTimeUtc: string) =>
-    apiFetch<Array<{ tableId: number }>>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`, { skipAuth: true }),
+    apiFetch<BookingAvailabilityItem[]>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`, { skipAuth: true }),
   create: (request: PublicBookingRequest) => apiFetch<Booking>("/api/bookings/public", {
     method: "POST",
     body: JSON.stringify(toBookingPayload(request)),
+    skipAuth: true
+  }),
+  submitDepositTransfer: (bookingId: number) => apiFetch<Booking>(`/api/bookings/${bookingId}/deposit/submit-transfer`, {
+    method: "POST",
     skipAuth: true
   }),
   getPublicCalendar: (tableId: number, date: string) => apiFetch<PublicBookingSlot[]>(`/api/bookings/public/calendar?tableId=${tableId}&date=${date}`, { skipAuth: true })

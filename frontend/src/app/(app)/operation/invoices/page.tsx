@@ -6,6 +6,8 @@ import { invoiceApi, sessionApi, productApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
+import { parseBankTransferConfig } from "@/lib/paymentQr";
+import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session } from "@/types";
@@ -79,7 +81,8 @@ export default function InvoicesPage() {
       return;
     }
     try {
-      const payment = await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: invoice.grandTotalAmount || 0 });
+      const amountDue = Math.max(0, Number(invoice.remainingAmount ?? ((invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0))));
+      const payment = await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: amountDue });
       toast("Đã ghi nhận thanh toán.", "success");
       const detail = await invoiceApi.detail(invoice.invoiceId);
       setReviewInvitation(payment.reviewInvitation || null);
@@ -432,9 +435,23 @@ export default function InvoicesPage() {
               <span>Giảm giá:</span>
               <span style={{ fontWeight: 600, color: 'var(--danger)' }}>-{money(invoice.discountAmount || 0)}</span>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
+              <span>Đã đặt cọc:</span>
+              <span style={{ fontWeight: 600, color: '#0f766e' }}>{money(invoice.depositAppliedAmount || 0)}</span>
+            </div>
+            {(invoice.depositRefundAmount || 0) > 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
+                <span>Hoàn lại do cọc dư:</span>
+                <span style={{ fontWeight: 600, color: '#7c3aed' }}>{money(invoice.depositRefundAmount || 0)}</span>
+              </div>
+            ) : null}
             <div style={{ borderTop: '1px dashed var(--line)', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '16px', fontWeight: 'bold' }}>TỔNG THANH TOÁN:</span>
               <span style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--brand)' }}>{money(invoice.grandTotalAmount || 0)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '15px' }}>
+              <span>Còn phải trả:</span>
+              <strong>{money(invoice.remainingAmount ?? Math.max(0, (invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0)))}</strong>
             </div>
           </div>
 
@@ -456,71 +473,26 @@ export default function InvoicesPage() {
 
               {(() => {
                 const selected = methods.find(m => m.paymentMethodId === Number(paymentMethodId));
-                const isBank = selected && (selected.code === "BANK" || selected.name.toLowerCase().includes("chuyển khoản") || selected.name.toLowerCase().includes("bank") || selected.name.toLowerCase().includes("qr") || selected.name.toLowerCase().includes("chuyen khuan"));
-                if (!isBank) return null;
+                const bankConfig = parseBankTransferConfig(selected);
+                if (!bankConfig) return null;
 
-                const amount = invoice.grandTotalAmount || 0;
+                const amount = Math.max(0, Number(invoice.remainingAmount ?? ((invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0))));
                 const addInfo = `HD${invoice.invoiceId}`;
-                let accountNo = "989420048989";
-                let bankCode = "MB";
-                let accountName = "TRAN CONG DINH";
-
-                try {
-                  if (selected.description && selected.description.startsWith("{")) {
-                    const parsed = JSON.parse(selected.description);
-                    if (parsed.vietqr || parsed.accountNo) {
-                      if (parsed.accountNo) accountNo = parsed.accountNo;
-                      if (parsed.bankCode) bankCode = parsed.bankCode;
-                      if (parsed.accountName) accountName = parsed.accountName;
-                    }
-                  }
-                } catch { }
-
                 const qrUrl = `${API_BASE_URL}/api/invoices/${invoice.invoiceId}/qr-code?amt=${amount}&t=${Date.now()}`;
 
                 return (
-                  <div style={{ background: '#f8fbfa', border: '1.5px solid #0f5d4b', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f5d4b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>⚡</span> QUÉT MÃ VIETQR ĐỂ THANH TOÁN TỰ ĐỘNG
-                    </div>
-
-                    <div style={{ background: 'white', padding: '12px', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', border: '1px solid var(--line)' }}>
-                      <img src={qrUrl} alt="VietQR Thanh Toán" style={{ width: '100%', maxWidth: '300px', display: 'block', borderRadius: '8px' }} />
-                    </div>
-
-                    <div style={{ width: '100%', fontSize: '13px', background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid var(--line)', display: 'grid', gap: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--muted)' }}>Ngân hàng:</span>
-                        <strong>{bankCode}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--muted)' }}>Số tài khoản:</span>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <strong style={{ color: 'var(--ink)', fontSize: '15px' }}>{accountNo}</strong>
-                          <button type="button" className="ghost-btn compact" style={{ padding: '2px 8px', fontSize: '12px' }} onClick={() => { navigator.clipboard.writeText(accountNo); toast("Đã sao chép số tài khoản!", "success"); }}>📋 Sao chép</button>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--muted)' }}>Chủ tài khoản:</span>
-                        <strong>{accountName}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--muted)' }}>Số tiền thanh toán:</span>
-                        <strong style={{ color: '#0f5d4b', fontSize: '16px' }}>{money(amount)}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--line)', paddingTop: '8px', marginTop: '4px' }}>
-                        <span style={{ color: 'var(--muted)' }}>Nội dung chuyển khoản:</span>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <strong style={{ color: '#d9534f', fontSize: '15px' }}>{addInfo}</strong>
-                          <button type="button" className="ghost-btn compact" style={{ padding: '2px 8px', fontSize: '12px' }} onClick={() => { navigator.clipboard.writeText(addInfo); toast("Đã sao chép nội dung!", "success"); }}>📋 Sao chép</button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0, textAlign: 'center' }}>
-                      💡 Khách hàng mở ứng dụng Ngân hàng hoặc Momo/ZaloPay quét mã trên. Số tiền và nội dung sẽ được tự động điền chính xác tuyệt đối.
-                    </p>
-                  </div>
+                  <PaymentQrCard
+                    title="Quét mã VietQR để thanh toán tự động"
+                    qrUrl={qrUrl || bankConfig.qrImageUrl}
+                    bankName={bankConfig.bankName}
+                    bankCode={bankConfig.bankCode}
+                    accountNumber={bankConfig.accountNumber}
+                    accountName={bankConfig.accountName}
+                    amount={amount}
+                    transferContent={addInfo}
+                    note="Khách hàng mở ứng dụng ngân hàng hoặc ví điện tử hỗ trợ VietQR để quét mã. Số tiền và nội dung sẽ được điền theo hóa đơn."
+                    onCopy={(message) => toast(message, "success")}
+                  />
                 );
               })()}
             </div>
@@ -541,7 +513,7 @@ export default function InvoicesPage() {
           )}
         </Modal>
       ) : null}
-      {confirmPayment && invoice ? <ConfirmDialog title="Ghi nhận thanh toán" message={`Xác nhận thanh toán ${money(invoice.grandTotalAmount || 0)} cho hóa đơn này?`} confirmLabel="Thanh toán" onCancel={() => setConfirmPayment(false)} onConfirm={async () => { setConfirmPayment(false); await pay(); }} /> : null}
+      {confirmPayment && invoice ? <ConfirmDialog title="Ghi nhận thanh toán" message={`Xác nhận thanh toán ${money(invoice.remainingAmount ?? Math.max(0, (invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0)))} cho hóa đơn này?`} confirmLabel="Thanh toán" onCancel={() => setConfirmPayment(false)} onConfirm={async () => { setConfirmPayment(false); await pay(); }} /> : null}
       {discountOpen && invoice ? <Modal title="Áp dụng mã giảm giá" onClose={() => setDiscountOpen(false)}>
         <div className="form-stack">
           <label><span>Mã giảm giá</span><input value={discountCode} onChange={(event) => setDiscountCode(event.target.value)} placeholder="Nhập mã giảm giá..." autoFocus /></label>

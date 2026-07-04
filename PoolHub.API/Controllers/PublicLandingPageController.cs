@@ -23,6 +23,11 @@ public class PublicLandingPageController(ILandingPageSettingsService service, IV
     public async Task<ActionResult<ApiResponse<PublicPricingSummaryDto>>> GetPricingSummary(CancellationToken ct)
         => Ok(ApiResponse<PublicPricingSummaryDto>.Ok(await service.GetPricingSummaryAsync(ct)));
 
+    [HttpGet("api/public/deposit-payment-settings")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<DepositPaymentSettingsDto>>> GetDepositPaymentSettings(CancellationToken ct)
+        => Ok(ApiResponse<DepositPaymentSettingsDto>.Ok(await service.GetDepositPaymentSettingsAsync(ct)));
+
     [HttpGet("api/public/venue-layout")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<VenueLayoutResponse>>> GetVenueLayout(CancellationToken ct)

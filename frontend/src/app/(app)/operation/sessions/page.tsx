@@ -8,6 +8,8 @@ import { ApiError } from "@/lib/api/client";
 import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso } from "@/lib/timeSlots";
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
+import { formatElapsedDuration } from "@/lib/sessionDuration";
+import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
@@ -31,6 +33,8 @@ export default function SessionsPage() {
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [previewingSessionId, setPreviewingSessionId] = useState<number | null>(null);
   const [closingSession, setClosingSession] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<OperationRealtimeStatus>("connecting");
+  const [, setDurationTick] = useState(0);
 
   const { data, loading, error, reload } = useLoad(async () => {
     const { startUtc, endUtc } = vietnamDateRangeToUtcIso(getVietnamDateInputValue());
@@ -48,6 +52,34 @@ export default function SessionsPage() {
       tables: tablesRes,
       customers: customersRes
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setDurationTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const cleanup = connectOperationHub({
+      onSessionUpdated: () => reload(),
+      onOrderUpdated: () => reload(),
+      onBookingUpdated: () => reload(),
+      onTableStatusChanged: () => reload(),
+      onStatusChange: setRealtimeStatus
+    });
+
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        reload();
+      }
+    }, 15000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dueBookings = useMemo(() => {
@@ -178,6 +210,10 @@ export default function SessionsPage() {
             <div>
               <h3>Phien dang hoat dong</h3>
               <p>Cac phien dang mo, lay tu route chuan /api/sessions/active.</p>
+              <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
+                Đã chơi hiển thị realtime. Tiền giờ được backend tính theo bảng giá và quy tắc làm tròn.
+              </p>
+              <RealtimeStatusText status={realtimeStatus} />
             </div>
             <button className="primary-btn" type="button" onClick={() => setWalkInOpen(true)}>Mở phiên khách vãng lai</button>
           </div>
@@ -192,7 +228,7 @@ export default function SessionsPage() {
                 return table ? `${table.tableName || table.tableCode || table.tableId}` : String(row.tableName || row.tableId || "-");
               } },
               { key: "startedAtUtc", label: "Bat dau", render: (row) => dateTime(String(row.startedAtUtc)) },
-              { key: "duration", label: "Thoi luong", render: (row) => `${Number(row.durationMinutes ?? 0)} phut` },
+              { key: "duration", label: "Thoi luong", render: (row) => `Đã chơi: ${formatElapsedDuration(String(row.startedAtUtc), Number(row.status) === SESSION_OPEN ? undefined : String(row.endedAtUtc || ""))}` },
               { key: "status", label: "Trang thai", render: (row) => <Badge tone="green">{label(sessionStatus, Number(row.status))}</Badge> }
             ]}
             actions={(row) => (
@@ -428,6 +464,15 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
       </div>
     </Modal>
   );
+}
+
+function RealtimeStatusText({ status }: { status: OperationRealtimeStatus }) {
+  if (status === "connected") return null;
+  const text = status === "reconnecting" || status === "connecting"
+    ? "Đang kết nối lại realtime..."
+    : "Dữ liệu tự làm mới định kỳ.";
+
+  return <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>{text}</p>;
 }
 
 function getStartSessionErrorMessage(error: unknown, tableLabel: string) {
