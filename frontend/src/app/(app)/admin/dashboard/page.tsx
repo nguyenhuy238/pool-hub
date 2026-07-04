@@ -4,22 +4,18 @@ import { useState } from "react";
 import { adminDashboardApi, reportsApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
 import { DataTable, PageHeader, StateBlock, useLoad } from "@/components/ui";
+import { getCurrentVietnamMonthRange, getVietnamDateInputValue } from "@/lib/dateTime";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area } from 'recharts';
 export default function AdminDashboardPage() {
   const [range, setRange] = useState({ FromDate: "", ToDate: "" });
 
   const applyPreset = (preset: string) => {
-    const now = new Date();
-    const toYMD = (d: Date) => {
-      const offset = d.getTimezoneOffset() * 60000;
-      return new Date(d.getTime() - offset).toISOString().split("T")[0];
-    };
-    
     if (preset === "today") {
-      const d = toYMD(now);
+      const d = getVietnamDateInputValue();
       setRange({ FromDate: d, ToDate: d });
     } else if (preset === "this_month") {
-      setRange({ FromDate: toYMD(new Date(now.getFullYear(), now.getMonth(), 1)), ToDate: toYMD(new Date(now.getFullYear(), now.getMonth() + 1, 0)) });
+      const monthRange = getCurrentVietnamMonthRange();
+      setRange({ FromDate: monthRange.fromDate, ToDate: monthRange.toDate });
     } else {
       setRange({ FromDate: "", ToDate: "" });
     }

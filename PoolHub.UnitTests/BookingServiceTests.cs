@@ -160,6 +160,29 @@ public class BookingServiceTests
         Assert.Contains(touchingEnd, table => table.TableId == 1);
     }
 
+    [Fact]
+    public async Task GetBookingsAsync_DateFilter_UsesVietnamLocalDayRange()
+    {
+        await using var db = CreateDb();
+        db.Customers.Add(new Customer { CustomerId = 1, FullName = "Customer", PhoneNumber = "0900000001", Status = true });
+        db.Bookings.AddRange(
+            NewBooking(1, BookingStatuses.Confirmed, new DateTime(2026, 7, 9, 16, 59, 0, DateTimeKind.Utc), new DateTime(2026, 7, 9, 17, 30, 0, DateTimeKind.Utc)),
+            NewBooking(2, BookingStatuses.Confirmed, new DateTime(2026, 7, 9, 17, 0, 0, DateTimeKind.Utc), new DateTime(2026, 7, 9, 18, 0, 0, DateTimeKind.Utc)),
+            NewBooking(3, BookingStatuses.Confirmed, new DateTime(2026, 7, 10, 16, 59, 0, DateTimeKind.Utc), new DateTime(2026, 7, 10, 18, 0, 0, DateTimeKind.Utc)));
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).GetBookingsAsync(new BookingQueryRequest
+        {
+            Date = new DateTime(2026, 7, 10),
+            PageNumber = 1,
+            PageSize = 20
+        }, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Items, x => x.BookingId == 1);
+        Assert.Contains(result.Items, x => x.BookingId == 2);
+        Assert.Contains(result.Items, x => x.BookingId == 3);
+    }
+
     [Theory]
     [InlineData(100000, 50000)]
     [InlineData(180000, 54000)]

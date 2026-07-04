@@ -28,7 +28,7 @@ public class PublicPricingSummaryDto
     public List<PricingPlanSummaryDto> Plans { get; set; } = [];
     public List<PricingRuleSummaryDto> Rules { get; set; } = [];
     public List<TableTypePricingSummaryDto> TableTypes { get; set; } = [];
-    public DateTime FetchedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime FetchedAtUtc { get; set; }
 }
 
 public class PricingPlanSummaryDto

@@ -55,7 +55,7 @@ public partial class CrudService
         if (await db.PricingPlanRules.AnyAsync(r => r.PricingPlanId == id && r.IsActive, ct))
             throw new ConflictException("Pricing plan still has active rules.");
         x.IsActive = false;
-        x.UpdatedAtUtc = DateTime.UtcNow;
+        x.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
     }
 
@@ -101,7 +101,7 @@ public partial class CrudService
     {
         var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
         x.IsActive = false;
-        x.UpdatedAtUtc = DateTime.UtcNow;
+        x.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
     }
 
@@ -113,7 +113,7 @@ public partial class CrudService
         foreach (var plan in defaults)
         {
             plan.IsDefault = false;
-            plan.UpdatedAtUtc = DateTime.UtcNow;
+            plan.UpdatedAtUtc = _clock.UtcNow;
         }
     }
 

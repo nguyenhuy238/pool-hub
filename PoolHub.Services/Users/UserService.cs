@@ -8,11 +8,14 @@ using PoolHub.Services.Auth;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Users;
 
-public class UserService(PoolHubDbContext db, IAuditService auditService) : IUserService
+public class UserService(PoolHubDbContext db, IAuditService auditService, IClock? clock = null) : IUserService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<PagedResult<UserDto>> GetUsersAsync(UserQueryRequest request, CancellationToken ct)
     {
         NormalizePagination(request);
@@ -116,7 +119,7 @@ public class UserService(PoolHubDbContext db, IAuditService auditService) : IUse
         user.PhoneNumber = request.PhoneNumber?.Trim();
         user.AvatarUrl = request.AvatarUrl?.Trim();
         user.EmailConfirmed = request.EmailConfirmed;
-        user.UpdatedAtUtc = DateTime.UtcNow;
+        user.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.UserUpdated, "User",
             user.UserId, user.PublicId, oldValues,
@@ -191,10 +194,10 @@ public class UserService(PoolHubDbContext db, IAuditService auditService) : IUse
 
         var oldStatus = user.Status;
         user.Status = parsed;
-        user.UpdatedAtUtc = DateTime.UtcNow;
+        var now = _clock.UtcNow;
+        user.UpdatedAtUtc = now;
         if (parsed != UserStatus.Active)
         {
-            var now = DateTime.UtcNow;
             foreach (var token in db.RefreshTokens.Where(x => x.UserId == id && !x.IsRevoked))
             {
                 token.IsRevoked = true;

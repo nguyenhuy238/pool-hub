@@ -8,16 +8,18 @@ using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Auth;
 
-public class TokenService(IOptions<JwtSettings> jwtOptions) : ITokenService
+public class TokenService(IOptions<JwtSettings> jwtOptions, IClock? clock = null) : ITokenService
 {
     private readonly JwtSettings _jwt = jwtOptions.Value;
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
 
     public TokenPair CreateTokenPair(User user, IReadOnlyCollection<string> roles, IReadOnlyCollection<string> permissions)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var accessExpiresAt = now.AddMinutes(_jwt.AccessTokenExpirationMinutes);
         var refreshExpiresAt = now.AddDays(_jwt.RefreshTokenExpirationDays);
         var claims = new List<Claim>
@@ -29,7 +31,7 @@ public class TokenService(IOptions<JwtSettings> jwtOptions) : ITokenService
             new("fullName", user.FullName),
             new("publicId", user.PublicId.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            new(JwtRegisteredClaimNames.Iat, _clock.UtcNowOffset.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
         claims.AddRange(permissions.Select(permission => new Claim(PermissionConstants.ClaimType, permission)));

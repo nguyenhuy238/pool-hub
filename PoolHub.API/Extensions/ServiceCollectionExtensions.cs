@@ -29,6 +29,7 @@ using PoolHub.Services.Session;
 using PoolHub.Services.Users;
 using PoolHub.Services.Venue;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.API.Extensions;
 
@@ -201,6 +202,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddHttpClient();
         services.AddSignalR();
+        services.AddSingleton<IClock>(SystemClock.Instance);
         services.AddScoped<IPosNotificationService, PoolHub.API.Services.PosNotificationService>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthCookieService, AuthCookieService>();

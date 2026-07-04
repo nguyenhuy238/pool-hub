@@ -9,6 +9,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 using EntityBooking = PoolHub.Core.Entities.Booking;
 using EntityCustomer = PoolHub.Core.Entities.Customer;
 using EntityCustomerReviewInvitation = PoolHub.Core.Entities.CustomerReviewInvitation;
@@ -18,8 +19,10 @@ using EntitySession = PoolHub.Core.Entities.Session;
 
 namespace PoolHub.Services.CustomerReview;
 
-public class CustomerReviewService(PoolHubDbContext db, IAuditService auditService, IConfiguration? config = null) : ICustomerReviewService
+public class CustomerReviewService(PoolHubDbContext db, IAuditService auditService, IConfiguration? config = null, IClock? clock = null) : ICustomerReviewService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<PagedResult<PublicReviewDto>> GetPublicReviewsAsync(PublicReviewQueryRequest request, CancellationToken ct)
     {
         NormalizePagination(request);
@@ -164,10 +167,11 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         review.Status = CustomerReviewStatuses.Approved;
         review.IsFeatured = request.IsFeatured ?? review.IsFeatured;
         review.DisplayOrder = request.DisplayOrder ?? review.DisplayOrder;
+        var now = _clock.UtcNow;
         review.ApprovedByUserId = actorUserId;
-        review.ApprovedAtUtc = DateTime.UtcNow;
+        review.ApprovedAtUtc = now;
         review.RejectedReason = null;
-        review.UpdatedAtUtc = DateTime.UtcNow;
+        review.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
         await LogAsync(actorUserId, AuditActions.CustomerReviewApproved, review, oldValues, ct);
         return await GetReviewAsync(publicId, ct);
@@ -181,7 +185,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         review.Status = CustomerReviewStatuses.Rejected;
         review.IsFeatured = false;
         review.RejectedReason = request.Reason.Trim();
-        review.UpdatedAtUtc = DateTime.UtcNow;
+        review.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(actorUserId, AuditActions.CustomerReviewRejected, review, oldValues, ct);
         return await GetReviewAsync(publicId, ct);
@@ -194,15 +198,16 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
 
         var review = await GetEntityAsync(publicId, ct);
         var oldValues = Snapshot(review);
+        var now = _clock.UtcNow;
         review.Status = request.Status;
         review.IsFeatured = request.Status == CustomerReviewStatuses.Approved && (request.IsFeatured ?? review.IsFeatured);
         review.DisplayOrder = request.DisplayOrder ?? review.DisplayOrder;
         if (request.Status == CustomerReviewStatuses.Approved && review.ApprovedAtUtc is null)
         {
             review.ApprovedByUserId = actorUserId;
-            review.ApprovedAtUtc = DateTime.UtcNow;
+            review.ApprovedAtUtc = now;
         }
-        review.UpdatedAtUtc = DateTime.UtcNow;
+        review.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
         await LogAsync(actorUserId, request.Status == CustomerReviewStatuses.Hidden ? AuditActions.CustomerReviewHidden : AuditActions.CustomerReviewUpdated, review, oldValues, ct);
         return await GetReviewAsync(publicId, ct);
@@ -220,7 +225,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         review.IsFeatured = request.IsFeatured;
         review.DisplayOrder = request.DisplayOrder;
         review.Note = NormalizeOptional(request.Note);
-        review.UpdatedAtUtc = DateTime.UtcNow;
+        review.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(actorUserId, AuditActions.CustomerReviewUpdated, review, oldValues, ct);
         return await GetReviewAsync(publicId, ct);
@@ -232,7 +237,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         var oldValues = Snapshot(review);
         review.Status = CustomerReviewStatuses.Hidden;
         review.IsFeatured = false;
-        review.UpdatedAtUtc = DateTime.UtcNow;
+        review.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(actorUserId, AuditActions.CustomerReviewHidden, review, oldValues, ct);
     }
@@ -255,10 +260,11 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         var oldActiveInvitations = await db.CustomerReviewInvitations
             .Where(x => x.InvoiceId == invoiceId && x.Status == CustomerReviewInvitationStatuses.Active && x.UsedAtUtc == null)
             .ToListAsync(ct);
+        var now = _clock.UtcNow;
         foreach (var oldInvitation in oldActiveInvitations)
         {
             oldInvitation.Status = CustomerReviewInvitationStatuses.Revoked;
-            oldInvitation.UpdatedAtUtc = DateTime.UtcNow;
+            oldInvitation.UpdatedAtUtc = now;
         }
 
         var token = GenerateToken();
@@ -268,7 +274,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             CustomerId = invoice.CustomerId,
             SessionId = invoice.SessionId,
             InvoiceId = invoice.InvoiceId,
-            ExpiresAtUtc = DateTime.UtcNow.AddDays(GetInvitationExpiryDays()),
+            ExpiresAtUtc = now.AddDays(GetInvitationExpiryDays()),
             CreatedByUserId = actorUserId,
             Status = CustomerReviewInvitationStatuses.Active
         };
@@ -319,9 +325,10 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             Source = CustomerReviewSources.Public
         };
 
+        var now = _clock.UtcNow;
         invitation.Status = CustomerReviewInvitationStatuses.Used;
-        invitation.UsedAtUtc = DateTime.UtcNow;
-        invitation.UpdatedAtUtc = DateTime.UtcNow;
+        invitation.UsedAtUtc = now;
+        invitation.UpdatedAtUtc = now;
         db.CustomerReviews.Add(review);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(null, AuditActions.CustomerReviewInvitationUsed, nameof(EntityCustomerReviewInvitation),
@@ -439,10 +446,11 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("Review invitation not found.");
 
-        if (row.Invitation.Status == CustomerReviewInvitationStatuses.Active && row.Invitation.ExpiresAtUtc <= DateTime.UtcNow)
+        var now = _clock.UtcNow;
+        if (row.Invitation.Status == CustomerReviewInvitationStatuses.Active && row.Invitation.ExpiresAtUtc <= now)
         {
             row.Invitation.Status = CustomerReviewInvitationStatuses.Expired;
-            row.Invitation.UpdatedAtUtc = DateTime.UtcNow;
+            row.Invitation.UpdatedAtUtc = now;
             await db.SaveChangesAsync(ct);
         }
 
@@ -465,11 +473,11 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         };
     }
 
-    private static string? GetInvitationBlockReason(InvitationProjection row)
+    private string? GetInvitationBlockReason(InvitationProjection row)
     {
         if (row.Invitation.Status == CustomerReviewInvitationStatuses.Used || row.Invitation.UsedAtUtc.HasValue) return "Invitation already used.";
         if (row.Invitation.Status == CustomerReviewInvitationStatuses.Revoked) return "Invitation was revoked.";
-        if (row.Invitation.Status == CustomerReviewInvitationStatuses.Expired || row.Invitation.ExpiresAtUtc <= DateTime.UtcNow) return "Invitation expired.";
+        if (row.Invitation.Status == CustomerReviewInvitationStatuses.Expired || row.Invitation.ExpiresAtUtc <= _clock.UtcNow) return "Invitation expired.";
         if (row.Invoice.PaymentStatus != InvoicePaymentStatuses.Paid) return "Invoice is not paid.";
         if (row.Session.EndedAtUtc is null) return "Session is not closed.";
         return null;

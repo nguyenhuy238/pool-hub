@@ -3,13 +3,16 @@ using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using System.Text.Json;
 using PoolHub.Core.Entities;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Infrastructure.Data;
 
 public class PoolHubDbContext(
     DbContextOptions<PoolHubDbContext> options,
-    IHttpContextAccessor? httpContextAccessor = null) : DbContext(options)
+    IHttpContextAccessor? httpContextAccessor = null,
+    IClock? clock = null) : DbContext(options)
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
     private static readonly HashSet<string> ExplicitlyAuditedEntities =
     [
         nameof(AuditLog), nameof(User), nameof(Role), nameof(Customer), nameof(RefreshToken),
@@ -63,8 +66,48 @@ public class PoolHubDbContext(
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        ApplyUtcTimestamps();
         AddAutomaticAuditEntries();
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges()
+    {
+        ApplyUtcTimestamps();
+        AddAutomaticAuditEntries();
+        return base.SaveChanges();
+    }
+
+    private void ApplyUtcTimestamps()
+    {
+        var now = _clock.UtcNow;
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Added && entry.Entity.CreatedAtUtc == default)
+            {
+                entry.Entity.CreatedAtUtc = now;
+            }
+
+            if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAtUtc = now;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<UserRole>().Where(x => x.State == EntityState.Added && x.Entity.AssignedAtUtc == default))
+        {
+            entry.Entity.AssignedAtUtc = now;
+        }
+
+        foreach (var entry in ChangeTracker.Entries<RolePermission>().Where(x => x.State == EntityState.Added && x.Entity.AssignedAtUtc == default))
+        {
+            entry.Entity.AssignedAtUtc = now;
+        }
+
+        foreach (var entry in ChangeTracker.Entries<PricingPlan>().Where(x => x.State == EntityState.Added && x.Entity.StartsAtUtc == default))
+        {
+            entry.Entity.StartsAtUtc = now;
+        }
     }
 
     private void AddAutomaticAuditEntries()

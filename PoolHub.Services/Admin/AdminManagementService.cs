@@ -8,11 +8,14 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Admin;
 
-public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : IAdminManagementService
+public class AdminManagementService(PoolHubDbContext db, IAuditService audit, IClock? clock = null) : IAdminManagementService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<PagedResult<DiscountDto>> GetDiscountsAsync(DiscountQueryRequest request, CancellationToken ct)
     {
         Normalize(request);
@@ -72,7 +75,7 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
 
     public async Task<DiscountValidationDto> ValidateDiscountAsync(ValidateDiscountRequest request, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var code = request.DiscountCode.Trim().ToUpperInvariant();
         var discount = await db.Discounts.AsNoTracking().FirstOrDefaultAsync(x =>
             x.DiscountCode == code && x.IsActive && x.StartsAtUtc <= now && (x.EndsAtUtc == null || x.EndsAtUtc >= now), ct);
@@ -180,7 +183,11 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
         var query = db.Payments.AsNoTracking().AsQueryable();
         if (request.InvoiceId.HasValue) query = query.Where(x => x.InvoiceId == request.InvoiceId);
         if (request.PaymentStatus.HasValue) query = query.Where(x => x.PaymentStatus == request.PaymentStatus);
-        if (request.Date.HasValue) query = query.Where(x => x.PaidAtUtc.HasValue && x.PaidAtUtc.Value.Date == request.Date.Value.Date);
+        if (request.Date.HasValue)
+        {
+            var (fromUtc, toUtc) = BusinessTime.LocalDateRangeToUtc(request.Date.Value);
+            query = query.Where(x => x.PaidAtUtc.HasValue && x.PaidAtUtc >= fromUtc && x.PaidAtUtc < toUtc);
+        }
         var total = await query.CountAsync(ct);
         var items = await (from p in query
                            join inv in db.Invoices.AsNoTracking() on p.InvoiceId equals inv.InvoiceId
@@ -194,18 +201,23 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
         return Page(items, request.PageNumber, request.PageSize, total);
     }
 
-    public Task<List<RevenueReportDto>> GetRevenueReportAsync(ReportQueryRequest request, CancellationToken ct)
+    public async Task<List<RevenueReportDto>> GetRevenueReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var query = FilterInvoices(request).Where(x => x.PaymentStatus == InvoicePaymentStatuses.Paid && x.IssuedAtUtc.HasValue);
-        return query.GroupBy(x => x.IssuedAtUtc!.Value.Date).OrderBy(x => x.Key)
-            .Select(x => new RevenueReportDto { Date = x.Key, Revenue = x.Sum(i => i.PaidAmount), InvoiceCount = x.Count() }).ToListAsync(ct);
+        var rows = await query.ToListAsync(ct);
+        return rows
+            .GroupBy(x => BusinessTime.UtcToVietnamLocalDate(x.IssuedAtUtc!.Value))
+            .OrderBy(x => x.Key)
+            .Select(x => new RevenueReportDto { Date = x.Key, Revenue = x.Sum(i => i.PaidAmount), InvoiceCount = x.Count() })
+            .ToList();
     }
 
     public Task<List<TableUsageReportDto>> GetTableUsageReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var assignments = db.SessionTableAssignments.AsNoTracking().AsQueryable();
-        if (request.FromDate.HasValue) assignments = assignments.Where(x => x.StartedAtUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) assignments = assignments.Where(x => x.StartedAtUtc < request.ToDate.Value.Date.AddDays(1));
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
+        if (fromUtc.HasValue) assignments = assignments.Where(x => x.StartedAtUtc >= fromUtc.Value);
+        if (toUtc.HasValue) assignments = assignments.Where(x => x.StartedAtUtc < toUtc.Value);
         return (from item in assignments join table in db.VenueTables.AsNoTracking() on item.TableId equals table.TableId
                 group item by new { table.TableId, table.TableName } into g orderby g.Sum(x => x.DurationMinutes ?? 0) descending
                 select new TableUsageReportDto { TableId = g.Key.TableId, TableName = g.Key.TableName,
@@ -215,8 +227,9 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
     public Task<List<ProductSalesReportDto>> GetProductReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var orders = db.Orders.AsNoTracking().Where(x => x.Status != 3);
-        if (request.FromDate.HasValue) orders = orders.Where(x => x.CreatedAtUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) orders = orders.Where(x => x.CreatedAtUtc < request.ToDate.Value.Date.AddDays(1));
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
+        if (fromUtc.HasValue) orders = orders.Where(x => x.CreatedAtUtc >= fromUtc.Value);
+        if (toUtc.HasValue) orders = orders.Where(x => x.CreatedAtUtc < toUtc.Value);
         return (from item in db.OrderItems.AsNoTracking() join order in orders on item.OrderId equals order.OrderId
                 group item by new { item.ProductId, item.ProductNameSnapshot } into g orderby g.Sum(x => x.Quantity) descending
                 select new ProductSalesReportDto { ProductId = g.Key.ProductId, ProductName = g.Key.ProductNameSnapshot,
@@ -226,25 +239,27 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
     public Task<List<BookingReportDto>> GetBookingReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var query = db.Bookings.AsNoTracking().AsQueryable();
-        if (request.FromDate.HasValue) query = query.Where(x => x.StartTimeUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) query = query.Where(x => x.StartTimeUtc < request.ToDate.Value.Date.AddDays(1));
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
+        if (fromUtc.HasValue) query = query.Where(x => x.StartTimeUtc >= fromUtc.Value);
+        if (toUtc.HasValue) query = query.Where(x => x.StartTimeUtc < toUtc.Value);
         return query.GroupBy(x => x.Status).OrderBy(x => x.Key).Select(x => new BookingReportDto { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
     }
 
     public Task<List<CustomerReportDto>> GetCustomerReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var invoices = FilterInvoices(request);
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
         return db.Customers.AsNoTracking().Where(x => x.Status)
             .Select(customer => new CustomerReportDto
             {
                 CustomerId = customer.CustomerId,
                 CustomerName = customer.FullName,
                 BookingCount = db.Bookings.Count(x => x.CustomerId == customer.CustomerId &&
-                    (!request.FromDate.HasValue || x.StartTimeUtc >= request.FromDate.Value) &&
-                    (!request.ToDate.HasValue || x.StartTimeUtc < request.ToDate.Value.Date.AddDays(1))),
+                    (!fromUtc.HasValue || x.StartTimeUtc >= fromUtc.Value) &&
+                    (!toUtc.HasValue || x.StartTimeUtc < toUtc.Value)),
                 SessionCount = db.Sessions.Count(x => x.CustomerId == customer.CustomerId &&
-                    (!request.FromDate.HasValue || x.StartedAtUtc >= request.FromDate.Value) &&
-                    (!request.ToDate.HasValue || x.StartedAtUtc < request.ToDate.Value.Date.AddDays(1))),
+                    (!fromUtc.HasValue || x.StartedAtUtc >= fromUtc.Value) &&
+                    (!toUtc.HasValue || x.StartedAtUtc < toUtc.Value)),
                 Revenue = invoices.Where(x => x.CustomerId == customer.CustomerId).Sum(x => (decimal?)x.PaidAmount) ?? 0
             })
             .OrderByDescending(x => x.Revenue)
@@ -254,8 +269,9 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
     public Task<List<PaymentMethodReportDto>> GetPaymentMethodReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var payments = db.Payments.AsNoTracking().Where(x => x.PaymentStatus == PaymentStatuses.Completed);
-        if (request.FromDate.HasValue) payments = payments.Where(x => x.PaidAtUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) payments = payments.Where(x => x.PaidAtUtc < request.ToDate.Value.Date.AddDays(1));
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
+        if (fromUtc.HasValue) payments = payments.Where(x => x.PaidAtUtc >= fromUtc.Value);
+        if (toUtc.HasValue) payments = payments.Where(x => x.PaidAtUtc < toUtc.Value);
         return (from payment in payments
                 join method in db.PaymentMethods.AsNoTracking() on payment.PaymentMethodId equals method.PaymentMethodId
                 group payment by new { method.PaymentMethodId, method.Name } into grouped
@@ -272,8 +288,9 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
     public Task<List<InventoryReportDto>> GetInventoryReportAsync(ReportQueryRequest request, CancellationToken ct)
     {
         var movements = db.InventoryTransactions.AsNoTracking().AsQueryable();
-        if (request.FromDate.HasValue) movements = movements.Where(x => x.CreatedAtUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) movements = movements.Where(x => x.CreatedAtUtc < request.ToDate.Value.Date.AddDays(1));
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
+        if (fromUtc.HasValue) movements = movements.Where(x => x.CreatedAtUtc >= fromUtc.Value);
+        if (toUtc.HasValue) movements = movements.Where(x => x.CreatedAtUtc < toUtc.Value);
         return db.Products.AsNoTracking().Where(x => x.IsActive && x.IsStockTracked)
             .Select(product => new InventoryReportDto
             {
@@ -290,9 +307,24 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit) : 
     private IQueryable<PoolHub.Core.Entities.Invoice> FilterInvoices(ReportQueryRequest request)
     {
         var query = db.Invoices.AsNoTracking().AsQueryable();
-        if (request.FromDate.HasValue) query = query.Where(x => x.IssuedAtUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) query = query.Where(x => x.IssuedAtUtc < request.ToDate.Value.Date.AddDays(1));
+        var (fromUtc, toUtc) = GetReportUtcRange(request);
+        if (fromUtc.HasValue) query = query.Where(x => x.IssuedAtUtc >= fromUtc.Value);
+        if (toUtc.HasValue) query = query.Where(x => x.IssuedAtUtc < toUtc.Value);
         return query;
+    }
+
+    private static (DateTime? FromUtc, DateTime? ToUtc) GetReportUtcRange(ReportQueryRequest request)
+    {
+        if (!request.FromDate.HasValue && !request.ToDate.HasValue) return (null, null);
+        var fromLocal = request.FromDate?.Date ?? DateTime.MinValue.Date;
+        var toLocal = request.ToDate?.Date ?? DateTime.MaxValue.Date.AddDays(-1);
+        var fromUtc = request.FromDate.HasValue
+            ? BusinessTime.LocalDateRangeToUtc(fromLocal).FromUtc
+            : (DateTime?)null;
+        var toUtc = request.ToDate.HasValue
+            ? BusinessTime.LocalDateRangeToUtc(toLocal).ToUtc
+            : (DateTime?)null;
+        return (fromUtc, toUtc);
     }
 
     private static void ValidateDiscountRequest(UpsertDiscountRequest request)

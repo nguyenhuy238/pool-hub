@@ -16,7 +16,7 @@ public class BookingCalendarRequest
 
     /// <summary>
     /// Thời điểm kết thúc khoảng thời gian cần lấy (UTC).
-    /// Ví dụ: 2026-06-30T23:59:59Z
+    /// Ví dụ: 2026-06-30T17:00:00Z cho end-exclusive của ngày 2026-06-30 tại Việt Nam.
     /// </summary>
     [Required]
     public DateTime To { get; set; }

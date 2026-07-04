@@ -7,6 +7,6 @@ public class PricingPlan : BaseEntity
     public string? Description { get; set; }
     public bool IsDefault { get; set; }
     public bool IsActive { get; set; } = true;
-    public DateTime StartsAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime StartsAtUtc { get; set; }
     public DateTime? EndsAtUtc { get; set; }
 }

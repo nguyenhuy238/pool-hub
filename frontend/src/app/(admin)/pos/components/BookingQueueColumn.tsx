@@ -6,6 +6,7 @@ import styles from '../pos.module.css';
 import { bookingApi } from '@/lib/api/endpoints';
 import type { Booking } from '@/types';
 import { usePOS } from '../POSContext';
+import { formatVietnamTime, getVietnamDateInputValue, utcTimestampMs } from '@/lib/dateTime';
 
 function BookingItem({ booking }: { booking: Booking }) {
   const { triggerRefresh } = usePOS();
@@ -15,9 +16,8 @@ function BookingItem({ booking }: { booking: Booking }) {
   useEffect(() => {
     setMounted(true);
     const checkTime = () => {
-      const now = new Date().getTime();
-      const utcStr = booking.startTimeUtc + (booking.startTimeUtc.endsWith('Z') ? '' : 'Z');
-      const start = new Date(utcStr).getTime();
+      const now = Date.now();
+      const start = utcTimestampMs(booking.startTimeUtc);
       const diffMins = (start - now) / 60000;
 
       if (diffMins < 0) {
@@ -38,8 +38,6 @@ function BookingItem({ booking }: { booking: Booking }) {
                    : cardState === "WARNING" ? styles.bookingWarning 
                    : styles.bookingNormal;
                    
-  const startTimeObj = new Date(booking.startTimeUtc + (booking.startTimeUtc.endsWith('Z') ? '' : 'Z'));
-
   return (
     <div className={`${styles.bookingCard} ${stateClass}`}>
       <div className={styles.cardHeader}>
@@ -47,7 +45,7 @@ function BookingItem({ booking }: { booking: Booking }) {
           <Clock size={18} />
           {mounted ? (
             <span className={styles.timeText}>
-              {startTimeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {formatVietnamTime(booking.startTimeUtc)}
             </span>
           ) : (
             <span className={styles.timeText}>--:--</span>
@@ -102,15 +100,14 @@ export function BookingQueueColumn() {
         const res = await bookingApi.list({ Status: 2 });
         const items = Array.isArray(res) ? res : (res as any).items || [];
         
-        // Filter only today's bookings in LOCAL time
-        const today = new Date();
+        // Filter only today's bookings in business timezone.
+        const today = getVietnamDateInputValue();
         const todaysBookings = items.filter((b: Booking) => {
-           const bDate = new Date(b.startTimeUtc + (b.startTimeUtc.endsWith('Z') ? '' : 'Z'));
-           return bDate.getDate() === today.getDate() && bDate.getMonth() === today.getMonth() && bDate.getFullYear() === today.getFullYear();
+           return getVietnamDateInputValue(new Date(utcTimestampMs(b.startTimeUtc))) === today;
         });
         
         // Sort by start time
-        todaysBookings.sort((a: Booking, b: Booking) => new Date(a.startTimeUtc + (a.startTimeUtc.endsWith('Z') ? '' : 'Z')).getTime() - new Date(b.startTimeUtc + (b.startTimeUtc.endsWith('Z') ? '' : 'Z')).getTime());
+        todaysBookings.sort((a: Booking, b: Booking) => utcTimestampMs(a.startTimeUtc) - utcTimestampMs(b.startTimeUtc));
         setBookings(todaysBookings);
       } catch (err) {
         console.error("Failed to fetch bookings", err);

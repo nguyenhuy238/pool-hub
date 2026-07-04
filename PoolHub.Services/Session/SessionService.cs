@@ -7,17 +7,19 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 using System.Text.Json;
 using EntitySession = PoolHub.Core.Entities.Session;
 using EntityInvoice = PoolHub.Core.Entities.Invoice;
 
 namespace PoolHub.Services.Session;
 
-public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null) : ISessionService
+public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null, IClock? clock = null) : ISessionService
 {
     private const int DefaultEarlyCheckInMinutes = 15;
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
 
-    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null)
+    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null, null)
     {
     }
 
@@ -32,7 +34,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         if (request.Date.HasValue)
         {
-            query = query.Where(x => x.StartedAtUtc.Date == request.Date.Value.Date);
+            var (fromUtc, toUtc) = BusinessTime.LocalDateRangeToUtc(request.Date.Value);
+            query = query.Where(x => x.StartedAtUtc >= fromUtc && x.StartedAtUtc < toUtc);
         }
 
         if (request.TableId.HasValue)
@@ -60,7 +63,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             })
             .ToListAsync(ct);
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var items = rawItems.Select(x => new SessionDto
         {
             SessionId = x.SessionId,
@@ -122,7 +125,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             })
             .ToListAsync(ct);
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var sessionIds = activeRows.Select(x => x.SessionId).ToList();
         var assignments = await db.SessionTableAssignments.AsNoTracking()
             .Where(x => sessionIds.Contains(x.SessionId))
@@ -216,7 +219,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     public async Task<SessionSummaryResponse> GetSummaryAsync(long sessionId, CancellationToken ct)
     {
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var timeCharge = await CalculateSessionTimeChargeAsync(sessionId, now, false, ct);
         var assignmentDtos = timeCharge.Lines;
 
@@ -270,7 +273,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     {
         var session = await db.Sessions.AsNoTracking().FirstOrDefaultAsync(x => x.SessionId == sessionId, ct)
             ?? throw new NotFoundException("Session not found.");
-        var charge = await CalculateSessionTimeChargeAsync(sessionId, DateTime.UtcNow, false, ct);
+        var now = _clock.UtcNow;
+        var charge = await CalculateSessionTimeChargeAsync(sessionId, now, false, ct);
         var items = charge.Lines.Select(x => new SessionTimeChargeItemDto
         {
             AssignmentId = x.SessionTableAssignmentId,
@@ -298,6 +302,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             SessionId = session.SessionId,
             SessionCode = session.SessionCode,
             Status = session.Status,
+            StartedAtUtc = session.StartedAtUtc,
+            EndedAtUtc = session.EndedAtUtc,
+            ServerNowUtc = now,
             ActualDurationMinutes = charge.ActualDurationMinutes,
             BillableDurationMinutes = charge.BillableDurationMinutes,
             MinimumMinutes = charge.MinimumMinutes,
@@ -322,7 +329,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new ConflictException("Booking already has a session.");
             }
 
-            var nowUtc = DateTime.UtcNow;
+            var nowUtc = _clock.UtcNow;
             var bookingStartUtc = NormalizeUtc(booking.StartTimeUtc);
             var bookingEndUtc = NormalizeUtc(booking.EndTimeUtc);
             if (booking.Status == BookingStatuses.Pending && bookingStartUtc <= nowUtc)
@@ -375,7 +382,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         table.OperationalStatus = 2; // Occupied
-        var startedAtUtc = DateTime.UtcNow;
+        var startedAtUtc = _clock.UtcNow;
 
         var session = new EntitySession
         {
@@ -491,7 +498,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
         }
 
-        var endedAtUtc = DateTime.UtcNow;
+        var endedAtUtc = _clock.UtcNow;
         session.Status = 2; // Closed
         session.EndedAtUtc = endedAtUtc;
         session.ClosedByUserId = closedByUserId;
@@ -518,8 +525,13 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     {
         request ??= new CloseSessionRequest();
 
-        var endedAtUtc = request.EndedAtUtc ?? DateTime.UtcNow;
-        if (endedAtUtc > DateTime.UtcNow.AddMinutes(1))
+        var now = _clock.UtcNow;
+        var endedAtUtc = request.EndedAtUtc ?? now;
+        if (endedAtUtc.Kind != DateTimeKind.Utc)
+        {
+            throw new ValidationException("EndedAtUtc must use UTC.");
+        }
+        if (endedAtUtc > now.AddMinutes(1))
         {
             throw new ValidationException("EndedAtUtc cannot be in the future.");
         }
@@ -589,7 +601,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 {
                     SessionId = sessionId,
                     CustomerId = session.CustomerId,
-                    InvoiceCode = $"INV{DateTime.UtcNow:yyyyMMddHHmmss}",
+                    InvoiceCode = $"INV{now:yyyyMMddHHmmss}",
                     TimeSubtotalAmount = timeSubtotal,
                     ProductSubtotalAmount = productSubtotal,
                     SubtotalAmount = timeSubtotal + productSubtotal,
@@ -600,7 +612,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                     PaymentStatus = 1,
                     Status = 1,
                     IssuedByUserId = closedByUserId,
-                    IssuedAtUtc = DateTime.UtcNow
+                    IssuedAtUtc = now
                 };
 
                 db.Invoices.Add(invoice);
@@ -673,7 +685,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
     private async Task<CloseSessionResponse> BuildCloseSessionResponseAsync(EntitySession session, bool invoiceGenerated, CancellationToken ct)
     {
-        var timeCharge = await CalculateSessionTimeChargeAsync(session.SessionId, session.EndedAtUtc ?? DateTime.UtcNow, false, ct);
+        var now = _clock.UtcNow;
+        var timeCharge = await CalculateSessionTimeChargeAsync(session.SessionId, session.EndedAtUtc ?? now, false, ct);
         var invoice = await db.Invoices.AsNoTracking()
             .Where(x => x.SessionId == session.SessionId)
             .OrderByDescending(x => x.InvoiceId)
@@ -690,7 +703,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             SessionCode = session.SessionCode,
             Status = session.Status,
             StartedAtUtc = session.StartedAtUtc,
-            EndedAtUtc = session.EndedAtUtc ?? DateTime.UtcNow,
+            EndedAtUtc = session.EndedAtUtc ?? now,
             TotalDurationMinutes = timeCharge.ActualDurationMinutes,
             TimeSubtotalAmount = invoice?.TimeSubtotalAmount ?? timeSubtotal,
             ProductSubtotalAmount = invoice?.ProductSubtotalAmount ?? productSubtotal,
@@ -741,7 +754,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw new ConflictException("Session already has an invoice and cannot be cancelled.");
         }
 
-        var endedAtUtc = DateTime.UtcNow;
+        var endedAtUtc = _clock.UtcNow;
         var activeAssignments = await db.SessionTableAssignments
             .Where(x => x.SessionId == sessionId && x.EndedAtUtc == null)
             .ToListAsync(ct);
@@ -832,7 +845,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw new BusinessRuleException("New table is not available.");
         }
 
-        var endedAtUtc = DateTime.UtcNow;
+        var endedAtUtc = _clock.UtcNow;
         await EnsureNoUpcomingBookingConflictAsync(newTableId, endedAtUtc, 15, ct);
         await EnsureSessionHasNoPaidInvoiceAsync(sessionId, ct);
         await CancelOpenInvoicesForSessionAsync(sessionId, "Invoice cancelled because the active session was transferred to another table.", ct);
@@ -921,7 +934,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             .FirstOrDefaultAsync(ct) ?? throw new NotFoundException("Session has no table assignment.");
 
         var table = await db.VenueTables.FindAsync([lastAssignment.TableId], ct) ?? throw new NotFoundException("Last table not found.");
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
 
         if (request.ReopenLastTable)
         {
@@ -1272,7 +1285,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             invoice.Note = string.IsNullOrWhiteSpace(invoice.Note)
                 ? reason
                 : $"{invoice.Note.Trim()} | {reason}";
-            invoice.UpdatedAtUtc = DateTime.UtcNow;
+            invoice.UpdatedAtUtc = _clock.UtcNow;
         }
     }
 

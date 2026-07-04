@@ -4,11 +4,13 @@ using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Notification;
 
-public class NotificationService(PoolHubDbContext db) : INotificationService
+public class NotificationService(PoolHubDbContext db, IClock? clock = null) : INotificationService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
     public Task<List<NotificationDto>> GetNotificationsAsync(long userId, CancellationToken ct)
         => db.Notifications
             .Where(x => x.UserId == userId || x.UserId == null)
@@ -83,7 +85,7 @@ public class NotificationService(PoolHubDbContext db) : INotificationService
         var entity = await db.Notifications.FindAsync([id], ct) ?? throw new NotFoundException("Notification not found.");
         if (!isAdmin && entity.UserId.HasValue && entity.UserId != userId) throw new ForbiddenException("Cannot update another user's notification.");
         entity.IsRead = true;
-        entity.ReadAtUtc = DateTime.UtcNow;
+        entity.ReadAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
     }
 
@@ -92,7 +94,8 @@ public class NotificationService(PoolHubDbContext db) : INotificationService
         var query = db.Notifications.Where(x => !x.IsRead);
         if (!isAdmin) query = query.Where(x => x.UserId == null || x.UserId == userId);
         var items = await query.ToListAsync(ct);
-        foreach (var item in items) { item.IsRead = true; item.ReadAtUtc = DateTime.UtcNow; }
+        var now = _clock.UtcNow;
+        foreach (var item in items) { item.IsRead = true; item.ReadAtUtc = now; }
         await db.SaveChangesAsync(ct);
     }
 

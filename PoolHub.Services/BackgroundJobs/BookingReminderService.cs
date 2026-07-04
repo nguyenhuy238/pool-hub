@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared.Time;
 using EntityNotification = PoolHub.Core.Entities.Notification;
 
 namespace PoolHub.Services.BackgroundJobs;
@@ -74,8 +75,9 @@ public class BookingReminderService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PoolHubDbContext>();
         var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
         var expiredCount = await bookingService.ExpirePendingDepositsAsync(now, ct);
         if (expiredCount > 0)
         {
@@ -131,7 +133,7 @@ public class BookingReminderService : BackgroundService
                     tableInfo = $"{table.TableName} ({table.TableCode})";
             }
 
-            var startLocal = booking.StartTimeUtc.ToLocalTime();
+            var startLocal = TimeZoneInfo.ConvertTimeFromUtc(BusinessTime.NormalizeUtc(booking.StartTimeUtc), BusinessTime.TimeZone);
             var minutesLeft = (int)(booking.StartTimeUtc - now).TotalMinutes;
 
             // 3. Tạo notification cho khách hàng

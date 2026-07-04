@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Interfaces.Services;
+using PoolHub.Shared.Time;
 using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Auth;
@@ -116,8 +117,8 @@ public class SmtpEmailService(
         string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct)
     {
         EnsureConfigured();
-        var vnStart = startTimeUtc.AddHours(7);
-        var vnEnd = endTimeUtc.AddHours(7);
+        var vnStart = TimeZoneInfo.ConvertTimeFromUtc(BusinessTime.NormalizeUtc(startTimeUtc), BusinessTime.TimeZone);
+        var vnEnd = TimeZoneInfo.ConvertTimeFromUtc(BusinessTime.NormalizeUtc(endTimeUtc), BusinessTime.TimeZone);
         using var message = new MailMessage
         {
             From = new MailAddress(_settings.FromEmail, _settings.FromName, Encoding.UTF8),
@@ -144,8 +145,8 @@ public class SmtpEmailService(
         string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct)
     {
         EnsureConfigured();
-        var vnStart = startTimeUtc.AddHours(7);
-        var vnEnd = endTimeUtc.AddHours(7);
+        var vnStart = TimeZoneInfo.ConvertTimeFromUtc(BusinessTime.NormalizeUtc(startTimeUtc), BusinessTime.TimeZone);
+        var vnEnd = TimeZoneInfo.ConvertTimeFromUtc(BusinessTime.NormalizeUtc(endTimeUtc), BusinessTime.TimeZone);
         using var message = new MailMessage
         {
             From = new MailAddress(_settings.FromEmail, _settings.FromName, Encoding.UTF8),

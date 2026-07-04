@@ -48,7 +48,7 @@ public class BookingsController(IBookingService bookingService, ISessionService 
     ///
     /// **Ví dụ request:**
     ///
-    ///     GET /api/bookings/calendar?from=2026-06-01T00:00:00Z&amp;to=2026-06-30T23:59:59Z&amp;status=2
+    ///     GET /api/bookings/calendar?from=2026-05-31T17:00:00Z&amp;to=2026-06-30T17:00:00Z&amp;status=2
     ///
     /// **Ví dụ response:**
     ///

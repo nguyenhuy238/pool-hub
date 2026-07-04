@@ -6,6 +6,7 @@ import { invoiceApi, sessionApi, productApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
+import { formatDateTimeLocal } from "@/lib/dateTime";
 import { parseBankTransferConfig } from "@/lib/paymentQr";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
@@ -653,7 +654,7 @@ function ReviewInvitationPanel({ invoiceId, invitation, onCreated }: {
       <img src={qrUrl} alt="QR đánh giá" style={{ width: 180, height: 180, borderRadius: 8, border: "1px solid var(--line)", padding: 8, background: "white" }} />
       <div>
         <h3 style={{ marginTop: 0 }}>Mời khách đánh giá</h3>
-        <p className="muted-text">Link đánh giá dùng một lần, hết hạn lúc {new Date(invitation.expiresAtUtc).toLocaleString("vi-VN")}.</p>
+        <p className="muted-text">Link đánh giá dùng một lần, hết hạn lúc {formatDateTimeLocal(invitation.expiresAtUtc)}.</p>
         <div style={{ wordBreak: "break-all", padding: 10, border: "1px solid var(--line)", borderRadius: 8, background: "var(--soft)", marginBottom: 12 }}>{invitation.reviewUrl}</div>
         <div className="actions">
           <button className="secondary-btn" onClick={() => navigator.clipboard.writeText(invitation.reviewUrl).then(() => toast("Đã sao chép link đánh giá.", "success"))}>Copy link</button>

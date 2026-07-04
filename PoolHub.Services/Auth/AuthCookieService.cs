@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Interfaces.Services;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Auth;
 
@@ -14,15 +15,18 @@ public class AuthCookieService : IAuthCookieService
     private readonly AuthCookieOptions _options;
     private readonly IDataProtector _accessTokenProtector;
     private readonly IHostEnvironment _environment;
+    private readonly IClock _clock;
 
     public AuthCookieService(
         IOptions<AuthCookieOptions> options,
         IDataProtectionProvider dataProtectionProvider,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IClock? clock = null)
     {
         _options = options.Value;
         _accessTokenProtector = dataProtectionProvider.CreateProtector(AccessTokenProtectorPurpose);
         _environment = environment;
+        _clock = clock ?? SystemClock.Instance;
     }
 
     public void CreateAccessTokenCookie(HttpResponse response, string accessToken, DateTime expiresAtUtc)
@@ -78,7 +82,7 @@ public class AuthCookieService : IAuthCookieService
             SameSite = ParseSameSite(_options.SameSite),
             Path = path,
             Expires = expiresAtUtc,
-            MaxAge = expiresAtUtc > DateTime.UtcNow ? expiresAtUtc - DateTime.UtcNow : TimeSpan.Zero
+            MaxAge = expiresAtUtc > _clock.UtcNow ? expiresAtUtc - _clock.UtcNow : TimeSpan.Zero
         };
     }
 

@@ -29,3 +29,11 @@
 - Pull request nên nêu rõ assumptions nếu có lệch giữa tài liệu cũ và code.
 - Không merge khi còn TODO ở luồng auth/tiền/hóa đơn.
 - Khi deploy, phải có bước xác nhận DB migration và cấu hình environment.
+
+## 6. Time handling
+- Backend lưu timestamp nghiệp vụ bằng UTC. Trong service/job dùng `IClock.UtcNow`, không dùng local time API.
+- Date-only filter cho booking, session, invoice, payment, audit log và report phải convert bằng `BusinessTime.LocalDateRangeToUtc(...)`.
+- Timezone nghiệp vụ/hiển thị của PoolHub là `Asia/Ho_Chi_Minh`. Không cộng tay `AddHours(7)`.
+- Range theo ngày dùng half-open `[fromUtc, toUtc)`. Không dùng `23:59:59` hoặc `AddTicks(-1)`.
+- Frontend parse/format thời gian qua `frontend/src/lib/dateTime.ts`: `parseUtcFromApi`, `formatDateTimeLocal`, `localDateTimeToUtcIso`, `localDateRangeToUtcRange`.
+- Trước khi merge thay đổi liên quan thời gian, chạy `pwsh ./scripts/check-time-patterns.ps1`.

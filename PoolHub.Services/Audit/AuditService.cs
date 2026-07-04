@@ -21,7 +21,7 @@ public class AuditService(PoolHubDbContext db, IHttpContextAccessor httpContextA
         if (!string.IsNullOrWhiteSpace(request.Action)) query = query.Where(x => x.Action.Contains(request.Action));
         if (!string.IsNullOrWhiteSpace(request.EntityName)) query = query.Where(x => x.EntityName.Contains(request.EntityName));
         if (request.FromDate.HasValue) query = query.Where(x => x.CreatedAtUtc >= request.FromDate.Value);
-        if (request.ToDate.HasValue) query = query.Where(x => x.CreatedAtUtc <= request.ToDate.Value);
+        if (request.ToDate.HasValue) query = query.Where(x => x.CreatedAtUtc < request.ToDate.Value);
         var total = await query.CountAsync(ct);
         var items = await Project(query).OrderByDescending(x => x.AuditLogId)
             .Skip((request.PageNumber - 1) * request.PageSize)

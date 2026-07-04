@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge, DataTable, JsonPreview, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
 import { dateTime } from "@/lib/status";
+import { localDateRangeToUtcRange } from "@/lib/dateTime";
 import { auditService } from "@/services/audit-service";
 import type { AuditLog, PagedResult } from "@/types";
 
@@ -24,8 +25,8 @@ export default function AuditLogsPage() {
         actorUserId: debouncedActor ? Number(debouncedActor) : undefined,
         action: debouncedAction || undefined,
         entityName: debouncedEntity || undefined,
-        fromDate: query.fromDate ? new Date(`${query.fromDate}T00:00:00`).toISOString() : undefined,
-        toDate: query.toDate ? new Date(`${query.toDate}T23:59:59`).toISOString() : undefined,
+        fromDate: query.fromDate ? localDateRangeToUtcRange(query.fromDate).fromUtc : undefined,
+        toDate: query.toDate ? localDateRangeToUtcRange(query.toDate).toUtc : undefined,
         pageNumber: query.pageNumber,
         pageSize: query.pageSize
       }));

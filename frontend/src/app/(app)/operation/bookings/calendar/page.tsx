@@ -26,8 +26,7 @@ export default function BookingCalendarPage() {
   const { data, loading, error, reload } = useLoad(async () => {
     if (!selectedDate) return { items: [], tables: [] };
     
-    // Tính khoảng thời gian từ 00:00:00 đến 23:59:59 của ngày được chọn theo UTC
-    // (Trong thực tế cần convert local timezone sang UTC cho chính xác)
+    // Tính khoảng half-open [startUtc, endUtc) theo ngày Việt Nam.
     const { startUtc, endUtc } = vietnamDateRangeToUtcIso(selectedDate);
     
     const params: Record<string, string> = {};
