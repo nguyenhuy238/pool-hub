@@ -6,11 +6,14 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Roles;
 
-public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRoleService
+public class RoleService(PoolHubDbContext db, IAuditService auditService, IClock? clock = null) : IRoleService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<PagedResult<RoleDto>> GetAsync(RoleQueryRequest request, CancellationToken ct)
     {
         request.PageNumber = Math.Max(1, request.PageNumber);
@@ -94,7 +97,7 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
         var oldValues = new { role.Name, role.Description };
         role.Name = name;
         role.Description = request.Description?.Trim();
-        role.UpdatedAtUtc = DateTime.UtcNow;
+        role.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.RoleUpdated, "Role",
             role.RoleId, oldValues: oldValues, newValues: new { role.Name, role.Description },
@@ -111,7 +114,7 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
             throw new ConflictException("Role is assigned to one or more users.");
 
         role.IsActive = false;
-        role.UpdatedAtUtc = DateTime.UtcNow;
+        role.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.RoleDeleted, "Role",
             role.RoleId, oldValues: new { role.Name, role.Description },
@@ -146,7 +149,7 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService) : IRol
             PermissionId = permissionId,
             AssignedByUserId = actorUserId
         }));
-        role.UpdatedAtUtc = DateTime.UtcNow;
+        role.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, "ROLE_PERMISSIONS_UPDATED", nameof(Role), roleId,
             oldValues: new { PermissionIds = oldIds }, newValues: new { PermissionIds = permissionIds },

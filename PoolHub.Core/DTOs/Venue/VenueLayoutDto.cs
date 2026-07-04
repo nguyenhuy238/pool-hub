@@ -131,5 +131,5 @@ public class VenueLayoutResponse
     public int InactiveTables { get; set; }
 
     /// <summary>Thời điểm dữ liệu được lấy (UTC).</summary>
-    public DateTime FetchedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime FetchedAtUtc { get; set; }
 }

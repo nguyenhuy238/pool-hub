@@ -8,6 +8,7 @@ using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using PoolHub.Services.Payments;
+using PoolHub.Shared.Time;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,8 +25,11 @@ public class InvoiceService(
     IConfiguration? config = null, 
     IHttpClientFactory? httpClientFactory = null, 
     IPosNotificationService? posNotificationService = null,
-    ICustomerReviewService? customerReviewService = null) : IInvoiceService
+    ICustomerReviewService? customerReviewService = null,
+    IClock? clock = null) : IInvoiceService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
         var query = db.Invoices.AsQueryable();
@@ -47,7 +51,8 @@ public class InvoiceService(
 
         if (request.Date.HasValue)
         {
-            query = query.Where(x => x.IssuedAtUtc.HasValue && x.IssuedAtUtc.Value.Date == request.Date.Value.Date);
+            var (fromUtc, toUtc) = BusinessTime.LocalDateRangeToUtc(request.Date.Value);
+            query = query.Where(x => x.IssuedAtUtc.HasValue && x.IssuedAtUtc >= fromUtc && x.IssuedAtUtc < toUtc);
         }
 
         var total = await query.CountAsync(ct);
@@ -88,7 +93,7 @@ public class InvoiceService(
         // If session is still active, close it automatically so everything is calculated
         if (session.Status == 1)
         {
-            var sessionService = new PoolHub.Services.Session.SessionService(db);
+            var sessionService = new PoolHub.Services.Session.SessionService(db, posNotificationService ?? new NoOpPosNotificationService(), config, _clock);
             await sessionService.CloseAsync(sessionId, issuedByUserId, ct);
             await db.SaveChangesAsync(ct);
         }
@@ -98,11 +103,12 @@ public class InvoiceService(
         var timeTotal = await db.SessionTableAssignments.Where(x => x.SessionId == sessionId).SumAsync(x => x.Amount ?? 0, ct);
         var subtotal = productTotal + timeTotal;
 
+        var now = _clock.UtcNow;
         var invoice = new EntityInvoice
         {
             SessionId = sessionId,
             CustomerId = session.CustomerId,
-            InvoiceCode = $"INV{DateTime.UtcNow:yyyyMMddHHmmss}",
+            InvoiceCode = $"INV{now:yyyyMMddHHmmss}",
             TimeSubtotalAmount = timeTotal,
             ProductSubtotalAmount = productTotal,
             SubtotalAmount = subtotal,
@@ -113,7 +119,7 @@ public class InvoiceService(
             PaymentStatus = 1,
             Status = 1,
             IssuedByUserId = issuedByUserId,
-            IssuedAtUtc = DateTime.UtcNow
+            IssuedAtUtc = now
         };
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync(ct);
@@ -188,15 +194,16 @@ public class InvoiceService(
             throw new BusinessRuleException("Total payment amount cannot exceed the grand total amount.");
         }
 
+        var now = _clock.UtcNow;
         var payment = new Payment 
         { 
             InvoiceId = request.InvoiceId, 
             PaymentMethodId = request.PaymentMethodId, 
             Amount = request.Amount, 
             PaymentStatus = PaymentStatuses.Completed,
-            TransactionCode = $"TXN{DateTime.UtcNow:HHmmssddMMyyyy}",
+            TransactionCode = $"TXN{now:HHmmssddMMyyyy}",
             ReceivedByUserId = receivedByUserId, 
-            PaidAtUtc = DateTime.UtcNow 
+            PaidAtUtc = now 
         };
         db.Payments.Add(payment);
 
@@ -341,7 +348,7 @@ public class InvoiceService(
         }
 
         var code = request.DiscountCode.Trim().ToUpper();
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var discount = await db.Discounts
             .FirstOrDefaultAsync(d => d.DiscountCode.ToUpper() == code && d.IsActive && d.StartsAtUtc <= now && (d.EndsAtUtc == null || d.EndsAtUtc >= now), ct)
             ?? throw new NotFoundException("Mã giảm giá không tồn tại, đã hết hạn hoặc chưa kích hoạt.");
@@ -717,7 +724,7 @@ public class InvoiceService(
             {
                 SessionId = invoice.SessionId,
                 OrderedByUserId = userId ?? 1,
-                OrderCode = $"OD{DateTime.UtcNow:yyyyMMddHHmmss}",
+                OrderCode = $"OD{_clock.UtcNow:yyyyMMddHHmmss}",
                 Status = 1,
                 SubtotalAmount = 0
             };
@@ -991,7 +998,7 @@ public class InvoiceService(
             Amount = appliedAmount,
             PaymentStatus = PaymentStatuses.Completed,
             TransactionCode = deposit.TransactionCode,
-            PaidAtUtc = DateTime.UtcNow,
+            PaidAtUtc = _clock.UtcNow,
             Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
         });
 
@@ -1009,7 +1016,7 @@ public class InvoiceService(
         if (deposit.PaidAmount > invoice.GrandTotalAmount)
         {
             deposit.RefundedAmount = deposit.PaidAmount - invoice.GrandTotalAmount;
-            deposit.RefundedAtUtc = DateTime.UtcNow;
+            deposit.RefundedAtUtc = _clock.UtcNow;
             deposit.Status = BookingDepositStatuses.PartiallyRefunded;
         }
         else
@@ -1029,4 +1036,12 @@ public class InvoiceService(
         PaidAmount = invoice.PaidAmount,
         RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount)
     };
+
+    private sealed class NoOpPosNotificationService : IPosNotificationService
+    {
+        public Task NotifyTableUpdateAsync(int tableId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyBookingUpdateAsync(int bookingId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifySessionUpdateAsync(int sessionId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyRefreshPosAsync(CancellationToken ct = default) => Task.CompletedTask;
+    }
 }

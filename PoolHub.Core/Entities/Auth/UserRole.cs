@@ -4,6 +4,6 @@ public class UserRole
 {
     public long UserId { get; set; }
     public long RoleId { get; set; }
-    public DateTime AssignedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime AssignedAtUtc { get; set; }
     public long? AssignedByUserId { get; set; }
 }

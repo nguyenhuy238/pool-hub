@@ -4,6 +4,7 @@ using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,9 +14,11 @@ using EntityOrder = PoolHub.Core.Entities.Order;
 
 namespace PoolHub.Services.Order;
 
-public class OrderService(PoolHubDbContext db, IPosNotificationService posNotificationService) : IOrderService
+public class OrderService(PoolHubDbContext db, IPosNotificationService posNotificationService, IClock? clock = null) : IOrderService
 {
-    public OrderService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService())
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
+    public OrderService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null)
     {
     }
 
@@ -100,7 +103,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
         { 
             SessionId = request.SessionId, 
             OrderedByUserId = userId, 
-            OrderCode = $"OD{DateTime.UtcNow:yyyyMMddHHmmss}", 
+            OrderCode = $"OD{_clock.UtcNow:yyyyMMddHHmmss}", 
             Status = 1 
         };
         db.Orders.Add(order);

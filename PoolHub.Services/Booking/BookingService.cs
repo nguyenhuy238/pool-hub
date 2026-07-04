@@ -9,13 +9,15 @@ using PoolHub.Services.Payments;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 using EntityBooking = PoolHub.Core.Entities.Booking;
 using EntityCustomer = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Booking;
 
-public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService) : IBookingService
+public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IClock? clock = null) : IBookingService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
     private const int BookingDepositPercent = 30;
     private const decimal MinimumDepositAmount = 50000m;
     private const int DepositHoldMinutes = 10;
@@ -26,17 +28,21 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private const int MaxActiveBookingsPerPhonePerDay = 2;
 
     public BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger)
-        : this(db, emailService, logger, new NoOpPosNotificationService())
+        : this(db, emailService, logger, new NoOpPosNotificationService(), null)
     {
     }
 
     public async Task<PagedResult<BookingDto>> GetBookingsAsync(BookingQueryRequest request, CancellationToken ct)
     {
-        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
+        await ApplyAutomaticBookingStatusesAsync(_clock.UtcNow, ct);
         var query = db.Bookings.AsNoTracking().AsQueryable();
 
         if (request.Status.HasValue) query = query.Where(x => x.Status == request.Status.Value);
-        if (request.Date.HasValue) query = query.Where(x => x.StartTimeUtc.Date == request.Date.Value.Date);
+        if (request.Date.HasValue)
+        {
+            var (fromUtc, toUtc) = BusinessTime.LocalDateRangeToUtc(request.Date.Value);
+            query = query.Where(x => x.StartTimeUtc >= fromUtc && x.StartTimeUtc < toUtc);
+        }
         if (request.TableId.HasValue)
         {
             query = query.Where(x => x.TableId == request.TableId.Value ||
@@ -62,7 +68,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> GetByIdAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (await ApplyAutomaticBookingStatusAsync(booking, DateTime.UtcNow, ct))
+        if (await ApplyAutomaticBookingStatusAsync(booking, _clock.UtcNow, ct))
         {
             await db.SaveChangesAsync(ct);
         }
@@ -79,7 +85,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> UpdateAsync(long id, UpdateBookingRequest request, CancellationToken ct)
     {
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
-        if (request.EndTimeUtc <= DateTime.UtcNow) throw new BusinessRuleException("Booking end time must be in the future.");
+        var now = _clock.UtcNow;
+        if (request.EndTimeUtc <= now) throw new BusinessRuleException("Booking end time must be in the future.");
         if (request.NumberOfGuests < 1 || request.NumberOfGuests > 20) throw new ValidationException("Number of guests must be between 1 and 20.");
 
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
@@ -101,13 +108,13 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.NumberOfGuests = request.NumberOfGuests;
         booking.Note = request.Note?.Trim();
         booking.EstimatedAmount = estimated;
-        booking.UpdatedAtUtc = DateTime.UtcNow;
+        booking.UpdatedAtUtc = now;
 
         await ReplaceBookingTablesAsync(booking.BookingId, tableIds, ct);
         if (deposit is not null && deposit.Status == BookingDepositStatuses.Pending)
         {
             deposit.RequiredAmount = CalculateDepositRequiredAmount(estimated);
-            deposit.DueAtUtc = booking.HoldExpiresAtUtc ?? DateTime.UtcNow.AddMinutes(DepositHoldMinutes);
+            deposit.DueAtUtc = booking.HoldExpiresAtUtc ?? now.AddMinutes(DepositHoldMinutes);
         }
 
         await db.SaveChangesAsync(ct);
@@ -118,7 +125,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> ConfirmAsync(long id, long? confirmedByUserId, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (await ApplyAutomaticBookingStatusAsync(booking, DateTime.UtcNow, ct))
+        var now = _clock.UtcNow;
+        if (await ApplyAutomaticBookingStatusAsync(booking, now, ct))
         {
             await db.SaveChangesAsync(ct);
             throw new ConflictException("Booking has expired and cannot be confirmed.");
@@ -131,7 +139,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
         booking.Status = BookingStatuses.Confirmed;
         booking.ConfirmedByUserId = confirmedByUserId;
-        booking.ConfirmedAtUtc ??= DateTime.UtcNow;
+        booking.ConfirmedAtUtc ??= now;
         await db.SaveChangesAsync(ct);
         await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
         await TrySendBookingConfirmedEmailAsync(booking, ct);
@@ -144,7 +152,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
         if (booking.Status != BookingStatuses.PendingApproval) throw new BusinessRuleException("Only PendingApproval bookings can be approved.");
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         await using var transaction = await BeginTransactionIfSupportedAsync(ct);
         booking.Status = BookingStatuses.PendingDeposit;
         booking.RequiresApproval = false;
@@ -174,7 +182,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> MockPayDepositAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        if (await ApplyAutomaticBookingStatusAsync(booking, DateTime.UtcNow, ct))
+        if (await ApplyAutomaticBookingStatusAsync(booking, _clock.UtcNow, ct))
         {
             await db.SaveChangesAsync(ct);
             throw new ConflictException("Booking deposit hold has expired.");
@@ -185,7 +193,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             ?? throw new NotFoundException("Booking deposit not found.");
 
         await using var transaction = await BeginTransactionIfSupportedAsync(ct);
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         deposit.Status = BookingDepositStatuses.Paid;
         deposit.PaidAmount = deposit.RequiredAmount;
         deposit.PaidAtUtc = now;
@@ -204,7 +212,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> SubmitDepositTransferAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         if (await ApplyAutomaticBookingStatusAsync(booking, now, ct))
         {
             await db.SaveChangesAsync(ct);
@@ -230,7 +238,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     {
         if (request.PaidAmount <= 0) throw new ValidationException("Paid amount is required.");
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         if (await ApplyAutomaticBookingStatusAsync(booking, now, ct))
         {
             await db.SaveChangesAsync(ct);
@@ -269,7 +277,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> RejectDepositTransferAsync(long id, RejectDepositTransferRequest request, long rejectedByUserId, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         if (await ApplyAutomaticBookingStatusAsync(booking, now, ct))
         {
             await db.SaveChangesAsync(ct);
@@ -296,7 +304,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             throw new BusinessRuleException("Booking cannot be cancelled.");
 
         await using var transaction = await BeginTransactionIfSupportedAsync(ct);
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         booking.Status = BookingStatuses.Cancelled;
         booking.CancelledAtUtc = now;
         booking.CancellationReason = request.Reason?.Trim();
@@ -331,11 +339,11 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
         if (booking.Status != BookingStatuses.Confirmed) throw new BusinessRuleException("Only Confirmed bookings can be marked NoShow.");
-        if (DateTime.UtcNow < booking.StartTimeUtc.AddMinutes(NoShowGraceMinutes))
+        var now = _clock.UtcNow;
+        if (now < booking.StartTimeUtc.AddMinutes(NoShowGraceMinutes))
             throw new BusinessRuleException("No-show grace period has not elapsed.");
 
         await using var transaction = await BeginTransactionIfSupportedAsync(ct);
-        var now = DateTime.UtcNow;
         booking.Status = BookingStatuses.NoShow;
         booking.NoShowAtUtc = now;
         booking.Note = AppendAutomaticNote(booking.Note, request.Reason ?? "Marked no-show.");
@@ -360,7 +368,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
         if (booking.Status != BookingStatuses.Confirmed) throw new BusinessRuleException("Only Confirmed bookings can be completed.");
         booking.Status = BookingStatuses.Completed;
-        booking.UpdatedAtUtc = DateTime.UtcNow;
+        booking.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
         return await MapAsync(booking, ct);
@@ -368,7 +376,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     public async Task<List<AvailableTableDto>> GetAvailabilityAsync(BookingAvailabilityRequest request, CancellationToken ct)
     {
-        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
+        await ApplyAutomaticBookingStatusesAsync(_clock.UtcNow, ct);
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
 
         var requestedTableIds = NormalizeTableIds(request.TableIds, request.TableId);
@@ -413,7 +421,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)
     {
-        await ApplyAutomaticBookingStatusesAsync(DateTime.UtcNow, ct);
+        await ApplyAutomaticBookingStatusesAsync(_clock.UtcNow, ct);
         if (request.From > request.To) throw new ValidationException("'from' must be earlier than 'to'.");
 
         var pageSize = Math.Min(request.PageSize, 200);
@@ -454,10 +462,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     public async Task<IEnumerable<PublicBookingSlotDto>> GetPublicCalendarAsync(long tableId, DateTime date, CancellationToken ct)
     {
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = _clock.UtcNow;
         await ApplyAutomaticBookingStatusesAsync(nowUtc, ct);
-        var startOfDay = date.Date;
-        var endOfDay = startOfDay.AddDays(1);
+        var (startOfDay, endOfDay) = BusinessTime.LocalDateRangeToUtc(date);
         return await db.Bookings
             .Where(b => (b.TableId == tableId || db.BookingTables.Any(bt => bt.BookingId == b.BookingId && bt.TableId == tableId)) &&
                         b.StartTimeUtc < endOfDay &&
@@ -507,7 +514,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var estimated = await EstimateAmountAsync(tableIds, request.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
         var totalActiveTables = await db.VenueTables.CountAsync(x => x.IsActive && x.OperationalStatus != 4 && x.OperationalStatus != 5, ct);
         var requiresApproval = forceApprovalForLargeBooking && RequiresApproval(tableIds.Count, totalActiveTables);
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var status = requiresApproval ? BookingStatuses.PendingApproval : BookingStatuses.PendingDeposit;
         var holdExpiresAtUtc = status == BookingStatuses.PendingDeposit ? now.AddMinutes(DepositHoldMinutes) : (DateTime?)null;
         if (source == "Public" && status == BookingStatuses.PendingDeposit)
@@ -521,7 +528,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             CustomerId = customerId,
             TableId = tableIds[0],
             TableTypeId = request.TableTypeId,
-            BookingCode = $"BK{DateTime.UtcNow:yyyyMMddHHmmss}{Guid.NewGuid():N}"[..24].ToUpperInvariant(),
+            BookingCode = $"BK{now:yyyyMMddHHmmss}{Guid.NewGuid():N}"[..24].ToUpperInvariant(),
             StartTimeUtc = request.StartTimeUtc,
             EndTimeUtc = request.EndTimeUtc,
             NumberOfGuests = request.NumberOfGuests,
@@ -581,9 +588,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     {
         var customer = await db.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.CustomerId == customerId, ct);
         if (customer is null || string.IsNullOrWhiteSpace(customer.PhoneNumber)) return;
-        var dayStart = startTimeUtc.Date;
-        var dayEnd = dayStart.AddDays(1);
-        var nowUtc = DateTime.UtcNow;
+        var localDate = BusinessTime.UtcToVietnamLocalDate(startTimeUtc);
+        var (dayStart, dayEnd) = BusinessTime.LocalDateRangeToUtc(localDate);
+        var nowUtc = _clock.UtcNow;
         var active = await db.Bookings.CountAsync(b =>
             b.CustomerId == customerId &&
             b.StartTimeUtc < dayEnd &&
@@ -611,7 +618,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private async Task<bool> HasConflictAsync(long excludeBookingId, List<long> tableIds, DateTime startTimeUtc, DateTime endTimeUtc, CancellationToken ct)
     {
         if (tableIds.Count == 0) return false;
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = _clock.UtcNow;
         return await db.Bookings.AnyAsync(b =>
             b.BookingId != excludeBookingId &&
             (tableIds.Contains(b.TableId ?? 0) || db.BookingTables.Any(bt => bt.BookingId == b.BookingId && tableIds.Contains(bt.TableId))) &&
@@ -646,17 +653,20 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     private async Task<(decimal HourlyRate, int MinimumMinutes, int BillingBlockMinutes)> GetHourlyRateAsync(long tableTypeId, DateTime startUtc, CancellationToken ct)
     {
-        var dayOfWeek = (int)startUtc.DayOfWeek;
-        var time = startUtc.TimeOfDay;
+        startUtc = BusinessTime.NormalizeUtc(startUtc);
+        var localTime = TimeZoneInfo.ConvertTimeFromUtc(startUtc, BusinessTime.TimeZone);
+        var dayOfWeek = (int)localTime.DayOfWeek;
+        var previousDayOfWeek = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+        var time = localTime.TimeOfDay;
         var activePlanIds = await db.PricingPlans
             .Where(x => x.IsActive && x.StartsAtUtc <= startUtc && (x.EndsAtUtc == null || x.EndsAtUtc >= startUtc))
             .OrderByDescending(x => x.IsDefault)
             .Select(x => x.PricingPlanId)
             .ToListAsync(ct);
         var rules = await db.PricingPlanRules
-            .Where(x => activePlanIds.Contains(x.PricingPlanId) && x.TableTypeId == tableTypeId && x.IsActive && x.DayOfWeek == dayOfWeek)
+            .Where(x => activePlanIds.Contains(x.PricingPlanId) && x.TableTypeId == tableTypeId && x.IsActive && (x.DayOfWeek == dayOfWeek || x.DayOfWeek == previousDayOfWeek))
             .ToListAsync(ct);
-        var rule = rules.FirstOrDefault(x => x.StartTime <= x.EndTime ? x.StartTime <= time && time < x.EndTime : x.StartTime <= time || time < x.EndTime)
+        var rule = rules.FirstOrDefault(x => RuleMatchesLocalTime(x.DayOfWeek, x.StartTime, x.EndTime, dayOfWeek, time))
             ?? rules.FirstOrDefault()
             ?? await db.PricingPlanRules.AsNoTracking().Where(x => x.TableTypeId == tableTypeId && x.IsActive).OrderByDescending(x => x.PricingPlanRuleId).FirstOrDefaultAsync(ct);
 
@@ -916,6 +926,24 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     private static bool IsAlignedToThirtyMinutes(DateTime value) =>
         value.Minute % 30 == 0 && value.Second == 0 && value.Millisecond == 0;
+
+    private static bool RuleMatchesLocalTime(int ruleDayOfWeek, TimeSpan startTime, TimeSpan endTime, int localDayOfWeek, TimeSpan localTime)
+    {
+        if (startTime < endTime)
+        {
+            return ruleDayOfWeek == localDayOfWeek && startTime <= localTime && localTime < endTime;
+        }
+
+        if (startTime > endTime)
+        {
+            return (ruleDayOfWeek == localDayOfWeek && localTime >= startTime) ||
+                   (NextDay(ruleDayOfWeek) == localDayOfWeek && localTime < endTime);
+        }
+
+        return ruleDayOfWeek == localDayOfWeek;
+    }
+
+    private static int NextDay(int dayOfWeek) => dayOfWeek == 6 ? 0 : dayOfWeek + 1;
 
     private static void ValidateBookingPeriod(DateTime startTimeUtc, DateTime endTimeUtc)
     {

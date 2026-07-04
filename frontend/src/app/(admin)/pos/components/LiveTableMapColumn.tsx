@@ -6,6 +6,7 @@ import { Play } from 'lucide-react';
 import styles from '../pos.module.css';
 import { venueApi, sessionApi, bookingApi } from '@/lib/api/endpoints';
 import type { VenueTableLayoutItem, VenueLayoutResponse } from '@/types';
+import { formatVietnamTime, utcTimestampMs } from '@/lib/dateTime';
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -33,7 +34,7 @@ function TableCard({ table }: { table: VenueTableLayoutItem }) {
   const theme = getTableColor(table.tableTypeId);
 
   const now = Date.now();
-  const nextBookingTime = table.nextBookingStartTimeUtc ? new Date(table.nextBookingStartTimeUtc + (table.nextBookingStartTimeUtc.endsWith('Z') ? '' : 'Z')).getTime() : null;
+  const nextBookingTime = table.nextBookingStartTimeUtc ? utcTimestampMs(table.nextBookingStartTimeUtc) : null;
   const minsToNextBooking = nextBookingTime ? (nextBookingTime - now) / 60000 : null;
   
   // Block table if empty and next booking is <= 30 mins
@@ -73,7 +74,7 @@ function TableCard({ table }: { table: VenueTableLayoutItem }) {
         <div style={{ padding: '0 8px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontSize: '0.85rem', color: '#475569', textAlign: 'center' }}>
            Sắp có khách đặt lúc<br />
            <strong style={{ fontSize: '1rem', color: '#854d0e', marginTop: '2px' }}>
-              {new Date(table.nextBookingStartTimeUtc! + (table.nextBookingStartTimeUtc!.endsWith('Z') ? '' : 'Z')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {formatVietnamTime(table.nextBookingStartTimeUtc!)}
            </strong>
         </div>
 

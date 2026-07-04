@@ -5,6 +5,9 @@ public class SessionTimeChargesResponse
     public long SessionId { get; set; }
     public string SessionCode { get; set; } = string.Empty;
     public int Status { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime? EndedAtUtc { get; set; }
+    public DateTime ServerNowUtc { get; set; }
     public int ActualDurationMinutes { get; set; }
     public int BillableDurationMinutes { get; set; }
     public int MinimumMinutes { get; set; }

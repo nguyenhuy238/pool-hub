@@ -3,11 +3,14 @@ using PoolHub.Core.DTOs.Venue;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Venue;
 
-public class VenueService(PoolHubDbContext db) : IVenueService
+public class VenueService(PoolHubDbContext db, IClock? clock = null) : IVenueService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<IEnumerable<FloorDto>> GetFloorsAsync(CancellationToken ct) => await db.Floors.Select(x => new FloorDto { FloorId = x.FloorId, Name = x.Name, IsActive = x.IsActive }).ToListAsync(ct);
     public async Task<IEnumerable<ZoneDto>> GetZonesAsync(CancellationToken ct) => await db.Zones.Select(x => new ZoneDto { ZoneId = x.ZoneId, FloorId = x.FloorId, Name = x.Name, IsActive = x.IsActive }).ToListAsync(ct);
     public async Task<IEnumerable<TableTypeDto>> GetTableTypesAsync(CancellationToken ct) => await db.TableTypes.Select(x => new TableTypeDto { TableTypeId = x.TableTypeId, Name = x.Name, Code = x.Code, DefaultCapacity = x.DefaultCapacity }).ToListAsync(ct);
@@ -55,7 +58,7 @@ public class VenueService(PoolHubDbContext db) : IVenueService
             .GroupBy(x => x.TableId)
             .ToDictionary(g => g.Key, g => g.First().SessionId);
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var nextBookings = await db.Bookings
             .AsNoTracking()
             .Where(b => b.TableId.HasValue &&
@@ -144,7 +147,7 @@ public class VenueService(PoolHubDbContext db) : IVenueService
             ReservedTables = allTableItems.Count(t => t.OperationalStatus == 3),
             MaintenanceTables = allTableItems.Count(t => t.OperationalStatus == 4),
             InactiveTables = allTableItems.Count(t => t.OperationalStatus == 5),
-            FetchedAtUtc = DateTime.UtcNow
+            FetchedAtUtc = now
         };
     }
 }

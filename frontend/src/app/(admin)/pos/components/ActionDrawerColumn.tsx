@@ -8,6 +8,7 @@ import { API_BASE_URL } from '@/lib/api/client';
 import { sessionApi, productApi, orderApi, invoiceApi } from '@/lib/api/endpoints';
 import type { Session, Product, Order, Invoice, PaymentMethod } from '@/types';
 import { Modal } from '@/components/ui';
+import { utcTimestampMs } from '@/lib/dateTime';
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -48,7 +49,7 @@ export function ActionDrawerColumn() {
   useEffect(() => {
     if (!sessionData?.startedAtUtc) return;
     if (isSessionEndedLocal) return; // Stop timer when session ended
-    const startMs = new Date(sessionData.startedAtUtc + "Z").getTime();
+    const startMs = utcTimestampMs(sessionData.startedAtUtc);
     
     const tick = () => setElapsed(Date.now() - startMs);
     tick(); // initial tick

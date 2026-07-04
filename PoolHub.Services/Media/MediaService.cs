@@ -6,11 +6,13 @@ using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Media;
 
-public partial class MediaService(PoolHubDbContext db) : IMediaService
+public partial class MediaService(PoolHubDbContext db, IClock? clock = null) : IMediaService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
     private const long MaxImageBytes = 5 * 1024 * 1024;
     private const long MaxVideoBytes = 30 * 1024 * 1024;
 
@@ -51,7 +53,7 @@ public partial class MediaService(PoolHubDbContext db) : IMediaService
         await ValidateSignatureAsync(input.Content, extension, ct);
 
         var folder = NormalizeFolder(input.Folder);
-        var storedFileName = $"{folder}-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..(folder.Length + 1 + 14 + 1 + 6)] + extension;
+        var storedFileName = $"{folder}-{_clock.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..(folder.Length + 1 + 14 + 1 + 6)] + extension;
         var uploadRoot = ResolveUploadRoot(webRootPath);
         var folderPath = Path.GetFullPath(Path.Combine(uploadRoot, folder));
         EnsureInside(uploadRoot, folderPath);
@@ -158,7 +160,7 @@ public partial class MediaService(PoolHubDbContext db) : IMediaService
         }
 
         asset.IsActive = false;
-        asset.UpdatedAtUtc = DateTime.UtcNow;
+        asset.UpdatedAtUtc = _clock.UtcNow;
         db.AuditLogs.Add(new AuditLog
         {
             ActorUserId = userId,

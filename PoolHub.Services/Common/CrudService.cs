@@ -4,16 +4,19 @@ using PoolHub.Core.Interfaces;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Common;
 
 public partial class CrudService : ICrudService
 {
     protected readonly PoolHubDbContext db;
+    protected readonly IClock _clock;
 
-    public CrudService(PoolHubDbContext db)
+    public CrudService(PoolHubDbContext db, IClock? clock = null)
     {
         this.db = db;
+        _clock = clock ?? SystemClock.Instance;
     }
 
     private static PagedResult<T> Page<T>(IReadOnlyCollection<T> items, int page, int size, int total) => new() { Items = items, PageNumber = page, PageSize = size, TotalCount = total };
@@ -47,7 +50,7 @@ public partial class CrudService : ICrudService
         if (await db.Products.AnyAsync(x => x.ProductCategoryId == id && x.IsActive, ct))
             throw new ConflictException("Product category still has active products.");
         category.IsActive = false;
-        category.UpdatedAtUtc = DateTime.UtcNow;
+        category.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
     }
 

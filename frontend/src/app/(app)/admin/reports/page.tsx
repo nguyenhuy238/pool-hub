@@ -5,23 +5,19 @@ import { DataTable, PageHeader, StateBlock, useLoad } from "@/components/ui";
 import { reportsApi } from "@/lib/api/endpoints";
 import { money } from "@/lib/status";
 import { useToast } from "@/components/toast";
+import { formatDateLocal, getCurrentVietnamMonthRange, getVietnamDateInputValue } from "@/lib/dateTime";
 
 export default function ReportsPage() {
   const toast = useToast();
   const [range, setRange] = useState({ FromDate: "", ToDate: "" });
 
   const applyPreset = (preset: string) => {
-    const now = new Date();
-    const toYMD = (d: Date) => {
-      const offset = d.getTimezoneOffset() * 60000;
-      return new Date(d.getTime() - offset).toISOString().split("T")[0];
-    };
-    
     if (preset === "today") {
-      const d = toYMD(now);
+      const d = getVietnamDateInputValue();
       setRange({ FromDate: d, ToDate: d });
     } else if (preset === "this_month") {
-      setRange({ FromDate: toYMD(new Date(now.getFullYear(), now.getMonth(), 1)), ToDate: toYMD(new Date(now.getFullYear(), now.getMonth() + 1, 0)) });
+      const monthRange = getCurrentVietnamMonthRange();
+      setRange({ FromDate: monthRange.fromDate, ToDate: monthRange.toDate });
     } else {
       setRange({ FromDate: "", ToDate: "" });
     }
@@ -49,7 +45,7 @@ export default function ReportsPage() {
   const exportAllToExcel = () => {
     const rows: (string | number)[][] = [];
     rows.push(["=== BÁO CÁO TỔNG HỢP POOLHUB ==="]);
-    rows.push([`Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`]);
+    rows.push([`Ngày xuất: ${formatDateLocal(new Date().toISOString())}`]);
     if (range.FromDate || range.ToDate) {
       rows.push([`Giai đoạn: ${range.FromDate || '...'} đến ${range.ToDate || '...'}`]);
     }
@@ -58,7 +54,7 @@ export default function ReportsPage() {
     if (revenue.data?.length) {
       rows.push(["1. BÁO CÁO DOANH THU"]);
       rows.push(["Ngày", "Doanh thu (VNĐ)", "Số lượng hóa đơn"]);
-      revenue.data.forEach((r: any) => rows.push([new Date(r.date).toLocaleDateString('vi-VN'), r.revenue, r.invoiceCount]));
+      revenue.data.forEach((r: any) => rows.push([formatDateLocal(r.date), r.revenue, r.invoiceCount]));
       rows.push([]);
     }
 
@@ -147,7 +143,7 @@ export default function ReportsPage() {
             <h3 style={{ margin: 0 }}>Báo cáo Doanh thu</h3>
             {revenue.data && revenue.data.length > 0 && (
               <button className="ghost-btn compact" onClick={() => {
-                const rows = [["Ngày", "Doanh thu (VNĐ)", "Số lượng Hóa đơn"], ...revenue.data!.map((r: any) => [new Date(r.date).toLocaleDateString('vi-VN'), r.revenue, r.invoiceCount])];
+                const rows = [["Ngày", "Doanh thu (VNĐ)", "Số lượng Hóa đơn"], ...revenue.data!.map((r: any) => [formatDateLocal(r.date), r.revenue, r.invoiceCount])];
                 exportToCsv("Bao_cao_Doanh_thu", rows);
                 toast("Xuất Excel doanh thu thành công!", "success");
               }}>📊 Xuất Excel</button>
@@ -158,7 +154,7 @@ export default function ReportsPage() {
             <DataTable 
               rows={revenue.data} 
               columns={[
-                { key: "date", label: "Ngày", render: (row: any) => new Date(row.date).toLocaleDateString('vi-VN') }, 
+                { key: "date", label: "Ngày", render: (row: any) => formatDateLocal(row.date) }, 
                 { key: "revenue", label: "Doanh thu", render: (row: any) => <strong style={{ color: '#187344' }}>{money(row.revenue)}</strong> }, 
                 { key: "invoiceCount", label: "Số lượng Hóa đơn" }
               ]} 

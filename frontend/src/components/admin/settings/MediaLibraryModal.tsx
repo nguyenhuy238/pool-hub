@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/ui";
 import { mediaApi, type MediaAsset } from "@/lib/api/mediaApi";
 import { useToast } from "@/components/toast";
+import { formatDateLocal } from "@/lib/dateTime";
 
 const folders = ["all", "landing", "logo", "hero", "gallery", "services", "reviews", "seo"];
 
@@ -100,7 +101,7 @@ export function MediaLibraryModal({
               <div className="media-manager-meta">
                 <strong title={asset.originalFileName}>{asset.originalFileName}</strong>
                 <span>{asset.mediaType} · {formatBytes(asset.sizeBytes)}</span>
-                <span>{new Date(asset.createdAtUtc).toLocaleDateString("vi-VN")}</span>
+                <span>{formatDateLocal(asset.createdAtUtc)}</span>
               </div>
               <div className="media-manager-actions">
                 <button type="button" className="ghost-btn" onClick={() => copyUrl(asset.url)}>Sao chép URL</button>

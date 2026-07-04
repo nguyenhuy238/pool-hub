@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge, DataTable, Modal, PageHeader, SearchFilterBar, StateBlock } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
+import { formatDateTimeLocal } from "@/lib/dateTime";
 import type { CustomerReview, PagedResult } from "@/types";
 
 const statuses = [
@@ -88,7 +89,7 @@ export default function CustomerReviewsPage() {
           { key: "source", label: "Nguồn" },
           { key: "isFeatured", label: "Nổi bật", render: (row) => row.isFeatured ? "Có" : "Không" },
           { key: "displayOrder", label: "Thứ tự", render: (row) => String(row.displayOrder ?? 0) },
-          { key: "createdAtUtc", label: "Ngày tạo", render: (row) => row.createdAtUtc ? new Date(String(row.createdAtUtc)).toLocaleString("vi-VN") : "-" }
+          { key: "createdAtUtc", label: "Ngày tạo", render: (row) => formatDateTimeLocal(String(row.createdAtUtc ?? "")) }
         ]}
         actions={(row) => {
           const review = row as unknown as CustomerReview;

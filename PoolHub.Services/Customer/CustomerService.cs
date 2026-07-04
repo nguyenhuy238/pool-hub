@@ -6,6 +6,7 @@ using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 using CustomerEntity = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Customer;
@@ -13,8 +14,10 @@ namespace PoolHub.Services.Customer;
 /// <summary>
 /// Service quản lý thông tin khách hàng.
 /// </summary>
-public class CustomerService(PoolHubDbContext db, IAuditService auditService) : ICustomerService
+public class CustomerService(PoolHubDbContext db, IAuditService auditService, IClock? clock = null) : ICustomerService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     /// <inheritdoc/>
     public async Task<PagedResult<CustomerDto>> GetCustomersAsync(CustomerQueryRequest request, CancellationToken ct)
     {
@@ -128,7 +131,7 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService) : 
         customer.Email = email;
         customer.Note = request.Note?.Trim();
         customer.Status = request.Status;
-        customer.UpdatedAtUtc = DateTime.UtcNow;
+        customer.UpdatedAtUtc = _clock.UtcNow;
 
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.CustomerUpdated, nameof(CustomerEntity),
@@ -145,7 +148,7 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService) : 
             ?? throw new NotFoundException($"Customer with ID {id} not found.");
         var oldStatus = customer.Status;
         customer.Status = status;
-        customer.UpdatedAtUtc = DateTime.UtcNow;
+        customer.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.CustomerStatusChanged, nameof(CustomerEntity),
             customer.CustomerId, customer.PublicId, new { Status = oldStatus }, new { Status = status },

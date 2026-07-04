@@ -232,7 +232,7 @@ public partial class CrudService
         var x = await db.VenueTables.FindAsync([id], ct) ?? throw new NotFoundException("VenueTable not found.");
         if (await HasActiveSessionAsync(id, ct))
             throw new ConflictException("Cannot delete a table with an active session.");
-        if (await db.Bookings.AnyAsync(b => b.TableId == id && (b.Status == 1 || b.Status == 2) && b.EndTimeUtc > DateTime.UtcNow, ct))
+        if (await db.Bookings.AnyAsync(b => b.TableId == id && (b.Status == 1 || b.Status == 2) && b.EndTimeUtc > _clock.UtcNow, ct))
             throw new ConflictException("Cannot delete a table with active or upcoming bookings.");
         x.IsActive = false;
         await db.SaveChangesAsync(ct);

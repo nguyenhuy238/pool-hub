@@ -11,6 +11,7 @@ using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Auth;
 
@@ -22,9 +23,11 @@ public class AuthService(
     IEmailService emailService,
     IOptions<EmailSettings> emailOptions,
     IHttpContextAccessor httpContextAccessor,
-    ILogger<AuthService> logger) : IAuthService
+    ILogger<AuthService> logger,
+    IClock? clock = null) : IAuthService
 {
     private readonly EmailSettings _emailSettings = emailOptions.Value;
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, long? currentUserId, CancellationToken ct)
     {
@@ -94,7 +97,7 @@ public class AuthService(
             throw new LockedException($"Account is {user.Status.ToString().ToLowerInvariant()}.");
         }
 
-        user.LastLoginAtUtc = DateTime.UtcNow;
+        user.LastLoginAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         var response = await BuildAuthResponseAsync(user, ct);
         await db.SaveChangesAsync(ct);
@@ -120,7 +123,7 @@ public class AuthService(
             throw new ValidationException("New password must be different from the current password.");
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, 12);
-        user.UpdatedAtUtc = DateTime.UtcNow;
+        user.UpdatedAtUtc = _clock.UtcNow;
         RevokeAllRefreshTokens(userId);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(userId, AuditActions.ChangePassword, "User",
@@ -170,7 +173,7 @@ public class AuthService(
             x => x.Email == email && x.Status == UserStatus.Active, ct);
         if (user is not null)
         {
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             var latestRequestAt = await db.PasswordResetTokens
                 .Where(x => x.UserId == user.UserId)
                 .OrderByDescending(x => x.CreatedAtUtc)
@@ -203,7 +206,7 @@ public class AuthService(
             {
                 var failedToken = await db.PasswordResetTokens
                     .FirstAsync(x => x.UserId == user.UserId && x.TokenHash == tokenService.HashToken(rawToken), ct);
-                failedToken.UsedAtUtc = DateTime.UtcNow;
+                failedToken.UsedAtUtc = _clock.UtcNow;
                 await db.SaveChangesAsync(ct);
                 await auditService.LogAsync(user.UserId, AuditActions.ForgotPasswordEmailFailed, "User",
                     user.UserId, user.PublicId, description: "Password reset email delivery failed.", ct: ct);
@@ -230,7 +233,8 @@ public class AuthService(
             : await db.PasswordResetTokens.FirstOrDefaultAsync(
                 x => x.UserId == user.UserId && x.TokenHash == hash && x.UsedAtUtc == null, ct);
 
-        if (user is null || resetToken is null || resetToken.ExpiresAtUtc <= DateTime.UtcNow)
+        var now = _clock.UtcNow;
+        if (user is null || resetToken is null || resetToken.ExpiresAtUtc <= now)
         {
             await auditService.LogAsync(user?.UserId, AuditActions.ResetPasswordFailed, "User",
                 user?.UserId, user?.PublicId, description: "Invalid or expired password reset token.", ct: ct);
@@ -238,8 +242,8 @@ public class AuthService(
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, 12);
-        user.UpdatedAtUtc = DateTime.UtcNow;
-        resetToken.UsedAtUtc = DateTime.UtcNow;
+        user.UpdatedAtUtc = now;
+        resetToken.UsedAtUtc = now;
         RevokeAllRefreshTokens(user.UserId);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(user.UserId, AuditActions.ResetPasswordSuccess, "User",
@@ -313,7 +317,7 @@ public class AuthService(
 
     private void RevokeAllRefreshTokens(long userId)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         foreach (var token in db.RefreshTokens.Where(x => x.UserId == userId && !x.IsRevoked))
         {
             token.IsRevoked = true;
@@ -324,7 +328,7 @@ public class AuthService(
 
     private async Task RevokeTokenFamilyAsync(long userId, Guid familyId, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var tokens = await db.RefreshTokens
             .Where(x => x.UserId == userId && x.FamilyId == familyId && !x.IsRevoked)
             .ToListAsync(ct);

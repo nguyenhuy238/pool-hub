@@ -5,15 +5,18 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using PoolHub.Core.DTOs.Auth;
 using PoolHub.Core.Interfaces.Services;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Auth;
 
 public class RedisRefreshTokenStore(
     IDistributedCache cache,
-    IOptions<AuthTokenOptions> authTokenOptions) : IRefreshTokenStore
+    IOptions<AuthTokenOptions> authTokenOptions,
+    IClock? clock = null) : IRefreshTokenStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly AuthTokenOptions _authTokens = authTokenOptions.Value;
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
 
     public async Task<RefreshTokenIssueResult> IssueRefreshTokenAsync(
         long userId,
@@ -22,7 +25,7 @@ public class RedisRefreshTokenStore(
         string? userAgent,
         CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var sessionId = Guid.NewGuid();
         var refreshTokenFamilyId = familyId ?? Guid.NewGuid();
         var secret = Base64UrlEncode(RandomNumberGenerator.GetBytes(64));
@@ -53,7 +56,7 @@ public class RedisRefreshTokenStore(
             return new RefreshTokenValidationResult();
 
         var record = await GetRecordAsync(sessionId, cancellationToken);
-        if (record is null || record.ExpiresAtUtc <= DateTime.UtcNow)
+        if (record is null || record.ExpiresAtUtc <= _clock.UtcNow)
             return new RefreshTokenValidationResult();
 
         if (record.RevokedAtUtc is not null)
@@ -83,7 +86,7 @@ public class RedisRefreshTokenStore(
             userAgent,
             cancellationToken);
 
-        current.RevokedAtUtc = DateTime.UtcNow;
+        current.RevokedAtUtc = _clock.UtcNow;
         current.RevokedByIp = ipAddress;
         current.ReplacedBySessionId = replacement.Record.SessionId;
         await SaveRecordAsync(current, cancellationToken);
@@ -102,7 +105,7 @@ public class RedisRefreshTokenStore(
         if (record is null || record.RevokedAtUtc is not null)
             return;
 
-        record.RevokedAtUtc = DateTime.UtcNow;
+        record.RevokedAtUtc = _clock.UtcNow;
         record.RevokedByIp = ipAddress;
         await SaveRecordAsync(record, cancellationToken);
     }
@@ -119,7 +122,7 @@ public class RedisRefreshTokenStore(
             if (record is null || record.RevokedAtUtc is not null)
                 continue;
 
-            record.RevokedAtUtc = DateTime.UtcNow;
+            record.RevokedAtUtc = _clock.UtcNow;
             record.RevokedByIp = ipAddress;
             await SaveRecordAsync(record, cancellationToken);
         }
@@ -127,7 +130,7 @@ public class RedisRefreshTokenStore(
 
     private async Task SaveRecordAsync(RefreshTokenRecord record, CancellationToken cancellationToken)
     {
-        var ttl = record.ExpiresAtUtc - DateTime.UtcNow;
+        var ttl = record.ExpiresAtUtc - _clock.UtcNow;
         if (ttl <= TimeSpan.Zero)
             return;
 
@@ -156,7 +159,7 @@ public class RedisRefreshTokenStore(
         if (!sessionIds.Contains(sessionId, StringComparer.Ordinal))
             sessionIds.Add(sessionId);
 
-        var ttl = expiresAtUtc - DateTime.UtcNow;
+        var ttl = expiresAtUtc - _clock.UtcNow;
         if (ttl <= TimeSpan.Zero)
             return;
 

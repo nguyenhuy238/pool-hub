@@ -6,11 +6,13 @@ using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Services.Payments;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Landing;
 
-public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSettingsService
+public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = null) : ILandingPageSettingsService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
     private const string LandingPageKey = "landing_page";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = false };
 
@@ -108,7 +110,7 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
             Plans = plans,
             Rules = rules,
             TableTypes = tableTypes,
-            FetchedAtUtc = DateTime.UtcNow
+            FetchedAtUtc = _clock.UtcNow
         };
     }
 
@@ -120,7 +122,7 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         var newJson = JsonSerializer.Serialize(dto, JsonOptions);
 
         setting.SettingValueJson = newJson;
-        setting.UpdatedAtUtc = DateTime.UtcNow;
+        setting.UpdatedAtUtc = _clock.UtcNow;
         setting.UpdatedByUserId = currentUserId == 0 ? null : currentUserId;
 
         db.AuditLogs.Add(new AuditLog
@@ -146,7 +148,7 @@ public class LandingPageSettingsService(PoolHubDbContext db) : ILandingPageSetti
         var newJson = JsonSerializer.Serialize(defaults, JsonOptions);
 
         setting.SettingValueJson = newJson;
-        setting.UpdatedAtUtc = DateTime.UtcNow;
+        setting.UpdatedAtUtc = _clock.UtcNow;
         setting.UpdatedByUserId = currentUserId == 0 ? null : currentUserId;
 
         db.AuditLogs.Add(new AuditLog

@@ -3,15 +3,17 @@ using PoolHub.Core.DTOs.Dashboard;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Dashboard;
 
-public class DashboardService(PoolHubDbContext db) : IDashboardService
+public class DashboardService(PoolHubDbContext db, IClock? clock = null) : IDashboardService
 {
+    private readonly IClock _clock = clock ?? SystemClock.Instance;
+
     public async Task<DashboardSummaryDto> GetSummaryAsync(long? userId, CancellationToken ct)
     {
-        var today = DateTime.UtcNow.Date;
-        var tomorrow = today.AddDays(1);
+        var (today, tomorrow) = BusinessTime.LocalDateRangeToUtc(BusinessTime.UtcToVietnamLocalDate(_clock.UtcNow));
 
         return new DashboardSummaryDto
         {
@@ -34,8 +36,7 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
 
     public async Task<AdminDashboardSummaryDto> GetAdminSummaryAsync(CancellationToken ct)
     {
-        var today = DateTime.UtcNow.Date;
-        var tomorrow = today.AddDays(1);
+        var (today, tomorrow) = BusinessTime.LocalDateRangeToUtc(BusinessTime.UtcToVietnamLocalDate(_clock.UtcNow));
         var summary = await GetSummaryAsync(null, ct);
 
         return new AdminDashboardSummaryDto
@@ -63,18 +64,23 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
 
     public async Task<List<RevenuePointDto>> GetRevenueAsync(DateTime? fromDate, DateTime? toDate, CancellationToken ct)
     {
-        var to = (toDate?.Date ?? DateTime.UtcNow.Date).AddDays(1);
-        var from = fromDate?.Date ?? to.AddDays(-7);
+        var (from, to) = BusinessTime.LocalDateRangeToUtc(fromDate, toDate, _clock.UtcNow, 7);
 
-        var payments = await db.Payments
+        var paymentRows = await db.Payments
             .AsNoTracking()
             .Where(x => x.PaymentStatus == PaymentStatuses.Completed && x.PaidAtUtc >= from && x.PaidAtUtc < to)
-            .GroupBy(x => x.PaidAtUtc!.Value.Date)
-            .Select(x => new RevenuePointDto { Date = x.Key, Amount = x.Sum(p => p.Amount) })
             .ToListAsync(ct);
 
-        return Enumerable.Range(0, Math.Max(1, (to.Date - from.Date).Days))
-            .Select(offset => from.Date.AddDays(offset))
+        var payments = paymentRows
+            .Where(x => x.PaidAtUtc.HasValue)
+            .GroupBy(x => BusinessTime.UtcToVietnamLocalDate(x.PaidAtUtc!.Value))
+            .Select(x => new RevenuePointDto { Date = x.Key, Amount = x.Sum(p => p.Amount) })
+            .ToList();
+
+        var fromLocal = BusinessTime.UtcToVietnamLocalDate(from);
+        var toLocal = BusinessTime.UtcToVietnamLocalDate(to.AddTicks(-1)).AddDays(1);
+        return Enumerable.Range(0, Math.Max(1, (toLocal - fromLocal).Days))
+            .Select(offset => fromLocal.AddDays(offset))
             .Select(date => new RevenuePointDto
             {
                 Date = date,
@@ -83,20 +89,26 @@ public class DashboardService(PoolHubDbContext db) : IDashboardService
             .ToList();
     }
 
-    public Task<List<ActiveSessionDashboardDto>> GetActiveSessionsAsync(CancellationToken ct) =>
-        db.Sessions
+    public async Task<List<ActiveSessionDashboardDto>> GetActiveSessionsAsync(CancellationToken ct)
+    {
+        var now = _clock.UtcNow;
+        var sessions = await db.Sessions
             .AsNoTracking()
             .Where(x => x.Status == 1)
             .OrderByDescending(x => x.StartedAtUtc)
             .Take(20)
-            .Select(x => new ActiveSessionDashboardDto
+            .Select(x => new { x.SessionId, x.SessionCode, x.StartedAtUtc })
+            .ToListAsync(ct);
+
+        return sessions.Select(x => new ActiveSessionDashboardDto
             {
                 SessionId = x.SessionId,
                 SessionCode = x.SessionCode,
                 StartedAtUtc = x.StartedAtUtc,
-                DurationMinutes = (int)Math.Max(0, EF.Functions.DateDiffMinute(x.StartedAtUtc, DateTime.UtcNow))
+                DurationMinutes = (int)Math.Max(0, Math.Ceiling((now - x.StartedAtUtc).TotalMinutes))
             })
-            .ToListAsync(ct);
+            .ToList();
+    }
 
     public Task<List<LowStockProductDto>> GetLowStockProductsAsync(CancellationToken ct) =>
         db.Products
