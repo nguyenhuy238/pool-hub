@@ -105,7 +105,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
         };
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+        await posNotificationService.NotifyOrderUpdatedAsync((int)order.SessionId, (int)order.OrderId, ct);
 
         return new OrderDto { OrderId = order.OrderId, SessionId = order.SessionId, Status = order.Status };
     }
@@ -156,7 +156,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
         });
 
         await db.SaveChangesAsync(ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+        await posNotificationService.NotifyOrderUpdatedAsync((int)order.SessionId, (int)order.OrderId, ct);
 
     }
 
@@ -213,7 +213,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
         });
 
         await db.SaveChangesAsync(ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+        await posNotificationService.NotifyOrderUpdatedAsync((int)order.SessionId, (int)order.OrderId, ct);
 
     }
 
@@ -246,7 +246,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
 
         db.OrderItems.Remove(item);
         await db.SaveChangesAsync(ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)order.SessionId, ct);
+        await posNotificationService.NotifyOrderUpdatedAsync((int)order.SessionId, (int)order.OrderId, ct);
 
     }
 
@@ -291,6 +291,7 @@ public class OrderService(PoolHubDbContext db, IPosNotificationService posNotifi
         }
 
         await db.SaveChangesAsync(ct);
+        await posNotificationService.NotifyOrderUpdatedAsync((int)order.SessionId, (int)order.OrderId, ct);
     }
 
     private async Task EnsureOrderEditableAsync(EntityOrder order, string action, CancellationToken ct)

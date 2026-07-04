@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { bookingApi, orderApi, productApi, sessionApi, venueApi } from "@/lib/api/endpoints";
 import { dateTime, label, money, sessionStatus } from "@/lib/status";
+import { formatElapsedDuration } from "@/lib/sessionDuration";
+import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
 import { Badge, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { BookingCalendarItem, Order, Product, Session, VenueTable } from "@/types";
@@ -21,6 +23,8 @@ export default function SessionDetailPage() {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<OperationRealtimeStatus>("connecting");
+  const [, setDurationTick] = useState(0);
 
   const { data, loading, error, reload } = useLoad(async () => {
     if (!Number.isFinite(sessionId) || sessionId <= 0) throw new Error("Session không hợp lệ.");
@@ -38,6 +42,28 @@ export default function SessionDetailPage() {
     return { session, summary, orders, products, tables, activeSessions, upcomingBookings };
   }, [sessionId]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setDurationTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const cleanup = connectOperationHub({
+      onSessionUpdated: (payload) => {
+        if (!payload.sessionId || payload.sessionId === sessionId) reload();
+      },
+      onOrderUpdated: (payload) => {
+        if (!payload.sessionId || payload.sessionId === sessionId) reload();
+      },
+      onBookingUpdated: () => reload(),
+      onTableStatusChanged: () => reload(),
+      onStatusChange: setRealtimeStatus
+    });
+
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   const session = data?.session as Session | undefined;
   const summary = data?.summary as any;
   const orders = (data?.orders || []) as Order[];
@@ -53,6 +79,17 @@ export default function SessionDetailPage() {
   const isOpen = Number(session?.status) === SESSION_OPEN;
   const isClosed = Number(session?.status) === SESSION_CLOSED;
   const canReopen = isClosed && Number(summary?.invoiceStatus ?? 0) !== 2;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        reload();
+      }
+    }, 45000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, sessionId]);
 
   async function ensureOrder() {
     if (currentOrder) return currentOrder.orderId;
@@ -117,6 +154,10 @@ export default function SessionDetailPage() {
                 <div>
                   <h3>Thông tin phiên</h3>
                   <p>{currentAssignment?.tableName || currentAssignment?.tableCode || "Bàn"} · bắt đầu {dateTime(session.startedAtUtc)}</p>
+                  <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
+                    Thời lượng hiển thị realtime. Tiền giờ được backend tính theo bảng giá và quy tắc làm tròn.
+                  </p>
+                  <RealtimeStatusText status={realtimeStatus} />
                 </div>
                 <Badge tone={isOpen ? "green" : "neutral"}>{label(sessionStatus, Number(session.status))}</Badge>
               </div>
@@ -124,7 +165,7 @@ export default function SessionDetailPage() {
                 <Info label="Mã session" value={session.sessionCode || `#${session.sessionId}`} />
                 <Info label="Bàn hiện tại" value={currentAssignment?.tableName || currentAssignment?.tableCode || "-"} />
                 <Info label="Khách hàng" value={session.customerId ? `#${session.customerId}` : "Khách vãng lai"} />
-                <Info label="Thời lượng thực tế" value={`${totalDuration} phút`} />
+                <Info label="Thời lượng thực tế" value={`Đã chơi: ${formatElapsedDuration(session.startedAtUtc, isOpen ? undefined : session.endedAtUtc)}`} />
               </div>
             </div>
 
@@ -134,7 +175,7 @@ export default function SessionDetailPage() {
                   <h3>Tạm tính</h3>
                   <p>Backend tính tiền giờ theo bảng giá, minimum và block hiện hành.</p>
                 </div>
-                <button className="ghost-btn" type="button" onClick={() => setSummaryOpen(true)}>Xem chi tiết tạm tính</button>
+                <button className="ghost-btn" type="button" onClick={async () => { await reload(); setSummaryOpen(true); }}>Xem chi tiết tạm tính</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
                 <Info label="Tiền giờ" value={money(Number(timeAmount))} />
@@ -297,6 +338,15 @@ function Info({ label, value, strong = false }: { label: string; value: string; 
       <div style={{ fontWeight: strong ? 800 : 700, marginTop: 4 }}>{value}</div>
     </div>
   );
+}
+
+function RealtimeStatusText({ status }: { status: OperationRealtimeStatus }) {
+  if (status === "connected") return null;
+  const text = status === "reconnecting" || status === "connecting"
+    ? "Đang kết nối lại realtime..."
+    : "Dữ liệu tự làm mới định kỳ.";
+
+  return <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>{text}</p>;
 }
 
 function TransferTableModal({

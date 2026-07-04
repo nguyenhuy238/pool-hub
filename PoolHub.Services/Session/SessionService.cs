@@ -406,8 +406,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        await posNotificationService.NotifyTableUpdateAsync((int)tableId, ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+        await posNotificationService.NotifySessionStartedAsync((int)session.SessionId, (int)tableId, ct);
+        if (booking is not null)
+        {
+            await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
+        }
 
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
@@ -488,13 +491,12 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         foreach (var assignment in activeAssignments)
         {
             assignment.EndedAtUtc = endedAtUtc;
-            await posNotificationService.NotifyTableUpdateAsync((int)assignment.TableId, ct);
         }
 
         await CalculateSessionTimeChargeAsync(sessionId, endedAtUtc, true, ct);
 
         await db.SaveChangesAsync(ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+        await posNotificationService.NotifySessionClosedAsync((int)session.SessionId, activeAssignments.FirstOrDefault()?.TableId is long tableId ? (int)tableId : null, ct);
 
         return new SessionDto { SessionId = session.SessionId, SessionCode = session.SessionCode, StartedAtUtc = session.StartedAtUtc, EndedAtUtc = session.EndedAtUtc, Status = session.Status };
     }
@@ -635,11 +637,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         await transaction.CommitAsync(ct);
 
-        foreach (var assignment in activeAssignments)
-        {
-            await posNotificationService.NotifyTableUpdateAsync((int)assignment.TableId, ct);
-        }
-        await posNotificationService.NotifySessionUpdateAsync((int)session.SessionId, ct);
+        await posNotificationService.NotifySessionClosedAsync((int)session.SessionId, activeAssignments.FirstOrDefault()?.TableId is long tableId ? (int)tableId : null, ct);
 
         return new CloseSessionResponse
         {
@@ -865,9 +863,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        await posNotificationService.NotifyTableUpdateAsync((int)currentAssignment.TableId, ct);
-        await posNotificationService.NotifyTableUpdateAsync((int)newTableId, ct);
-        await posNotificationService.NotifySessionUpdateAsync((int)sessionId, ct);
+        await posNotificationService.NotifySessionTransferredAsync((int)sessionId, (int)currentAssignment.TableId, (int)newTableId, ct);
 
         return new TransferTableResponse
         {
