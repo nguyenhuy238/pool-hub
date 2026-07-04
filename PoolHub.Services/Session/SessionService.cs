@@ -15,6 +15,8 @@ namespace PoolHub.Services.Session;
 
 public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null) : ISessionService
 {
+    private const int DefaultEarlyCheckInMinutes = 15;
+
     public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null)
     {
     }
@@ -321,7 +323,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             }
 
             var nowUtc = DateTime.UtcNow;
-            if (booking.Status == BookingStatuses.Pending && booking.StartTimeUtc <= nowUtc)
+            var bookingStartUtc = NormalizeUtc(booking.StartTimeUtc);
+            var bookingEndUtc = NormalizeUtc(booking.EndTimeUtc);
+            if (booking.Status == BookingStatuses.Pending && bookingStartUtc <= nowUtc)
             {
                 booking.Status = BookingStatuses.Cancelled;
                 booking.CancelledAtUtc = nowUtc;
@@ -331,7 +335,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new ConflictException("Booking has expired and cannot start a session.");
             }
 
-            if (booking.Status == BookingStatuses.Confirmed && booking.EndTimeUtc <= nowUtc)
+            if (booking.Status == BookingStatuses.Confirmed && bookingEndUtc <= nowUtc)
             {
                 booking.Status = BookingStatuses.NoShow;
                 booking.Note = AppendAutomaticBookingNote(booking.Note, "Auto no-show because confirmed booking ended without starting session.");
@@ -345,9 +349,12 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new BusinessRuleException("Only confirmed bookings can start a session.");
             }
 
-            if (booking.StartTimeUtc > nowUtc)
+            var earlyCheckInMinutes = GetEarlyCheckInMinutes();
+            var earliestStartUtc = bookingStartUtc.AddMinutes(-earlyCheckInMinutes);
+            if (nowUtc < earliestStartUtc)
             {
-                throw new BusinessRuleException("Booking has not reached its start time.");
+                throw new BusinessRuleException(
+                    $"Chưa đến giờ nhận bàn. Chỉ có thể nhận bàn trước giờ đặt tối đa {earlyCheckInMinutes} phút.");
             }
         }
 
@@ -372,7 +379,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         var session = new EntitySession
         {
-            SessionCode = $"SS{DateTime.UtcNow:yyyyMMddHHmmss}",
+            SessionCode = $"SS{startedAtUtc:yyyyMMddHHmmss}",
             BookingId = booking?.BookingId,
             CustomerId = customerId,
             OpenedByUserId = userId,
@@ -424,6 +431,12 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
     private static string AppendAutomaticBookingNote(string? note, string reason) =>
         string.IsNullOrWhiteSpace(note) ? reason : $"{note.Trim()} | {reason}";
+
+    private int GetEarlyCheckInMinutes()
+    {
+        var configured = config?.GetValue<int?>("BookingRules:EarlyCheckInMinutes") ?? DefaultEarlyCheckInMinutes;
+        return Math.Clamp(configured, 0, 240);
+    }
 
     private async Task EnsureCustomerCanStartSessionAsync(long? customerId, long? bookingId, CancellationToken ct)
     {

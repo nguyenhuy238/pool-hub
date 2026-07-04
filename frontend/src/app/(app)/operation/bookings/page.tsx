@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { getTotalPages } from "@/lib/api/client";
-import { utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
+import { formatVietnamTime, utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
 import { dateTime, label, bookingStatus, depositStatus, money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
@@ -24,6 +24,7 @@ const DEPOSIT_PENDING = 2;
 const DEPOSIT_PAID = 3;
 const DEPOSIT_APPLIED_TO_INVOICE = 4;
 const DEPOSIT_FORFEITED = 7;
+const EARLY_CHECK_IN_MINUTES = 15;
 
 type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number };
 type TableTypeOption = { tableTypeId: number; name?: string };
@@ -62,6 +63,31 @@ function getDepositFlowLabel(bookingStatusValue: number, depositStatusValue?: nu
   return depositStatusValue ? label(depositStatus, depositStatusValue) : "-";
 }
 
+function getStartSessionState(row: Record<string, unknown>, nowMs: number) {
+  const startTimeUtc = typeof row.startTimeUtc === "string" ? row.startTimeUtc : "";
+  const endTimeUtc = typeof row.endTimeUtc === "string" ? row.endTimeUtc : "";
+  const startMs = new Date(startTimeUtc).getTime();
+  const endMs = new Date(endTimeUtc).getTime();
+
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return { canStart: false, message: "Thời gian booking không hợp lệ." };
+  }
+
+  const earliestStartMs = startMs - EARLY_CHECK_IN_MINUTES * 60 * 1000;
+  if (nowMs < earliestStartMs) {
+    return {
+      canStart: false,
+      message: `Có thể nhận bàn từ ${formatVietnamTime(new Date(earliestStartMs).toISOString())}.`
+    };
+  }
+
+  if (nowMs >= endMs) {
+    return { canStart: false, message: "Booking đã quá giờ kết thúc." };
+  }
+
+  return { canStart: true, message: "" };
+}
+
 export default function BookingsPage() {
   const toast = useToast();
   const [status, setStatus] = useState("");
@@ -71,6 +97,12 @@ export default function BookingsPage() {
   const [cancelling, setCancelling] = useState<Booking | null>(null);
   const [startingSession, setStartingSession] = useState<Booking | null>(null);
   const [noShowing, setNoShowing] = useState<Booking | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const { data, loading, error, reload } = useLoad(async () => {
     const [bookingsRes, tablesRes, typesRes] = await Promise.all([
@@ -204,6 +236,7 @@ export default function BookingsPage() {
           const canApprove = isPendingApproval && !hasSession;
           const canConfirmDeposit = isPendingDeposit && !hasSession;
           const canRejectDeposit = isPendingDeposit && depositStatusValue === DEPOSIT_PENDING_VERIFICATION && !hasSession;
+          const startSessionState = getStartSessionState(row, nowMs);
           const canStartSession = isConfirmed && !hasSession;
           const canEdit = (isPending || isPendingDeposit || isPendingApproval || isConfirmed) && !hasSession;
           const canNoShow = isConfirmed && !hasSession;
@@ -251,19 +284,31 @@ export default function BookingsPage() {
                 </button>
               )}
               {canStartSession && (
-                <button
-                  className="primary-btn compact"
-                  style={{ whiteSpace: "nowrap", background: "#10b981", borderColor: "#059669" }}
-                  onClick={() => {
-                    if (!row.tableId) {
-                      toast("Booking chưa xếp bàn. Vui lòng ấn Chỉnh sửa để chọn bàn trước.", "error");
-                      return;
-                    }
-                    setStartingSession(row as unknown as Booking);
-                  }}
-                >
-                  Nhận bàn
-                </button>
+                <span title={startSessionState.message || undefined}>
+                  <button
+                    className="primary-btn compact"
+                    disabled={!startSessionState.canStart}
+                    style={{
+                      whiteSpace: "nowrap",
+                      background: startSessionState.canStart ? "#10b981" : "#94a3b8",
+                      borderColor: startSessionState.canStart ? "#059669" : "#94a3b8",
+                      cursor: startSessionState.canStart ? "pointer" : "not-allowed"
+                    }}
+                    onClick={() => {
+                      if (!startSessionState.canStart) {
+                        toast(startSessionState.message || "Chưa thể nhận bàn.", "error");
+                        return;
+                      }
+                      if (!row.tableId) {
+                        toast("Booking chưa xếp bàn. Vui lòng ấn Chỉnh sửa để chọn bàn trước.", "error");
+                        return;
+                      }
+                      setStartingSession(row as unknown as Booking);
+                    }}
+                  >
+                    Nhận bàn
+                  </button>
+                </span>
               )}
               {canEdit && (
                 <button
@@ -317,6 +362,12 @@ export default function BookingsPage() {
           confirmLabel="Mở bàn"
           onCancel={() => setStartingSession(null)}
           onConfirm={async () => {
+            const startState = getStartSessionState(startingSession as unknown as Record<string, unknown>, Date.now());
+            if (!startState.canStart) {
+              toast(startState.message || "Chưa thể nhận bàn.", "error");
+              setStartingSession(null);
+              return;
+            }
             await action(
               bookingApi.startSession(Number(startingSession.bookingId), startingSession.tableId ? Number(startingSession.tableId) : undefined),
               "Đã nhận bàn và mở phiên chơi thành công."
