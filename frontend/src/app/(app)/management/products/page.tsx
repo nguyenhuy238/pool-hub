@@ -6,6 +6,7 @@ import { getTotalPages } from "@/lib/api/client";
 import { money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { notificationService } from "@/services/notification-service";
 import type { Product, ProductCategory } from "@/types";
 
 type ProductForm = { productCategoryId: number; name: string; sku: string; unitPrice: number; stockQuantity: number };
@@ -32,10 +33,35 @@ export default function ProductsPage() {
         productApi.list({ Search: debouncedSearch || undefined, PageNumber: query.pageNumber, PageSize: query.pageSize }),
         productApi.categories({ PageSize: 200 })
       ]);
+      const productsData = products as typeof data.products;
       setData({
-        products: products as typeof data.products,
+        products: productsData,
         categories: Array.isArray(categories) ? categories : categories.items ?? []
       });
+      
+      const items = productsData?.items || [];
+      const outOfStockCount = items.filter(p => Number(p.stockQuantity) === 0).length;
+      const lowStockCount = items.filter(p => Number(p.stockQuantity) > 0 && Number(p.stockQuantity) <= 5).length;
+      
+      const alertKey = `stock_alert_${outOfStockCount}_${lowStockCount}`;
+      if (sessionStorage.getItem(alertKey) !== "true") {
+        const promises: Promise<any>[] = [];
+        if (outOfStockCount > 0) {
+          toast(`Cảnh báo: Có ${outOfStockCount} sản phẩm đã hết hàng!`, "error");
+          promises.push(notificationService.createNotification({ title: "Cảnh báo kho", message: `Có ${outOfStockCount} sản phẩm đã hết hàng!` }).catch(() => {}));
+        }
+        if (lowStockCount > 0) {
+          toast(`Chú ý: Có ${lowStockCount} sản phẩm sắp hết hàng!`, "warning");
+          promises.push(notificationService.createNotification({ title: "Chú ý kho", message: `Có ${lowStockCount} sản phẩm sắp hết hàng!` }).catch(() => {}));
+        }
+        sessionStorage.setItem(alertKey, "true");
+        
+        if (promises.length > 0) {
+          Promise.all(promises).then(() => {
+            window.dispatchEvent(new Event("notifications_updated"));
+          });
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được sản phẩm.");
     } finally {
@@ -75,7 +101,7 @@ export default function ProductsPage() {
         { key: "sku", label: "SKU" },
         { key: "productCategoryId", label: "Danh mục", render: (row) => categoryName(Number(row.productCategoryId)) },
         { key: "unitPrice", label: "Giá", render: (row) => money(Number(row.unitPrice)) },
-        { key: "stockQuantity", label: "Kho", render: (row) => Number(row.stockQuantity) <= 5 ? <Badge tone="red">{String(row.stockQuantity)} sắp hết</Badge> : String(row.stockQuantity) }
+        { key: "stockQuantity", label: "Kho", render: (row) => Number(row.stockQuantity) === 0 ? <Badge tone="red">0 (Hết hàng)</Badge> : Number(row.stockQuantity) <= 5 ? <Badge tone="yellow">{String(row.stockQuantity)} sắp hết</Badge> : String(row.stockQuantity) }
       ]} actions={(row) => {
         const product = row as unknown as Product;
         return <div className="action-group">

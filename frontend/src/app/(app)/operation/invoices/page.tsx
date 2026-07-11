@@ -156,8 +156,8 @@ export default function InvoicesPage() {
     const originalLine = (invoice?.lines || []).find(l => l.lineType === "PRODUCT" && l.productId === productId);
     const originalQty = originalLine ? Number(originalLine.quantity) : 0;
 
-    if (found?.isStockTracked && (qty - originalQty) > found.stockQuantity) {
-      toast(`Không đủ số lượng trong kho. Hiện chỉ còn ${found.stockQuantity} sản phẩm.`, "error");
+    if (found && (qty - originalQty) > found.stockQuantity) {
+      toast(`Không đủ số lượng trong kho. Bạn chỉ có thể tăng thêm tối đa ${found.stockQuantity} sản phẩm.`, "error");
       qty = originalQty + found.stockQuantity;
     }
 
@@ -185,8 +185,13 @@ export default function InvoicesPage() {
     const currentEditQty = existing ? existing.quantity : 0;
     const newQty = currentEditQty + addQty;
 
-    if (found.isStockTracked && (newQty - originalQty) > found.stockQuantity) {
-      toast(`Không đủ số lượng trong kho. Hiện chỉ còn ${found.stockQuantity} sản phẩm.`, "error");
+    if (found && (newQty - originalQty) > found.stockQuantity) {
+      const maxAdd = found.stockQuantity + originalQty - currentEditQty;
+      if (maxAdd > 0) {
+        toast(`Không đủ số lượng trong kho. Bạn chỉ có thể thêm tối đa ${maxAdd} sản phẩm nữa.`, "error");
+      } else {
+        toast(`Không đủ số lượng trong kho. Bạn đã dùng hết tồn kho cho sản phẩm này.`, "error");
+      }
       return;
     }
 

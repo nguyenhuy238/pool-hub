@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
-type Toast = { id: number; message: string; type: "success" | "error" | "info" };
+type Toast = { id: number; message: string; type: "success" | "error" | "info" | "warning" };
 type ToastContextValue = { toast: (message: string, type?: Toast["type"]) => void };
 
 const ToastContext = createContext<ToastContextValue | null>(null);

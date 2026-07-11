@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { RoleGuard } from "@/components/guards";
 import { useToast } from "@/components/toast";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
+import { usePagination } from "@/hooks/usePagination";
 import { FileUploadButton } from "@/components/admin/settings/FileUploadButton";
 import { ROLES } from "@/lib/auth/constants";
 import { dateTime, userStatus } from "@/lib/status";
@@ -21,7 +22,7 @@ export default function UsersPage() {
   const { hasRole, user: currentUser } = useAuth();
   const toast = useToast();
   const isAdmin = hasRole(ROLES.ADMIN);
-  const [query, setQuery] = useState({ keyword: "", status: "", roleId: "", pageNumber: 1, pageSize: 10 });
+  const { query, changePage, changePageSize, setFilter } = usePagination({ keyword: "", status: "", roleId: "" }, 10);
   const debouncedKeyword = useDebouncedValue(query.keyword, 350);
   const [result, setResult] = useState<PagedResult<User> | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -80,10 +81,10 @@ export default function UsersPage() {
       <PageHeader title="Người dùng" description="Tìm kiếm, quản lý trạng thái và phân quyền tài khoản."
         action={<RoleGuard roles={[ROLES.ADMIN]}><button className="primary-btn" onClick={() => setCreateOpen(true)}>+ Tạo người dùng</button></RoleGuard>} />
       <SearchFilterBar>
-        <label><span>Tìm kiếm</span><input placeholder="Tên hoặc email" value={query.keyword} onChange={(e) => setQuery({ ...query, keyword: e.target.value, pageNumber: 1 })} /></label>
-        <label><span>Trạng thái</span><select value={query.status} onChange={(e) => setQuery({ ...query, status: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option><option value="Active">Đang hoạt động</option><option value="Locked">Đã khóa</option><option value="Deleted">Đã xóa</option></select></label>
-        <label><span>Vai trò</span><select value={query.roleId} onChange={(e) => setQuery({ ...query, roleId: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{roles.map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select></label>
-        <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => setQuery({ ...query, pageSize: Number(e.target.value), pageNumber: 1 })}><option>10</option><option>20</option><option>50</option></select></label>
+        <label><span>Tìm kiếm</span><input placeholder="Tên hoặc email" value={query.keyword} onChange={(e) => setFilter("keyword", e.target.value)} /></label>
+        <label><span>Trạng thái</span><select value={query.status} onChange={(e) => setFilter("status", e.target.value)}><option value="">Tất cả</option><option value="Active">Đang hoạt động</option><option value="Locked">Đã khóa</option><option value="Deleted">Đã xóa</option></select></label>
+        <label><span>Vai trò</span><select value={query.roleId} onChange={(e) => setFilter("roleId", e.target.value)}><option value="">Tất cả</option>{roles.map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select></label>
+        <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => changePageSize(Number(e.target.value))}><option>10</option><option>20</option><option>50</option></select></label>
       </SearchFilterBar>
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
       {!loading && rows.length ? (
@@ -105,7 +106,7 @@ export default function UsersPage() {
               {isAdmin && item.status !== "Deleted" && item.userId !== currentUser?.userId ? <button className="danger-btn compact" onClick={() => setStatusAction({ user: item, status: "Deleted" })}>Xóa</button> : null}
             </div>;
           }} />
-          <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
+          <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={changePage} />
         </>
       ) : null}
       {createOpen ? <CreateUserModal roles={roles} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); await load(); }} /> : null}
