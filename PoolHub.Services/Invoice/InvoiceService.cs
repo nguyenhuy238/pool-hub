@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using EntityInvoice = PoolHub.Core.Entities.Invoice;
@@ -173,6 +174,16 @@ public class InvoiceService(
             throw new ValidationException("Payment amount must be greater than zero.");
         }
 
+        if (request.CustomerId.HasValue || !string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            await UpdateInvoiceCustomerAsync(request.InvoiceId, new UpdateInvoiceCustomerRequest
+            {
+                CustomerId = request.CustomerId,
+                PhoneNumber = request.PhoneNumber,
+                FullName = request.CustomerName
+            }, receivedByUserId, ct);
+        }
+
         var invoice = await db.Invoices.FindAsync([request.InvoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
         if (invoice.Status == 3)
         {
@@ -214,6 +225,7 @@ public class InvoiceService(
             invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
             invoice.Status = 2; // Completed
             becamePaid = true;
+            await ProcessInvoicePaidRewardsAsync(invoice, ct);
         }
 
         await db.SaveChangesAsync(ct);
@@ -259,6 +271,87 @@ public class InvoiceService(
     public async Task<InvoiceDetailDto> GetInvoiceDetailAsync(long id, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([id], ct) ?? throw new NotFoundException("Invoice not found.");
+
+        if (invoice.Status != 3 && invoice.PaymentStatus != InvoicePaymentStatuses.Paid && invoice.SessionId > 0)
+        {
+            var session = await db.Sessions.FindAsync([invoice.SessionId], ct);
+            if (session != null && session.BookingId.HasValue)
+            {
+                await ApplyBookingDepositToInvoiceAsync(session, invoice, ct);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        if (invoice.Status != 3 && invoice.PaymentStatus != InvoicePaymentStatuses.Paid && invoice.GrandTotalAmount > invoice.PaidAmount && httpClientFactory != null)
+        {
+            try
+            {
+                var clientId = config?["PayOSSettings:ClientId"];
+                var apiKey = config?["PayOSSettings:ApiKey"];
+                if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey))
+                {
+                    var orderCodesToCheck = new List<long>();
+                    if (!string.IsNullOrEmpty(invoice.Note))
+                    {
+                        var matches = System.Text.RegularExpressions.Regex.Matches(invoice.Note, @"PayOS_OrderCode:(\d+)");
+                        for (int i = matches.Count - 1; i >= 0; i--)
+                        {
+                            if (long.TryParse(matches[i].Groups[1].Value, out var code) && !orderCodesToCheck.Contains(code))
+                            {
+                                orderCodesToCheck.Add(code);
+                            }
+                        }
+                    }
+                    if (!orderCodesToCheck.Contains(id)) orderCodesToCheck.Add(id);
+
+                    var client = httpClientFactory.CreateClient();
+                    foreach (var checkCode in orderCodesToCheck)
+                    {
+                        var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"https://api-merchant.payos.vn/v2/payment-requests/{checkCode}?_t={DateTime.UtcNow.Ticks}");
+                        req.Headers.Add("x-client-id", clientId);
+                        req.Headers.Add("x-api-key", apiKey);
+                        req.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate");
+                        req.Headers.Add("Pragma", "no-cache");
+                        var res = await client.SendAsync(req, ct);
+                        if (res.IsSuccessStatusCode)
+                        {
+                            var resStr = await res.Content.ReadAsStringAsync(ct);
+                            using var doc = System.Text.Json.JsonDocument.Parse(resStr);
+                            if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == System.Text.Json.JsonValueKind.Object)
+                            {
+                                var status = data.TryGetProperty("status", out var st) ? st.GetString() : null;
+                                decimal amountPaid = 0m;
+                                if (data.TryGetProperty("amountPaid", out var ap) && ap.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                {
+                                    ap.TryGetDecimal(out amountPaid);
+                                }
+                                decimal amount = 0m;
+                                if (data.TryGetProperty("amount", out var am) && am.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                {
+                                    am.TryGetDecimal(out amount);
+                                }
+
+                                if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase) || (amountPaid > 0 && amountPaid >= (invoice.GrandTotalAmount - invoice.PaidAmount)))
+                                {
+                                    var payAmount = amountPaid > 0 ? amountPaid : (amount > 0 ? amount : (invoice.GrandTotalAmount - invoice.PaidAmount));
+                                    var bankMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "BANK" || x.Name.Contains("Chuyển") || x.Name.Contains("QR") || x.Name.Contains("Bank"), ct);
+                                    var methodId = bankMethod?.PaymentMethodId ?? 1;
+
+                                    await CreatePaymentAsync(new CreatePaymentRequest
+                                    {
+                                        InvoiceId = id,
+                                        PaymentMethodId = methodId,
+                                        Amount = payAmount
+                                    }, null, ct);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch {}
+        }
         
         var lines = await (from line in db.InvoiceLines
                            where line.InvoiceId == id
@@ -350,8 +443,49 @@ public class InvoiceService(
         var code = request.DiscountCode.Trim().ToUpper();
         var now = _clock.UtcNow;
         var discount = await db.Discounts
-            .FirstOrDefaultAsync(d => d.DiscountCode.ToUpper() == code && d.IsActive && d.StartsAtUtc <= now && (d.EndsAtUtc == null || d.EndsAtUtc >= now), ct)
-            ?? throw new NotFoundException("Mã giảm giá không tồn tại, đã hết hạn hoặc chưa kích hoạt.");
+            .FirstOrDefaultAsync(d => d.DiscountCode.ToUpper() == code, ct)
+            ?? throw new NotFoundException("Mã giảm giá không tồn tại trên hệ thống. (Lưu ý: Nếu dùng voucher đổi điểm, vui lòng lấy mã cá nhân có dạng V-xxx trong Lịch sử tích điểm).");
+
+        if (!discount.IsActive)
+        {
+            throw new BusinessRuleException("Mã giảm giá này đang bị vô hiệu hóa hoặc chưa kích hoạt.");
+        }
+        if (discount.StartsAtUtc > now)
+        {
+            throw new BusinessRuleException("Mã giảm giá này chưa đến thời gian có hiệu lực.");
+        }
+        if (discount.EndsAtUtc.HasValue && discount.EndsAtUtc.Value < now)
+        {
+            throw new BusinessRuleException("Mã giảm giá này đã hết hạn sử dụng!");
+        }
+
+        if (discount.CustomerId.HasValue)
+        {
+            if (!invoice.CustomerId.HasValue)
+            {
+                throw new BusinessRuleException("Voucher này là voucher đổi thưởng cá nhân. Vui lòng chọn khách hàng (người chơi) cho hóa đơn trước khi áp dụng.");
+            }
+            if (invoice.CustomerId.Value != discount.CustomerId.Value)
+            {
+                throw new BusinessRuleException("Voucher này chỉ có người chơi đã đổi thưởng mới có thể sử dụng!");
+            }
+        }
+
+        if (discount.MaxUsage > 0)
+        {
+            if (discount.UsageCount >= discount.MaxUsage)
+            {
+                throw new BusinessRuleException("Voucher này đã được sử dụng hoặc đã hết lượt áp dụng!");
+            }
+
+            var activeUsages = await db.InvoiceDiscounts
+                .Where(x => x.DiscountId == discount.DiscountId)
+                .CountAsync(ct);
+            if (activeUsages >= discount.MaxUsage)
+            {
+                throw new BusinessRuleException("Voucher này đang được áp dụng cho một hóa đơn khác hoặc đã hết lượt áp dụng!");
+            }
+        }
 
         if (discount.MinTimeSubtotal.HasValue && invoice.TimeSubtotalAmount < discount.MinTimeSubtotal.Value)
         {
@@ -402,12 +536,32 @@ public class InvoiceService(
         invoice.DiscountAmount = discountAmt;
         invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount - invoice.DiscountAmount + invoice.TaxAmount);
 
-        if (invoice.PaidAmount >= invoice.GrandTotalAmount)
+        if (invoice.SessionId > 0)
+        {
+            var session = await db.Sessions.FindAsync([invoice.SessionId], ct);
+            if (session != null && session.BookingId.HasValue)
+            {
+                await ApplyBookingDepositToInvoiceAsync(session, invoice, ct);
+            }
+        }
+
+        if (invoice.PaidAmount >= invoice.GrandTotalAmount && invoice.GrandTotalAmount > 0)
         {
             invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
             invoice.Status = 2; // Completed
         }
+        else if (invoice.PaidAmount > 0)
+        {
+            invoice.PaymentStatus = InvoicePaymentStatuses.PartiallyPaid;
+            if (invoice.Status == 2) invoice.Status = 1;
+        }
+        else
+        {
+            invoice.PaymentStatus = InvoicePaymentStatuses.Unpaid;
+            if (invoice.Status == 2) invoice.Status = 1;
+        }
 
+        ClearPayOsNoteCache(invoice);
         await db.SaveChangesAsync(ct);
     }
 
@@ -426,6 +580,15 @@ public class InvoiceService(
         invoice.DiscountAmount = 0;
         invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount + invoice.TaxAmount);
 
+        if (invoice.SessionId > 0)
+        {
+            var session = await db.Sessions.FindAsync([invoice.SessionId], ct);
+            if (session != null && session.BookingId.HasValue)
+            {
+                await ApplyBookingDepositToInvoiceAsync(session, invoice, ct);
+            }
+        }
+
         if (invoice.PaidAmount >= invoice.GrandTotalAmount && invoice.GrandTotalAmount > 0)
         {
             invoice.PaymentStatus = InvoicePaymentStatuses.Paid;
@@ -433,164 +596,18 @@ public class InvoiceService(
         }
         else if (invoice.PaidAmount > 0)
         {
-            invoice.PaymentStatus = 1; // Partial
+            invoice.PaymentStatus = InvoicePaymentStatuses.PartiallyPaid;
+            if (invoice.Status == 2) invoice.Status = 1;
         }
         else
         {
-            invoice.PaymentStatus = 0; // Unpaid
+            invoice.PaymentStatus = InvoicePaymentStatuses.Unpaid;
+            if (invoice.Status == 2) invoice.Status = 1;
         }
 
+        ClearPayOsNoteCache(invoice);
         await db.SaveChangesAsync(ct);
     }
-
-    private async Task CloseSessionInternalAsync(long sessionId, long? closedByUserId, DateTime endUtc, CancellationToken ct)
-    {
-        var session = await db.Sessions.FindAsync([sessionId], ct);
-        if (session == null || session.Status == 2) return;
-
-        session.Status = 2; // Closed
-        session.EndedAtUtc = endUtc;
-        session.ClosedByUserId = closedByUserId;
-
-        var activeAssignments = await db.SessionTableAssignments
-            .Where(x => x.SessionId == sessionId && x.EndedAtUtc == null)
-            .ToListAsync(ct);
-
-        foreach (var assignment in activeAssignments)
-        {
-            assignment.EndedAtUtc = endUtc;
-            var table = await db.VenueTables.FindAsync([assignment.TableId], ct);
-            if (table != null)
-            {
-                table.OperationalStatus = 1; // Available
-                var rule = await FindActiveRuleAsync(table.TableTypeId, assignment.StartedAtUtc, ct);
-                var durationMinutes = (int)Math.Ceiling((endUtc - assignment.StartedAtUtc).TotalMinutes);
-                if (durationMinutes < 0) durationMinutes = 0;
-                assignment.DurationMinutes = durationMinutes;
-
-                if (rule != null)
-                {
-                    assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
-                    assignment.HourlyRateSnapshot = rule.HourlyRate;
-
-                    var billableMinutes = durationMinutes;
-                    if (billableMinutes < rule.MinimumMinutes)
-                    {
-                        billableMinutes = rule.MinimumMinutes;
-                    }
-                    if (rule.BillingBlockMinutes > 0)
-                    {
-                        var remainder = billableMinutes % rule.BillingBlockMinutes;
-                        if (remainder > 0)
-                        {
-                            billableMinutes += (rule.BillingBlockMinutes - remainder);
-                        }
-                    }
-                    assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
-                }
-                else
-                {
-                    throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thời điểm bắt đầu gán bàn");
-                }
-            }
-        }
-    }
-
-    private async Task<PricingPlanRule?> FindActiveRuleAsync(long tableTypeId, DateTime time, CancellationToken ct)
-    {
-        var utcTime = NormalizeUtc(time);
-        var localTime = ConvertUtcToVenueLocal(utcTime);
-        var dayOfWeek = (int)localTime.DayOfWeek;
-        var previousDayOfWeek = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
-        var timeOfDay = localTime.TimeOfDay;
-
-        var activePlans = await db.PricingPlans
-            .Where(p => p.IsActive && p.StartsAtUtc <= utcTime && (p.EndsAtUtc == null || p.EndsAtUtc >= utcTime))
-            .ToListAsync(ct);
-
-        if (!activePlans.Any()) return null;
-
-        var planIds = activePlans.OrderByDescending(p => p.IsDefault).Select(p => p.PricingPlanId).ToList();
-
-        foreach (var planId in planIds)
-        {
-            var candidates = await db.PricingPlanRules
-                .Where(r => r.PricingPlanId == planId &&
-                            r.TableTypeId == tableTypeId &&
-                            r.IsActive &&
-                            (r.DayOfWeek == dayOfWeek || r.DayOfWeek == previousDayOfWeek))
-                .OrderByDescending(r => r.DayOfWeek == dayOfWeek)
-                .ThenByDescending(r => r.PricingPlanRuleId)
-                .ToListAsync(ct);
-            var rule = candidates.FirstOrDefault(r => RuleMatchesLocalTime(r, dayOfWeek, timeOfDay));
-            if (rule != null) return rule;
-        }
-
-        return null;
-    }
-
-    private static bool RuleMatchesLocalTime(PricingPlanRule rule, int localDayOfWeek, TimeSpan localTime)
-    {
-        if (rule.StartTime < rule.EndTime)
-        {
-            return rule.DayOfWeek == localDayOfWeek &&
-                   rule.StartTime <= localTime &&
-                   localTime < rule.EndTime;
-        }
-
-        if (rule.StartTime > rule.EndTime)
-        {
-            return (rule.DayOfWeek == localDayOfWeek && localTime >= rule.StartTime) ||
-                   (NextDay(rule.DayOfWeek) == localDayOfWeek && localTime < rule.EndTime);
-        }
-
-        return rule.DayOfWeek == localDayOfWeek;
-    }
-
-    private static int NextDay(int dayOfWeek) => dayOfWeek == 6 ? 0 : dayOfWeek + 1;
-
-    private ConflictException BuildMissingPricingRuleException(VenueTable table, DateTime startedAtUtc, string context)
-    {
-        var utcTime = NormalizeUtc(startedAtUtc);
-        var localTime = ConvertUtcToVenueLocal(utcTime);
-        var message = $"Không tìm thấy bảng giá đang áp dụng cho bàn {table.TableCode} tại {context}.";
-        return new ConflictException(message, [
-            $"tableCode={table.TableCode}",
-            $"tableTypeId={table.TableTypeId}",
-            $"startedAtUtc={utcTime:O}",
-            $"venueLocalTime={localTime:O}",
-            $"dayOfWeek={(int)localTime.DayOfWeek}",
-            $"localTime={localTime.TimeOfDay}"
-        ]);
-    }
-
-    private DateTime ConvertUtcToVenueLocal(DateTime utcTime)
-    {
-        return TimeZoneInfo.ConvertTimeFromUtc(NormalizeUtc(utcTime), GetVenueTimeZone());
-    }
-
-    private TimeZoneInfo GetVenueTimeZone()
-    {
-        var configuredId = config?["Venue:TimeZoneId"] ?? "Asia/Ho_Chi_Minh";
-        foreach (var id in new[] { configuredId, "Asia/Ho_Chi_Minh", "SE Asia Standard Time" }.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            try
-            {
-                return TimeZoneInfo.FindSystemTimeZoneById(id);
-            }
-            catch (TimeZoneNotFoundException)
-            {
-            }
-            catch (InvalidTimeZoneException)
-            {
-            }
-        }
-
-        return TimeZoneInfo.Utc;
-    }
-
-    private static DateTime NormalizeUtc(DateTime time) =>
-        time.Kind == DateTimeKind.Utc ? time : DateTime.SpecifyKind(time, DateTimeKind.Utc);
 
     public async Task CancelInvoiceAsync(long invoiceId, string reason, long userId, CancellationToken ct)
     {
@@ -607,6 +624,12 @@ public class InvoiceService(
         invoice.Status = 3; // Cancelled
         invoice.Note = string.IsNullOrWhiteSpace(invoice.Note) ? $"Cancelled: {reason}" : $"{invoice.Note} | Cancelled: {reason}";
         
+        var existingDiscounts = await db.InvoiceDiscounts.Where(x => x.InvoiceId == invoiceId).ToListAsync(ct);
+        if (existingDiscounts.Count > 0)
+        {
+            db.InvoiceDiscounts.RemoveRange(existingDiscounts);
+        }
+
         await db.SaveChangesAsync(ct);
     }
 
@@ -663,7 +686,26 @@ public class InvoiceService(
                 string returnUrl = $"{baseUrl}/operation/invoices";
                 string description = $"HD{invoiceId}";
                 long orderCode = invoiceId;
+                string? payosQrString = null;
 
+                if (!string.IsNullOrEmpty(invoice.Note))
+                {
+                    var matchOrder = System.Text.RegularExpressions.Regex.Matches(invoice.Note, @"PayOS_OrderCode:(\d+)").LastOrDefault();
+                    if (matchOrder != null && matchOrder.Success && long.TryParse(matchOrder.Groups[1].Value, out var savedOrderCode))
+                    {
+                        orderCode = savedOrderCode;
+                    }
+
+                    var matchQr = System.Text.RegularExpressions.Regex.Matches(invoice.Note, @"PayOS_QrCode:([^\s|]+)").LastOrDefault();
+                    if (matchQr != null && matchQr.Success)
+                    {
+                        payosQrString = matchQr.Groups[1].Value;
+                    }
+                }
+
+                var client = httpClientFactory.CreateClient();
+
+                // 1. Thử tạo link thanh toán trên PayOS
                 string rawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
                 using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
                 var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawData));
@@ -679,18 +721,150 @@ public class InvoiceService(
                     signature = signature
                 };
 
-                var client = httpClientFactory.CreateClient();
-                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "https://api.payos.vn/v2/payment-requests");
+                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "https://api-merchant.payos.vn/v2/payment-requests");
                 req.Headers.Add("x-client-id", clientId);
                 req.Headers.Add("x-api-key", apiKey);
                 req.Content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(payosBody), System.Text.Encoding.UTF8, "application/json");
 
-                await client.SendAsync(req, ct);
+                var res = await client.SendAsync(req, ct);
+                var resStr = await res.Content.ReadAsStringAsync(ct);
+
+                if (res.IsSuccessStatusCode && !resStr.Contains("\"code\":\"233\""))
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(resStr);
+                    if (doc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        if (dataEl.TryGetProperty("qrCode", out var qrEl) && qrEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            payosQrString = qrEl.GetString();
+                        }
+                    }
+
+                    ClearPayOsNoteCache(invoice);
+                    invoice.Note = string.IsNullOrWhiteSpace(invoice.Note) ? $"PayOS_OrderCode:{orderCode}" : $"{invoice.Note} | PayOS_OrderCode:{orderCode}";
+                    if (!string.IsNullOrWhiteSpace(payosQrString))
+                    {
+                        invoice.Note = $"{invoice.Note} | PayOS_QrCode:{payosQrString}";
+                    }
+                    await db.SaveChangesAsync(ct);
+                }
+
+                // 2. Nếu PayOS báo lỗi mã đơn hàng đã tồn tại (code 233)
+                if (resStr.Contains("\"code\":\"233\"") || resStr.Contains("\"233\"") || resStr.Contains("tồn tại") || resStr.Contains("exists"))
+                {
+                    try
+                    {
+                        // Kiểm tra trạng thái link cũ trên PayOS
+                        var checkReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"https://api-merchant.payos.vn/v2/payment-requests/{orderCode}");
+                        checkReq.Headers.Add("x-client-id", clientId);
+                        checkReq.Headers.Add("x-api-key", apiKey);
+                        var checkRes = await client.SendAsync(checkReq, ct);
+                        bool needNewOrderCode = true;
+
+                        if (checkRes.IsSuccessStatusCode)
+                        {
+                            var checkStr = await checkRes.Content.ReadAsStringAsync(ct);
+                            using var checkDoc = System.Text.Json.JsonDocument.Parse(checkStr);
+                            if (checkDoc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == System.Text.Json.JsonValueKind.Object)
+                            {
+                                var st = data.TryGetProperty("status", out var stProp) ? stProp.GetString() : null;
+                                decimal existingAmt = 0m;
+                                if (data.TryGetProperty("amount", out var amProp) && amProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                {
+                                    amProp.TryGetDecimal(out existingAmt);
+                                }
+
+                                if (string.Equals(st, "PENDING", StringComparison.OrdinalIgnoreCase) && existingAmt == amount)
+                                {
+                                    if (data.TryGetProperty("qrCode", out var qrEl) && qrEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    {
+                                        payosQrString = qrEl.GetString();
+                                    }
+                                    if (string.IsNullOrWhiteSpace(payosQrString) && !string.IsNullOrWhiteSpace(invoice.Note))
+                                    {
+                                        var matchQr = System.Text.RegularExpressions.Regex.Match(invoice.Note, @"PayOS_QrCode:([^\s|]+)");
+                                        if (matchQr.Success)
+                                        {
+                                            payosQrString = matchQr.Groups[1].Value;
+                                        }
+                                    }
+                                    if (!string.IsNullOrWhiteSpace(payosQrString))
+                                    {
+                                        needNewOrderCode = false; // Link cũ vẫn PENDING và có sẵn chuỗi PayOS QR, dùng tiếp
+                                    }
+                                }
+                            }
+                        }
+
+                        // Nếu link cũ đã bị HỦY, HẾT HẠN, đã thanh toán trên PayOS (trong khi hoá đơn chưa thanh toán) hoặc không lấy được qrCode -> Tạo orderCode mới duy nhất
+                        if (needNewOrderCode)
+                        {
+                            long newOrderCode = long.Parse($"{DateTime.UtcNow:yyMMddHHmmss}{Random.Shared.Next(10, 99)}");
+                            string newRawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={newOrderCode}&returnUrl={returnUrl}";
+                            using var newHmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
+                            var newHash = newHmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(newRawData));
+                            var newSignature = BitConverter.ToString(newHash).Replace("-", "").ToLower();
+
+                            var newBody = new
+                            {
+                                orderCode = newOrderCode,
+                                amount = amount,
+                                description = description,
+                                cancelUrl = cancelUrl,
+                                returnUrl = returnUrl,
+                                signature = newSignature
+                            };
+
+                            var retryReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "https://api-merchant.payos.vn/v2/payment-requests");
+                            retryReq.Headers.Add("x-client-id", clientId);
+                            retryReq.Headers.Add("x-api-key", apiKey);
+                            retryReq.Content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(newBody), System.Text.Encoding.UTF8, "application/json");
+                            var retryRes = await client.SendAsync(retryReq, ct);
+                            var retryStr = await retryRes.Content.ReadAsStringAsync(ct);
+
+                            if (retryRes.IsSuccessStatusCode && !retryStr.Contains("\"code\":\"233\""))
+                            {
+                                using var retryDoc = System.Text.Json.JsonDocument.Parse(retryStr);
+                                if (retryDoc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+                                {
+                                    if (dataEl.TryGetProperty("qrCode", out var qrEl) && qrEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    {
+                                        payosQrString = qrEl.GetString();
+                                    }
+                                }
+
+                                ClearPayOsNoteCache(invoice);
+                                invoice.Note = string.IsNullOrWhiteSpace(invoice.Note) ? $"PayOS_OrderCode:{newOrderCode}" : $"{invoice.Note} | PayOS_OrderCode:{newOrderCode}";
+                                if (!string.IsNullOrWhiteSpace(payosQrString))
+                                {
+                                    invoice.Note = $"{invoice.Note} | PayOS_QrCode:{payosQrString}";
+                                }
+                                await db.SaveChangesAsync(ct);
+                            }
+                        }
+                    }
+                    catch {}
+                }
+
+                if (!string.IsNullOrWhiteSpace(payosQrString))
+                {
+                    return $"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={Uri.EscapeDataString(payosQrString)}";
+                }
             }
             catch {}
         }
 
-        return BankTransferQrHelper.BuildVietQrUrl(qrConfig, amount, addInfo);
+        throw new BusinessRuleException("Hệ thống hiện tại chỉ hỗ trợ thanh toán chuyển khoản qua cổng PayOS. Vui lòng kiểm tra lại cấu hình PayOS hoặc liên hệ quản trị viên.");
+    }
+
+    private static void ClearPayOsNoteCache(EntityInvoice invoice)
+    {
+        if (!string.IsNullOrWhiteSpace(invoice.Note))
+        {
+            invoice.Note = System.Text.RegularExpressions.Regex.Replace(invoice.Note, @"PayOS_OrderCode:\d+\s*\|?\s*", "").Trim(' ', '|');
+            invoice.Note = System.Text.RegularExpressions.Regex.Replace(invoice.Note, @"PayOS_QrCode:[^\s|]+\s*\|?\s*", "").Trim(' ', '|');
+            if (string.IsNullOrWhiteSpace(invoice.Note)) invoice.Note = null;
+        }
     }
 
     public async Task<InvoiceDto> UpdateInvoiceProductsAsync(long id, UpdateInvoiceProductsRequest request, long? userId, CancellationToken ct)
@@ -903,7 +1077,8 @@ public class InvoiceService(
             var discount = await db.Discounts.FindAsync([existingDiscount.DiscountId], ct);
             if (discount != null)
             {
-                if (discount.MinTimeSubtotal.HasValue && invoice.TimeSubtotalAmount < discount.MinTimeSubtotal.Value)
+                if ((discount.MinTimeSubtotal.HasValue && invoice.TimeSubtotalAmount < discount.MinTimeSubtotal.Value)
+                    || (discount.CustomerId.HasValue && invoice.CustomerId != discount.CustomerId.Value))
                 {
                     db.InvoiceDiscounts.Remove(existingDiscount);
                     invoice.DiscountAmount = 0;
@@ -954,6 +1129,7 @@ public class InvoiceService(
             invoice.PaymentStatus = InvoicePaymentStatuses.Unpaid;
         }
 
+        ClearPayOsNoteCache(invoice);
         await db.SaveChangesAsync(ct);
 
         if (posNotificationService != null)
@@ -962,6 +1138,63 @@ public class InvoiceService(
         }
 
         return MapInvoiceDto(invoice);
+    }
+
+    public async Task<InvoiceDetailDto> UpdateInvoiceCustomerAsync(long id, UpdateInvoiceCustomerRequest request, long? userId, CancellationToken ct)
+    {
+        var invoice = await db.Invoices.FindAsync([id], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.Status == 3) throw new BusinessRuleException("Cannot modify a cancelled invoice.");
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid) throw new BusinessRuleException("Cannot modify a fully paid invoice.");
+
+        PoolHub.Core.Entities.Customer? customer = null;
+        if (request.CustomerId.HasValue)
+        {
+            customer = await db.Customers.FindAsync([request.CustomerId.Value], ct)
+                ?? throw new NotFoundException("Khách hàng không tồn tại.");
+        }
+        else if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            var phone = request.PhoneNumber.Trim();
+            customer = await db.Customers.FirstOrDefaultAsync(c => c.PhoneNumber == phone && c.Status, ct);
+            if (customer == null)
+            {
+                customer = new PoolHub.Core.Entities.Customer
+                {
+                    FullName = !string.IsNullOrWhiteSpace(request.FullName) ? request.FullName.Trim() : $"Khách hàng ({phone})",
+                    PhoneNumber = phone,
+                    Status = true,
+                    CreatedAtUtc = _clock.UtcNow
+                };
+                db.Customers.Add(customer);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        if (invoice.CustomerId != customer?.CustomerId)
+        {
+            invoice.CustomerId = customer?.CustomerId;
+            if (invoice.SessionId > 0)
+            {
+                var session = await db.Sessions.FindAsync([invoice.SessionId], ct);
+                if (session != null) session.CustomerId = customer?.CustomerId;
+            }
+
+            var existingDiscount = await db.InvoiceDiscounts.FirstOrDefaultAsync(x => x.InvoiceId == id, ct);
+            if (existingDiscount != null)
+            {
+                var discount = await db.Discounts.FindAsync([existingDiscount.DiscountId], ct);
+                if (discount != null && discount.CustomerId.HasValue && discount.CustomerId != invoice.CustomerId)
+                {
+                    db.InvoiceDiscounts.Remove(existingDiscount);
+                    invoice.DiscountAmount = 0;
+                    invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount - invoice.DiscountAmount + invoice.TaxAmount);
+                }
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        return await GetInvoiceDetailAsync(id, ct);
     }
 
     private async Task ApplyBookingDepositToInvoiceAsync(PoolHub.Core.Entities.Session session, EntityInvoice invoice, CancellationToken ct)
@@ -991,13 +1224,16 @@ public class InvoiceService(
             await db.SaveChangesAsync(ct);
         }
 
+        if (await db.Payments.AnyAsync(x => x.InvoiceId == invoice.InvoiceId && x.PaymentMethodId == paymentMethod.PaymentMethodId, ct))
+            return;
+
         db.Payments.Add(new Payment
         {
             InvoiceId = invoice.InvoiceId,
             PaymentMethodId = paymentMethod.PaymentMethodId,
             Amount = appliedAmount,
             PaymentStatus = PaymentStatuses.Completed,
-            TransactionCode = deposit.TransactionCode,
+            TransactionCode = $"DEPAPP{_clock.UtcNow:HHmmssddMMyyyy}",
             PaidAtUtc = _clock.UtcNow,
             Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
         });
@@ -1009,6 +1245,7 @@ public class InvoiceService(
         if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
         {
             invoice.Status = 2;
+            await ProcessInvoicePaidRewardsAsync(invoice, ct);
         }
 
         deposit.AppliedAmount = appliedAmount;
@@ -1036,6 +1273,49 @@ public class InvoiceService(
         PaidAmount = invoice.PaidAmount,
         RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount)
     };
+
+    private async Task ProcessInvoicePaidRewardsAsync(EntityInvoice invoice, CancellationToken ct)
+    {
+        var appliedDiscounts = await db.InvoiceDiscounts.Where(x => x.InvoiceId == invoice.InvoiceId).ToListAsync(ct);
+        foreach (var ad in appliedDiscounts)
+        {
+            var disc = await db.Discounts.FindAsync([ad.DiscountId], ct);
+            if (disc != null)
+            {
+                disc.UsageCount++;
+                if (disc.MaxUsage > 0 && disc.UsageCount >= disc.MaxUsage)
+                {
+                    disc.IsActive = false;
+                }
+                db.Discounts.Update(disc);
+            }
+        }
+
+        if (invoice.CustomerId.HasValue)
+        {
+            var customer = await db.Customers.FindAsync([invoice.CustomerId.Value], ct);
+            if (customer != null && customer.Status)
+            {
+                int earnedPoints = (int)(invoice.GrandTotalAmount / 1000m);
+                if (earnedPoints > 0)
+                {
+                    customer.LoyaltyPoints += earnedPoints;
+                    customer.TotalPointsEarned += earnedPoints;
+                    db.Customers.Update(customer);
+
+                    db.CustomerPointHistories.Add(new CustomerPointHistory
+                    {
+                        CustomerId = customer.CustomerId,
+                        Points = earnedPoints,
+                        TransactionType = "EARN",
+                        Description = $"Tích điểm từ hóa đơn {invoice.InvoiceCode} ({invoice.GrandTotalAmount:N0} VND)",
+                        ReferenceId = invoice.InvoiceId,
+                        CreatedAtUtc = _clock.UtcNow
+                    });
+                }
+            }
+        }
+    }
 
     private sealed class NoOpPosNotificationService : IPosNotificationService
     {

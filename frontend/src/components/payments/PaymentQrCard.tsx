@@ -17,7 +17,7 @@ export type PaymentQrCardProps = {
 };
 
 export function PaymentQrCard({
-  title = "Quét mã VietQR để thanh toán",
+  title = "Quét mã QR để thanh toán",
   qrUrl,
   bankName,
   bankCode,
@@ -37,7 +37,7 @@ export function PaymentQrCard({
   return (
     <div style={{ background: "#f8fbfa", border: "1.5px solid #0f5d4b", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
       <div style={{ fontWeight: 700, fontSize: 15, color: "#0f5d4b", display: "flex", alignItems: "center", gap: 6 }}>
-        <span>QR</span> {title}
+        {title}
       </div>
 
       {qrUrl ? (
@@ -53,7 +53,6 @@ export function PaymentQrCard({
         <InfoRow
           label="Số tài khoản"
           value={accountNumber || "-"}
-          action={accountNumber ? <button type="button" className="ghost-btn compact" style={{ padding: "2px 8px", fontSize: 12 }} onClick={() => copy(accountNumber, "Đã sao chép số tài khoản.")}>Sao chép</button> : null}
         />
         <InfoRow label="Chủ tài khoản" value={accountName || "-"} />
         <InfoRow label="Số tiền" value={money(amount)} strongColor="#0f5d4b" />

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { invoiceApi, sessionApi, productApi } from "@/lib/api/endpoints";
+import { invoiceApi, sessionApi, productApi, discountApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
@@ -11,26 +11,36 @@ import { parseBankTransferConfig } from "@/lib/paymentQr";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session } from "@/types";
+import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session, Discount } from "@/types";
 
 export default function InvoicesPage() {
   const toast = useToast();
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const invoiceRef = useRef<Invoice | null>(null);
+  useEffect(() => { invoiceRef.current = invoice; }, [invoice]);
   const [reviewInvitation, setReviewInvitation] = useState<ReviewInvitationLink | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState<number | "">("");
   const [confirmPayment, setConfirmPayment] = useState(false);
+  const [qrExpiresAt, setQrExpiresAt] = useState<number | null>(null);
+  const [qrCountdown, setQrCountdown] = useState<string>("");
   const [cancelReason, setCancelReason] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
+  const [discountMessage, setDiscountMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
+  const [availableDiscounts, setAvailableDiscounts] = useState<Discount[]>([]);
+  const [loadingDiscounts, setLoadingDiscounts] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editProducts, setEditProducts] = useState<{ productId: number; name: string; quantity: number; unitPrice: number }[]>([]);
   const [allProductsList, setAllProductsList] = useState<Product[]>([]);
   const [selectedAddProductId, setSelectedAddProductId] = useState("");
   const [addQty, setAddQty] = useState(1);
   const [savingProducts, setSavingProducts] = useState(false);
+  const [loyaltyPhone, setLoyaltyPhone] = useState("");
+  const [loyaltyName, setLoyaltyName] = useState("");
+  const [updatingCustomer, setUpdatingCustomer] = useState(false);
   const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "" });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods, sessions, allInvoices] = await Promise.all([
@@ -64,8 +74,12 @@ export default function InvoicesPage() {
   });
 
   const loadDetail = useCallback(async (id: number) => {
-    setInvoice(await invoiceApi.detail(id));
+    const detail = await invoiceApi.detail(id);
+    setInvoice(detail);
     setReviewInvitation(null);
+    setLoyaltyPhone("");
+    setLoyaltyName("");
+    setQrExpiresAt(null);
   }, []);
 
   useEffect(() => {
@@ -75,6 +89,42 @@ export default function InvoicesPage() {
     loadDetail(invoiceId).catch((err) => toast(err.message || "Không tải được hóa đơn.", "error"));
   }, [loadDetail, toast]);
 
+  useEffect(() => {
+    const current = invoiceRef.current;
+    if (!current || Number(current.paymentStatus) === 3 || Number(current.status) === 3) {
+      return;
+    }
+    const hasQrSession = Boolean(qrExpiresAt) || Boolean(current.note && current.note.includes("PayOS_OrderCode:")) || Boolean(paymentMethodId);
+    if (!hasQrSession) {
+      return;
+    }
+    const checkInvoicePayment = async () => {
+      const inv = invoiceRef.current;
+      if (!inv || Number(inv.paymentStatus) === 3 || Number(inv.status) === 3) return;
+      try {
+        const updated = await invoiceApi.detail(inv.invoiceId);
+        if (Number(updated.paymentStatus) === 3 || (Number(updated.paidAmount || 0) > 0 && Number(updated.paidAmount || 0) >= Number(updated.grandTotalAmount || 0))) {
+          setInvoice(updated);
+          setQrExpiresAt(null);
+          setPaymentMethodId("");
+          setConfirmPayment(false);
+          toast("🎉 Chuyển khoản thành công! Hóa đơn đã được kiểm tra và hoàn tất thanh toán.", "success");
+          reload(true);
+        } else if (updated.paidAmount !== undefined && inv.paidAmount !== undefined && updated.paidAmount > inv.paidAmount) {
+          setInvoice(updated);
+          reload(true);
+          toast(`Đã nhận được thanh toán chuyển khoản: ${money((updated.paidAmount || 0) - (inv.paidAmount || 0))}`, "success");
+        } else if (updated.note !== inv.note || updated.status !== inv.status) {
+          setInvoice(updated);
+        }
+      } catch {
+        // Ignore polling errors during background check
+      }
+    };
+    const timer = window.setInterval(checkInvoicePayment, 1000);
+    return () => window.clearInterval(timer);
+  }, [qrExpiresAt, paymentMethodId, reload, toast]);
+
   async function pay() {
     if (!invoice) return;
     if (!paymentMethodId) {
@@ -83,12 +133,18 @@ export default function InvoicesPage() {
     }
     try {
       const amountDue = Math.max(0, Number(invoice.remainingAmount ?? ((invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0))));
-      const payment = await invoiceApi.pay({ invoiceId: invoice.invoiceId, paymentMethodId: Number(paymentMethodId), amount: amountDue });
+      const payment = await invoiceApi.pay({
+        invoiceId: invoice.invoiceId,
+        paymentMethodId: Number(paymentMethodId),
+        amount: amountDue,
+        phoneNumber: loyaltyPhone.trim() || undefined,
+        customerName: loyaltyName.trim() || undefined
+      });
       toast("Đã ghi nhận thanh toán.", "success");
       const detail = await invoiceApi.detail(invoice.invoiceId);
       setReviewInvitation(payment.reviewInvitation || null);
       setInvoice({ ...detail, reviewInvitation: payment.reviewInvitation });
-      await reload();
+      await reload(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể ghi nhận thanh toán.", "error");
       await loadDetail(invoice.invoiceId);
@@ -106,25 +162,68 @@ export default function InvoicesPage() {
         setCancelOpen(false);
         setCancelReason("");
         await loadDetail(invoice.invoiceId);
-        reload();
+        await reload(true);
       })
       .catch(err => toast(err.message, "error"));
   }
 
-  async function applyDiscount() {
-    if (!invoice || !discountCode.trim()) {
-      toast("Vui lòng nhập mã giảm giá.", "error");
+  const openDiscountModal = async () => {
+    setDiscountOpen(true);
+    setDiscountMessage(null);
+    setDiscountCode("");
+    setLoadingDiscounts(true);
+    try {
+      let personal: Discount[] = [];
+      if (invoice?.customerId) {
+        const res = await discountApi.list({ CustomerId: invoice.customerId, IsActive: true, PageSize: 50 });
+        personal = Array.isArray(res) ? res : (res as any)?.items || [];
+      }
+
+      const now = new Date();
+      const validVouchers = personal.filter((d: Discount) => {
+        if (!d.isActive) return false;
+        if (!d.isVoucher || !d.customerId || (d.pointsRequired || 0) > 0) return false;
+        if (d.endsAtUtc && new Date(String(d.endsAtUtc)) < now) return false;
+        if (d.maxUsage && (d.usageCount || 0) >= d.maxUsage) return false;
+        if ((d.usageCount || 0) > 0) return false;
+        return true;
+      });
+      setAvailableDiscounts(validVouchers);
+    } catch (err) {
+      console.error("Failed to load discounts", err);
+    } finally {
+      setLoadingDiscounts(false);
+    }
+  };
+
+  async function applyDiscount(codeToApply?: string) {
+    const targetCode = (typeof codeToApply === "string" ? codeToApply : discountCode).trim();
+    if (!invoice || !targetCode) {
+      setDiscountMessage({ text: "Vui lòng nhập hoặc chọn mã giảm giá.", type: "error" });
+      toast("Vui lòng nhập hoặc chọn mã giảm giá.", "error");
       return;
     }
-    await invoiceApi.discount(invoice.invoiceId, discountCode.trim())
+    if (typeof codeToApply === "string") {
+      setDiscountCode(codeToApply);
+    }
+    setDiscountMessage(null);
+    await invoiceApi.discount(invoice.invoiceId, targetCode)
       .then(async () => {
+        setDiscountMessage({ text: `Đã áp dụng mã "${targetCode}" thành công!`, type: "success" });
         toast("Đã áp dụng mã giảm giá.", "success");
-        setDiscountOpen(false);
-        setDiscountCode("");
+        setTimeout(async () => {
+          setDiscountOpen(false);
+          setDiscountCode("");
+          setDiscountMessage(null);
+        }, 1000);
         await loadDetail(invoice.invoiceId);
         reload();
       })
-      .catch(err => toast(err.message, "error"));
+      .catch(err => {
+        const msg = err.message || "Áp dụng mã giảm giá thất bại.";
+        setDiscountMessage({ text: msg, type: "error" });
+        toast(msg, "error");
+      });
   }
 
   async function removeDiscount() {
@@ -151,7 +250,7 @@ export default function InvoicesPage() {
 
   const updateEditQty = (productId: number, qty: number) => {
     if (qty < 0) qty = 0;
-    
+
     const found = allProductsList.find((p) => p.productId === productId);
     const originalLine = (invoice?.lines || []).find(l => l.lineType === "PRODUCT" && l.productId === productId);
     const originalQty = originalLine ? Number(originalLine.quantity) : 0;
@@ -299,7 +398,7 @@ export default function InvoicesPage() {
         onChange={(page) => setParams((prev) => ({ ...prev, pageNumber: page }))}
       />
       {invoice ? (
-        <Modal title={invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`} onClose={() => setInvoice(null)} size="large">
+        <Modal title={invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`} onClose={() => { setInvoice(null); setQrExpiresAt(null); }} size="large">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--line)' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
@@ -413,7 +512,7 @@ export default function InvoicesPage() {
             <div style={{ marginBottom: '24px', background: '#fff9e6', border: '1px solid #ffe0b2', padding: '12px 16px', borderRadius: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <span style={{ fontWeight: 600, fontSize: '14px', color: '#b76e00' }}>🎟️ Khuyến mãi đã áp dụng:</span>
-                {invoice.status !== 3 && invoice.paymentStatus !== 2 && (
+                {Number(invoice.status) !== 3 && Number(invoice.paymentStatus) !== 3 && (
                   <button type="button" className="ghost-btn" style={{ fontSize: '12px', padding: '2px 8px', color: '#d9534f', cursor: 'pointer' }} onClick={removeDiscount}>
                     🗑️ Gỡ mã
                   </button>
@@ -461,6 +560,62 @@ export default function InvoicesPage() {
             </div>
           </div>
 
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px 16px', borderRadius: '10px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontWeight: 600, fontSize: '14px', color: '#166534' }}>🪙 Tích điểm & Khách hàng:</span>
+              {invoice.customerId ? (
+                <span className="badge green" style={{ fontSize: '12px' }}>Đã gắn ID Khách: #{invoice.customerId}</span>
+              ) : (
+                <span className="badge yellow" style={{ fontSize: '12px' }}>Chưa gắn khách</span>
+              )}
+            </div>
+            {Number(invoice.paymentStatus) !== 3 && Number(invoice.status) !== 3 && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginTop: '10px' }}>
+                <label style={{ flex: '1 1 180px' }}>
+                  <span style={{ fontSize: '12px', color: '#15803d', display: 'block', marginBottom: '4px' }}>Số điện thoại (Tích điểm / Dùng Voucher)</span>
+                  <input
+                    type="text"
+                    placeholder="Nhập SĐT..."
+                    value={loyaltyPhone}
+                    onChange={(e) => setLoyaltyPhone(e.target.value)}
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac', background: '#fff' }}
+                  />
+                </label>
+                <label style={{ flex: '1 1 180px' }}>
+                  <span style={{ fontSize: '12px', color: '#15803d', display: 'block', marginBottom: '4px' }}>Tên khách (nếu tạo mới)</span>
+                  <input
+                    type="text"
+                    placeholder="Tên khách hàng..."
+                    value={loyaltyName}
+                    onChange={(e) => setLoyaltyName(e.target.value)}
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac', background: '#fff' }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  style={{ height: '36px', background: '#16a34a', color: '#fff', border: 'none' }}
+                  disabled={updatingCustomer || !loyaltyPhone.trim()}
+                  onClick={async () => {
+                    if (!loyaltyPhone.trim()) return;
+                    setUpdatingCustomer(true);
+                    try {
+                      const updated = await invoiceApi.updateCustomer(invoice.invoiceId, { phoneNumber: loyaltyPhone.trim(), fullName: loyaltyName.trim() || undefined });
+                      setInvoice(updated);
+                      toast("Đã gắn/cập nhật thông tin SĐT cho hóa đơn.", "success");
+                    } catch (err) {
+                      toast(err instanceof Error ? err.message : "Cập nhật thất bại.", "error");
+                    } finally {
+                      setUpdatingCustomer(false);
+                    }
+                  }}
+                >
+                  {updatingCustomer ? "Đang xử lý..." : "Gắn SĐT ngay"}
+                </button>
+              </div>
+            )}
+          </div>
+
           {Number(invoice.status) === 3 ? (
             <div className="state-card" style={{ background: '#fdeded', color: '#5f2120', border: '1px solid #f4c3c2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               Hóa đơn này đã bị hủy.
@@ -468,12 +623,15 @@ export default function InvoicesPage() {
           ) : Number(invoice.paymentStatus) !== 3 ? (
             <div style={{ background: 'var(--soft)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <select style={{ flex: '1 1 220px' }} value={paymentMethodId} onChange={(event) => setPaymentMethodId(Number(event.target.value))}>
+                <select style={{ flex: '1 1 220px' }} value={paymentMethodId} onChange={(event) => {
+                  const val = Number(event.target.value);
+                  setPaymentMethodId(val ? val : "");
+                }}>
                   <option value="">-- Chọn phương thức thanh toán --</option>
                   {methods.map((method) => <option key={method.paymentMethodId} value={method.paymentMethodId}>{method.name}</option>)}
                 </select>
                 <button className="primary-btn" onClick={() => setConfirmPayment(true)}>Thanh toán ngay</button>
-                <button className="ghost-btn" onClick={() => setDiscountOpen(true)}>Áp dụng mã giảm giá</button>
+                <button className="ghost-btn" onClick={openDiscountModal}>Áp dụng mã giảm giá</button>
                 <button className="danger-btn" style={{ marginLeft: "auto" }} onClick={() => setCancelOpen(true)}>Hủy hóa đơn</button>
               </div>
 
@@ -484,28 +642,69 @@ export default function InvoicesPage() {
 
                 const amount = Math.max(0, Number(invoice.remainingAmount ?? ((invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0))));
                 const addInfo = `HD${invoice.invoiceId}`;
-                const qrUrl = `${API_BASE_URL}/api/invoices/${invoice.invoiceId}/qr-code?amt=${amount}&t=${Date.now()}`;
+                const qrUrl = `${API_BASE_URL}/api/invoices/${invoice.invoiceId}/qr-code?amt=${amount}&_ts=${amount}_${invoice.discountAmount || 0}`;
 
                 return (
-                  <PaymentQrCard
-                    title="Quét mã VietQR để thanh toán tự động"
-                    qrUrl={qrUrl || bankConfig.qrImageUrl}
-                    bankName={bankConfig.bankName}
-                    bankCode={bankConfig.bankCode}
-                    accountNumber={bankConfig.accountNumber}
-                    accountName={bankConfig.accountName}
-                    amount={amount}
-                    transferContent={addInfo}
-                    note="Khách hàng mở ứng dụng ngân hàng hoặc ví điện tử hỗ trợ VietQR để quét mã. Số tiền và nội dung sẽ được điền theo hóa đơn."
-                    onCopy={(message) => toast(message, "success")}
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <PaymentQrCard
+                      title="Quét mã QR để thanh toán tự động"
+                      qrUrl={qrUrl}
+                      bankName={bankConfig.bankName}
+                      bankCode={bankConfig.bankCode}
+                      accountNumber={bankConfig.accountNumber}
+                      accountName={bankConfig.accountName}
+                      amount={amount}
+                      transferContent={addInfo}
+                      note="Khách hàng mở ứng dụng ngân hàng quét mã PayOS. Khi tiền vào tài khoản, hóa đơn sẽ tự động hoàn tất và đóng thông báo."
+                      onCopy={(message) => toast(message, "success")}
+                    />
+                  </div>
                 );
               })()}
             </div>
           ) : (
-            <>
-              <div className="state-card" style={{ background: '#e4f7ec', color: '#187344', border: '1px solid #c2ebd5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                Hóa đơn này đã được thanh toán hoàn tất. Không thể sửa đổi hay thanh toán thêm.
+            <div style={{ animation: 'fadeIn 0.4s ease-out' }}>
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                  padding: '32px 24px',
+                  borderRadius: '16px',
+                  border: '1px solid #10b981',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  gap: '16px',
+                  boxShadow: '0 10px 30px -10px rgba(16, 185, 129, 0.25)',
+                  minHeight: '280px',
+                  transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+              >
+                <div style={{
+                  width: '68px',
+                  height: '68px',
+                  borderRadius: '50%',
+                  background: '#10b981',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '36px',
+                  boxShadow: '0 0 0 12px rgba(16, 185, 129, 0.2)',
+                  fontWeight: 'bold',
+                  animation: 'popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                }}>
+                  ✓
+                </div>
+                <div>
+                  <h3 style={{ margin: '0 0 8px', color: '#065f46', fontSize: '20px', fontWeight: 700 }}>
+                    Hóa đơn này đã được thanh toán hoàn tất!
+                  </h3>
+                  <p style={{ margin: 0, color: '#047857', fontSize: '15px', lineHeight: '1.5', maxWidth: '450px' }}>
+                    Hóa đơn đã được ghi nhận thanh toán thành công. Bạn có thể in hóa đơn chi tiết hoặc gửi link đánh giá trải nghiệm dịch vụ cho khách hàng ngay bên dưới.
+                  </p>
+                </div>
               </div>
               <ReviewInvitationPanel
                 invoiceId={invoice.invoiceId}
@@ -515,15 +714,141 @@ export default function InvoicesPage() {
                   setInvoice((current) => current ? { ...current, reviewInvitation: value } : current);
                 }}
               />
-            </>
+            </div>
           )}
         </Modal>
       ) : null}
       {confirmPayment && invoice ? <ConfirmDialog title="Ghi nhận thanh toán" message={`Xác nhận thanh toán ${money(invoice.remainingAmount ?? Math.max(0, (invoice.grandTotalAmount || 0) - (invoice.paidAmount || 0)))} cho hóa đơn này?`} confirmLabel="Thanh toán" onCancel={() => setConfirmPayment(false)} onConfirm={async () => { setConfirmPayment(false); await pay(); }} /> : null}
-      {discountOpen && invoice ? <Modal title="Áp dụng mã giảm giá" onClose={() => setDiscountOpen(false)}>
-        <div className="form-stack">
-          <label><span>Mã giảm giá</span><input value={discountCode} onChange={(event) => setDiscountCode(event.target.value)} placeholder="Nhập mã giảm giá..." autoFocus /></label>
-          <div className="modal-actions"><button className="ghost-btn" onClick={() => setDiscountOpen(false)}>Hủy</button><button className="primary-btn" onClick={applyDiscount}>Áp dụng</button></div>
+      {discountOpen && invoice ? <Modal title="Áp dụng mã giảm giá / Voucher" onClose={() => { setDiscountOpen(false); setDiscountMessage(null); }} size="large">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)' }}>
+            <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: '#334155' }}>⌨️ Nhập mã thủ công</h4>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                value={discountCode}
+                onChange={(event) => { setDiscountCode(event.target.value); setDiscountMessage(null); }}
+                placeholder="Nhập mã giảm giá hoặc mã voucher..."
+                autoFocus
+                style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                onKeyDown={(e) => { if (e.key === 'Enter') applyDiscount(); }}
+              />
+              <button className="primary-btn" onClick={() => applyDiscount()}>Áp dụng</button>
+            </div>
+          </div>
+
+          {discountMessage ? (
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: '8px',
+              background: discountMessage.type === 'error' ? '#feecec' : '#e4f7ec',
+              color: discountMessage.type === 'error' ? '#b33939' : '#187344',
+              border: `1px solid ${discountMessage.type === 'error' ? '#fcd5d5' : '#c2ebd5'}`,
+              fontSize: '14px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              margin: '0'
+            }}>
+              <span style={{ fontSize: '18px' }}>{discountMessage.type === 'error' ? '⚠️' : '✅'}</span>
+              <span>{discountMessage.text}</span>
+            </div>
+          ) : null}
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h4 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>
+                🎁 Danh sách Voucher đã đổi {invoice.customerName ? `của khách hàng ${invoice.customerName}` : ""}
+              </h4>
+              <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{availableDiscounts.length} voucher khả dụng</span>
+            </div>
+
+            {!invoice.customerId && (
+              <div style={{ padding: '10px 14px', background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '13px', marginBottom: '12px' }}>
+                💡 Hóa đơn chưa gắn với Khách hàng. Vui lòng quay lại gắn SĐT/Tên khách hàng trước để xem danh sách Voucher đã đổi của khách!
+              </div>
+            )}
+
+            {loadingDiscounts ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)' }}>Đang tải danh sách Voucher...</div>
+            ) : availableDiscounts.length === 0 ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)', background: '#f9fafb', borderRadius: '10px', border: '1px dashed var(--line)' }}>
+                {invoice.customerId ? "Khách hàng này hiện không có Voucher đổi điểm nào khả dụng." : "Vui lòng chọn khách hàng cho hóa đơn để hiển thị Voucher."}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px', maxHeight: '350px', overflowY: 'auto', padding: '4px' }}>
+                {availableDiscounts.map((d) => {
+                  const isPersonal = Boolean(d.customerId);
+                  const isSelected = discountCode.trim().toUpperCase() === d.discountCode.toUpperCase();
+                  return (
+                    <div
+                      key={d.discountId}
+                      onClick={() => setDiscountCode(d.discountCode)}
+                      style={{
+                        border: isSelected ? '2px solid #2563eb' : '1px solid var(--line)',
+                        borderRadius: '10px',
+                        padding: '14px',
+                        background: isSelected ? '#eff6ff' : '#ffffff',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.1)' : 'none'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                          <span style={{
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            color: isPersonal ? '#7c3aed' : '#2563eb',
+                            background: isPersonal ? '#f5f3ff' : '#eff6ff',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: `1px solid ${isPersonal ? '#ddd6fe' : '#bfdbfe'}`
+                          }}>
+                            {d.discountCode}
+                          </span>
+                          <span style={{ fontSize: '11px', color: isPersonal ? '#6d28d9' : '#0369a1', fontWeight: 600 }}>
+                            {isPersonal ? "🎁 Voucher cá nhân" : "🎟️ Khuyến mãi chung"}
+                          </span>
+                        </div>
+                        <h5 style={{ margin: '6px 0', fontSize: '15px', color: '#1e293b' }}>{d.name}</h5>
+                        <div style={{ fontSize: '14px', color: '#059669', fontWeight: 'bold', marginBottom: '6px' }}>
+                          Giảm {d.discountType === 'PERCENTAGE' ? `${d.value}%${d.maxAmount ? ` (Tối đa ${money(d.maxAmount)})` : ''}` : money(d.value || 0)}
+                        </div>
+                        {d.minTimeSubtotal ? (
+                          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Đơn giờ chơi từ: {money(d.minTimeSubtotal)}</div>
+                        ) : null}
+                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
+                          HSD: {d.endsAtUtc ? dateTime(String(d.endsAtUtc)) : "Vô thời hạn"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className={isSelected ? "primary-btn" : "ghost-btn"}
+                        style={{ width: '100%', marginTop: '12px', padding: '8px' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          applyDiscount(d.discountCode);
+                        }}
+                      >
+                        {isSelected ? "⚡ Áp dụng ngay" : "Chọn & Áp dụng"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
+            {invoice.discounts && invoice.discounts.length > 0 && Number(invoice.status) !== 3 && Number(invoice.paymentStatus) !== 3 ? (
+              <button type="button" className="danger-btn" onClick={async () => { await removeDiscount(); setDiscountOpen(false); }}>🗑️ Gỡ khuyến mãi đang dùng</button>
+            ) : null}
+            <button type="button" className="ghost-btn" onClick={() => { setDiscountOpen(false); setDiscountMessage(null); }}>Đóng</button>
+          </div>
         </div>
       </Modal> : null}
       {cancelOpen && invoice ? <Modal title="Hủy hóa đơn" onClose={() => setCancelOpen(false)}>
@@ -535,6 +860,37 @@ export default function InvoicesPage() {
       {editModalOpen && invoice ? (
         <Modal title={`Chỉnh sửa dịch vụ/sản phẩm - ${invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`}`} onClose={() => setEditModalOpen(false)} size="large">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ background: 'var(--soft)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+              <h5 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600 }}>Thêm sản phẩm mới</h5>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 250px' }}>
+                  <span style={{ fontSize: '13px', display: 'block', marginBottom: '4px', color: 'var(--muted)' }}>Chọn sản phẩm</span>
+                  <SearchableSelect
+                    options={allProductsList.map((prod) => ({
+                      value: String(prod.productId),
+                      label: `${prod.name} - ${money(prod.unitPrice)} (Tồn: ${prod.stockQuantity})`
+                    }))}
+                    value={selectedAddProductId}
+                    onChange={setSelectedAddProductId}
+                    placeholder="-- Tìm kiếm sản phẩm để thêm --"
+                  />
+                </div>
+                <div style={{ width: '100px' }}>
+                  <span style={{ fontSize: '13px', display: 'block', marginBottom: '4px', color: 'var(--muted)' }}>Số lượng</span>
+                  <input
+                    type="number"
+                    min={1}
+                    style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--line)', borderRadius: '6px', height: '38px' }}
+                    value={addQty}
+                    onChange={(e) => setAddQty(Math.max(1, Number(e.target.value)))}
+                  />
+                </div>
+                <button className="primary-btn" type="button" style={{ height: '38px' }} onClick={addProductToEdit}>
+                  Thêm vào list
+                </button>
+              </div>
+            </div>
+
             <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--line)', borderRadius: '8px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead style={{ background: 'var(--soft)', borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
@@ -576,37 +932,6 @@ export default function InvoicesPage() {
                   )}
                 </tbody>
               </table>
-            </div>
-
-            <div style={{ background: 'var(--soft)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-              <h5 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600 }}>Thêm sản phẩm mới</h5>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 250px' }}>
-                  <span style={{ fontSize: '13px', display: 'block', marginBottom: '4px', color: 'var(--muted)' }}>Chọn sản phẩm</span>
-                  <SearchableSelect
-                    options={allProductsList.map((prod) => ({
-                      value: String(prod.productId),
-                      label: `${prod.name} - ${money(prod.unitPrice)} (Tồn: ${prod.stockQuantity})`
-                    }))}
-                    value={selectedAddProductId}
-                    onChange={setSelectedAddProductId}
-                    placeholder="-- Tìm kiếm sản phẩm để thêm --"
-                  />
-                </div>
-                <div style={{ width: '100px' }}>
-                  <span style={{ fontSize: '13px', display: 'block', marginBottom: '4px', color: 'var(--muted)' }}>Số lượng</span>
-                  <input
-                    type="number"
-                    min={1}
-                    style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--line)', borderRadius: '6px', height: '38px' }}
-                    value={addQty}
-                    onChange={(e) => setAddQty(Math.max(1, Number(e.target.value)))}
-                  />
-                </div>
-                <button className="primary-btn" type="button" style={{ height: '38px' }} onClick={addProductToEdit}>
-                  Thêm vào list
-                </button>
-              </div>
             </div>
 
             <div className="modal-actions" style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
