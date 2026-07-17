@@ -20,6 +20,7 @@ public class SessionSummaryResponse
     public long? InvoiceId { get; set; }
     public string? InvoiceCode { get; set; }
     public int? InvoiceStatus { get; set; }
+    public decimal DepositAmount { get; set; }
     public SessionSummaryTableDto? CurrentTable { get; set; }
     public SessionTimeChargeSummaryDto? TimeCharge { get; set; }
     public List<SessionSummaryAssignmentDto> Assignments { get; set; } = [];

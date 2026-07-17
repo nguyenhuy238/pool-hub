@@ -61,7 +61,7 @@ public partial class CrudService
 
     public async Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PaginationRequest r, CancellationToken ct)
     {
-        var q = db.PricingPlanRules.AsQueryable();
+        var q = db.PricingPlanRules.Where(x => x.IsActive).AsQueryable();
         var t = await q.CountAsync(ct);
         var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayOfWeek = x.DayOfWeek, StartTime = x.StartTime, EndTime = x.EndTime, MinimumMinutes = x.MinimumMinutes, BillingBlockMinutes = x.BillingBlockMinutes, HourlyRate = x.HourlyRate }).ToListAsync(ct);
         return Page(i, r.PageNumber, r.PageSize, t);
@@ -69,7 +69,7 @@ public partial class CrudService
 
     public async Task<PricingPlanRuleDto> GetPricingPlanRuleAsync(long id, CancellationToken ct)
     {
-        var x = await db.PricingPlanRules.FindAsync([id], ct) ?? throw new NotFoundException("PricingPlanRule not found.");
+        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanRuleId == id && r.IsActive, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
         return new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayOfWeek = x.DayOfWeek, StartTime = x.StartTime, EndTime = x.EndTime, MinimumMinutes = x.MinimumMinutes, BillingBlockMinutes = x.BillingBlockMinutes, HourlyRate = x.HourlyRate };
     }
 
@@ -84,7 +84,7 @@ public partial class CrudService
 
     public async Task<PricingPlanRuleDto> UpdatePricingPlanRuleAsync(long planId, long ruleId, PricingPlanRuleDto d, CancellationToken ct)
     {
-        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
+        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId && r.IsActive, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
         await ValidatePricingRuleAsync(planId, ruleId, d, ct);
         x.TableTypeId = d.TableTypeId;
         x.DayOfWeek = d.DayOfWeek;
@@ -99,7 +99,7 @@ public partial class CrudService
 
     public async Task DeletePricingPlanRuleAsync(long planId, long ruleId, CancellationToken ct)
     {
-        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
+        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId && r.IsActive, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
         x.IsActive = false;
         x.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);

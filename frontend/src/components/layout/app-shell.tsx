@@ -36,7 +36,7 @@ const nav: NavItem[] = [
   { href: "/management/products", label: "Sản phẩm", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/product-categories", label: "Danh mục sản phẩm", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/pricing-plans", label: "Bảng giá", roles: MANAGEMENT_READ_ROLES },
-  { href: "/management/pricing-rules", label: "Quy tắc tính giá", roles: MANAGEMENT_READ_ROLES },
+
   { href: "/admin/users", label: "Người dùng", roles: [ROLES.ADMIN] },
   { href: "/admin/roles", label: "Vai trò và quyền hạn", roles: [ROLES.ADMIN] },
   { href: "/admin/discounts", label: "Mã giảm giá", roles: [ROLES.ADMIN, ROLES.CASHIER] },

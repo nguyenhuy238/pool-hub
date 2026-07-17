@@ -305,6 +305,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
         await using var transaction = await BeginTransactionIfSupportedAsync(ct);
         var now = _clock.UtcNow;
+        var wasLate = booking.Status == BookingStatuses.Late;
         booking.Status = BookingStatuses.Cancelled;
         booking.CancelledAtUtc = now;
         booking.CancellationReason = request.Reason?.Trim();
@@ -313,8 +314,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingId == booking.BookingId, ct);
         if (deposit is not null && deposit.Status == BookingDepositStatuses.Paid)
         {
-            var refund = request.CancelledByVenue || booking.StartTimeUtc - now >= TimeSpan.FromHours(CancellationRefundHours);
-            if (refund)
+            // Nếu hủy khi đang Late → luôn mất cọc (không hoàn)
+            var forfeit = wasLate || (!request.CancelledByVenue && booking.StartTimeUtc - now < TimeSpan.FromHours(CancellationRefundHours));
+            if (!forfeit)
             {
                 deposit.Status = BookingDepositStatuses.Refunded;
                 deposit.RefundedAmount = deposit.PaidAmount;
@@ -331,7 +333,20 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
-        await TrySendBookingCancelledEmailAsync(booking, request.Reason ?? "Đặt bàn đã bị hủy.", ct);
+
+        if (wasLate)
+        {
+            // Gửi email riêng cho trường hợp hủy khi trễ — nêu rõ tiền cọc không hoàn
+            var forfeitedAmount = deposit?.ForfeitedAmount ?? 0;
+            var lateReason = forfeitedAmount > 0
+                ? $"Booking bị hủy do khách trễ giờ nhận bàn. Tiền cọc {forfeitedAmount:N0}đ không được hoàn lại theo chính sách."
+                : "Booking bị hủy do khách trễ giờ nhận bàn.";
+            await TrySendBookingCancelledEmailAsync(booking, lateReason, ct);
+        }
+        else
+        {
+            await TrySendBookingCancelledEmailAsync(booking, request.Reason ?? "Đặt bàn đã bị hủy.", ct);
+        }
         return await MapAsync(booking, ct);
     }
 
@@ -806,6 +821,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         BookingStatuses.PendingDeposit => "Chờ thanh toán cọc",
         BookingStatuses.PendingApproval => "Chờ quản lý duyệt",
         BookingStatuses.Expired => "Hết hạn",
+        BookingStatuses.Late => "Trễ giờ / Đang chờ xử lý",
         _ => $"Trạng thái {status}"
     };
 
@@ -843,32 +859,53 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private async Task ApplyAutomaticBookingStatusesAsync(DateTime nowUtc, CancellationToken ct)
     {
         await ExpirePendingDepositsAsync(nowUtc, ct);
-        var candidates = await db.Bookings
-            .Where(booking =>
-                (booking.Status == BookingStatuses.Pending && booking.StartTimeUtc <= nowUtc) ||
-                (booking.Status == BookingStatuses.Confirmed && booking.EndTimeUtc <= nowUtc))
-            .Where(booking => !db.Sessions.Any(session => session.BookingId == booking.BookingId))
+
+        // Confirmed + startTime reached + no session → Late (bàn vẫn giữ, nhân viên xử lý)
+        var lateCandidate = await db.Bookings
+            .Where(b => b.Status == BookingStatuses.Confirmed && b.StartTimeUtc <= nowUtc)
+            .Where(b => !db.Sessions.Any(s => s.BookingId == b.BookingId))
             .ToListAsync(ct);
-        var changed = false;
-        foreach (var booking in candidates)
+        foreach (var booking in lateCandidate)
         {
-            if (booking.Status == BookingStatuses.Pending)
-            {
-                booking.Status = BookingStatuses.Cancelled;
-                booking.CancelledAtUtc = nowUtc;
-                booking.Note = AppendAutomaticNote(booking.Note, "Auto-cancelled because booking was not confirmed before start time.");
-            }
-            else
-            {
-                booking.Status = BookingStatuses.NoShow;
-                booking.NoShowAtUtc = nowUtc;
-                booking.Note = AppendAutomaticNote(booking.Note, "Auto no-show because confirmed booking ended without starting session.");
-            }
+            booking.Status = BookingStatuses.Late;
             booking.UpdatedAtUtc = nowUtc;
-            changed = true;
+            booking.Note = AppendAutomaticNote(booking.Note, "Auto-marked Late because guest did not check in at booking start time.");
         }
 
-        if (changed) await db.SaveChangesAsync(ct);
+        // Late + endTime reached + no session → NoShow + forfeit deposit
+        var noShowCandidates = await db.Bookings
+            .Where(b => b.Status == BookingStatuses.Late && b.EndTimeUtc <= nowUtc)
+            .Where(b => !db.Sessions.Any(s => s.BookingId == b.BookingId))
+            .ToListAsync(ct);
+        foreach (var booking in noShowCandidates)
+        {
+            booking.Status = BookingStatuses.NoShow;
+            booking.NoShowAtUtc = nowUtc;
+            booking.UpdatedAtUtc = nowUtc;
+            booking.Note = AppendAutomaticNote(booking.Note, "Auto no-show because Late booking ended without starting session.");
+            var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingId == booking.BookingId, ct);
+            if (deposit is not null && deposit.Status == BookingDepositStatuses.Paid)
+            {
+                deposit.Status = BookingDepositStatuses.Forfeited;
+                deposit.ForfeitedAmount = deposit.PaidAmount;
+                deposit.ForfeitedAtUtc = nowUtc;
+            }
+        }
+
+        // Pending + startTime reached (unconfirmed) → Cancelled
+        var pendingCancelled = await db.Bookings
+            .Where(b => b.Status == BookingStatuses.Pending && b.StartTimeUtc <= nowUtc)
+            .ToListAsync(ct);
+        foreach (var booking in pendingCancelled)
+        {
+            booking.Status = BookingStatuses.Cancelled;
+            booking.CancelledAtUtc = nowUtc;
+            booking.UpdatedAtUtc = nowUtc;
+            booking.Note = AppendAutomaticNote(booking.Note, "Auto-cancelled because booking was not confirmed before start time.");
+        }
+
+        var anyChanged = lateCandidate.Count > 0 || noShowCandidates.Count > 0 || pendingCancelled.Count > 0;
+        if (anyChanged) await db.SaveChangesAsync(ct);
     }
 
     private async Task<bool> ApplyAutomaticBookingStatusAsync(EntityBooking booking, DateTime nowUtc, CancellationToken ct)
@@ -891,12 +928,29 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             return true;
         }
 
-        if (booking.Status == BookingStatuses.Confirmed && booking.EndTimeUtc <= nowUtc &&
+        // Confirmed + startTime reached → Late (giữ bàn, nhân viên xử lý)
+        if (booking.Status == BookingStatuses.Confirmed && booking.StartTimeUtc <= nowUtc &&
+            !await db.Sessions.AnyAsync(session => session.BookingId == booking.BookingId, ct))
+        {
+            booking.Status = BookingStatuses.Late;
+            booking.UpdatedAtUtc = nowUtc;
+            return true;
+        }
+
+        // Late + endTime reached → NoShow + forfeit deposit
+        if (booking.Status == BookingStatuses.Late && booking.EndTimeUtc <= nowUtc &&
             !await db.Sessions.AnyAsync(session => session.BookingId == booking.BookingId, ct))
         {
             booking.Status = BookingStatuses.NoShow;
             booking.NoShowAtUtc = nowUtc;
             booking.UpdatedAtUtc = nowUtc;
+            var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingId == booking.BookingId, ct);
+            if (deposit is not null && deposit.Status == BookingDepositStatuses.Paid)
+            {
+                deposit.Status = BookingDepositStatuses.Forfeited;
+                deposit.ForfeitedAmount = deposit.PaidAmount;
+                deposit.ForfeitedAtUtc = nowUtc;
+            }
             return true;
         }
 

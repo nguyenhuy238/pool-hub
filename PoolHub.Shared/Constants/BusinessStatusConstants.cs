@@ -10,6 +10,8 @@ public static class BookingStatuses
     public const int PendingDeposit = 6;
     public const int PendingApproval = 7;
     public const int Expired = 8;
+    /// <summary>Khách trễ giờ nhận bàn, bàn vẫn được giữ, nhân viên xử lý thủ công.</summary>
+    public const int Late = 9;
 }
 
 public static class BookingDepositStatuses

@@ -234,6 +234,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             .FirstOrDefaultAsync(ct);
         var subtotal = timeSubtotal + orderSubtotal;
         var discountAmount = existingInvoice?.DiscountAmount ?? 0;
+        
+        var depositAmount = 0m;
+        if (session.BookingId.HasValue)
+        {
+            depositAmount = await db.BookingDeposits.AsNoTracking()
+                .Where(x => x.BookingId == session.BookingId.Value && x.Status == PoolHub.Shared.Constants.BookingDepositStatuses.Paid)
+                .SumAsync(x => x.PaidAmount, ct);
+        }
 
         return new SessionSummaryResponse
         {
@@ -255,6 +263,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             InvoiceId = existingInvoice?.InvoiceId,
             InvoiceCode = existingInvoice?.InvoiceCode,
             InvoiceStatus = existingInvoice?.Status,
+            DepositAmount = depositAmount,
             CurrentTable = currentAssignment is null
                 ? null
                 : new SessionSummaryTableDto
@@ -351,17 +360,23 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new ConflictException("Booking has ended and cannot start a session.");
             }
 
-            if (booking.Status != BookingStatuses.Confirmed)
+            if (booking.Status != BookingStatuses.Confirmed && booking.Status != BookingStatuses.Late)
             {
                 throw new BusinessRuleException("Only confirmed bookings can start a session.");
             }
 
-            var earlyCheckInMinutes = GetEarlyCheckInMinutes();
-            var earliestStartUtc = bookingStartUtc.AddMinutes(-earlyCheckInMinutes);
-            if (nowUtc < earliestStartUtc)
+            // Chỉ cho phép nhận bàn trong khoảng startTime-15p đến hết giờ chơi
+            // (Booking Late đã qua startTime nên không cần check nữa)
+            if (booking.Status == BookingStatuses.Confirmed)
             {
-                throw new BusinessRuleException(
-                    $"Chưa đến giờ nhận bàn. Chỉ có thể nhận bàn trước giờ đặt tối đa {earlyCheckInMinutes} phút.");
+                var earlyCheckInMinutes = GetEarlyCheckInMinutes();
+                var earliestStartUtc = bookingStartUtc.AddMinutes(-earlyCheckInMinutes);
+                if (nowUtc < earliestStartUtc)
+                {
+                    var localEarliest = TimeZoneInfo.ConvertTimeFromUtc(earliestStartUtc, BusinessTime.TimeZone);
+                    throw new BusinessRuleException(
+                        $"Chưa đến giờ nhận bàn. Có thể nhận bàn từ {localEarliest:HH:mm} (trước giờ đặt tối đa {earlyCheckInMinutes} phút).");
+                }
             }
         }
 
@@ -658,6 +673,72 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             }
 
             await db.SaveChangesAsync(ct);
+            
+            // Apply booking deposit if any
+            if (session.BookingId.HasValue)
+            {
+                var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x =>
+                    x.BookingId == session.BookingId.Value &&
+                    x.Status == PoolHub.Shared.Constants.BookingDepositStatuses.Paid &&
+                    x.PaidAmount > 0, ct);
+
+                if (deposit is not null)
+                {
+                    var appliedAmount = Math.Min(deposit.PaidAmount, invoice.GrandTotalAmount);
+                    if (appliedAmount > 0)
+                    {
+                        var paymentMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "DEPOSIT", ct);
+                        if (paymentMethod is null)
+                        {
+                            paymentMethod = new PoolHub.Core.Entities.PaymentMethod
+                            {
+                                Code = "DEPOSIT",
+                                Name = "Deposit Applied",
+                                Description = "System payment method used when applying booking deposits to invoices.",
+                                IsActive = true
+                            };
+                            db.PaymentMethods.Add(paymentMethod);
+                            await db.SaveChangesAsync(ct);
+                        }
+
+                        db.Payments.Add(new PoolHub.Core.Entities.Payment
+                        {
+                            InvoiceId = invoice.InvoiceId,
+                            PaymentMethodId = paymentMethod.PaymentMethodId,
+                            Amount = appliedAmount,
+                            PaymentStatus = PoolHub.Shared.Constants.PaymentStatuses.Completed,
+                            TransactionCode = deposit.TransactionCode,
+                            PaidAtUtc = _clock.UtcNow,
+                            Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
+                        });
+
+                        invoice.PaidAmount += appliedAmount;
+                        invoice.PaymentStatus = invoice.PaidAmount >= invoice.GrandTotalAmount
+                            ? PoolHub.Shared.Constants.InvoicePaymentStatuses.Paid
+                            : PoolHub.Shared.Constants.InvoicePaymentStatuses.PartiallyPaid;
+                            
+                        if (invoice.PaymentStatus == PoolHub.Shared.Constants.InvoicePaymentStatuses.Paid)
+                        {
+                            invoice.Status = 2; // Paid/Completed invoice status
+                        }
+
+                        deposit.AppliedAmount = appliedAmount;
+                        deposit.AppliedToInvoiceId = invoice.InvoiceId;
+                        if (deposit.PaidAmount > invoice.GrandTotalAmount)
+                        {
+                            deposit.RefundedAmount = deposit.PaidAmount - invoice.GrandTotalAmount;
+                            deposit.RefundedAtUtc = _clock.UtcNow;
+                            deposit.Status = PoolHub.Shared.Constants.BookingDepositStatuses.PartiallyRefunded;
+                        }
+                        else
+                        {
+                            deposit.Status = PoolHub.Shared.Constants.BookingDepositStatuses.AppliedToInvoice;
+                        }
+                        
+                        await db.SaveChangesAsync(ct);
+                    }
+                }
+            }
         }
 
         await transaction.CommitAsync(ct);
