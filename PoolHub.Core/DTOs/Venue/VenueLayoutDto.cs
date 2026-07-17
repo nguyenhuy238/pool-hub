@@ -24,8 +24,8 @@ public class VenueTableLayoutItem
     public int Capacity { get; set; }
 
     /// <summary>
-    /// Trạng thái vận hành lưu trong DB:
-    /// 1 = Available, 2 = Occupied, 3 = Reserved, 4 = Maintenance, 5 = Inactive.
+    /// Trạng thái hiển thị trên Floor Map:
+    /// 1 = Available, 2 = InUse, 3 = Reserved, 4 = Maintenance, 5 = Inactive.
     /// </summary>
     public int OperationalStatus { get; set; }
 
@@ -51,6 +51,9 @@ public class VenueTableLayoutItem
 
     /// <summary>ID session đang chạy trên bàn này (null nếu bàn trống).</summary>
     public long? ActiveSessionId { get; set; }
+
+    /// <summary>Thời điểm bắt đầu session đang chạy (null nếu bàn trống).</summary>
+    public DateTime? ActiveSessionStartedAtUtc { get; set; }
 
     /// <summary>ID booking gần nhất trên bàn này (null nếu không có booking sắp tới).</summary>
     public long? NextBookingId { get; set; }

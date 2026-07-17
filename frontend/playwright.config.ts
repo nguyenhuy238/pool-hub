@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import type { PlaywrightTestConfig } from "@playwright/test";
 
 const port = Number(process.env.E2E_PORT || 3000);
-const baseURL = process.env.E2E_BASE_URL || `http://127.0.0.1:${port}`;
+const baseURL = process.env.E2E_BASE_URL || `http://localhost:${port}`;
 const browserChannel = process.env.E2E_BROWSER_CHANNEL || (process.platform === "win32" ? "msedge" : undefined);
 
 const use: NonNullable<PlaywrightTestConfig["use"]> = {
@@ -29,7 +29,7 @@ const config: PlaywrightTestConfig = {
     }
   ],
   webServer: {
-    command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
+    command: `npm run dev -- --hostname localhost --port ${port}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
