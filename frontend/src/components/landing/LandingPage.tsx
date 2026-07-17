@@ -11,16 +11,34 @@ import { ReviewSection } from "@/components/landing/ReviewSection";
 import { ServicesSection } from "@/components/landing/ServicesSection";
 import { USPSection } from "@/components/landing/USPSection";
 import { AboutSection } from "@/components/landing/AboutSection";
-import { activeSorted, defaultLandingSettings, landingSettingsApi, type LandingPageSettings } from "@/lib/api/landingSettingsApi";
+import { activeSorted, defaultLandingSettings, landingSettingsApi, LANDING_PREVIEW_STORAGE_KEY, type LandingPageSettings } from "@/lib/api/landingSettingsApi";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import type { PublicReview } from "@/types";
 
 export function LandingPage() {
+  const [previewMode, setPreviewMode] = useState(false);
   const [settings, setSettings] = useState<LandingPageSettings>(defaultLandingSettings);
   const [reviews, setReviews] = useState<PublicReview[]>([]);
   const [reviewSummary, setReviewSummary] = useState<{ averageRating?: number; totalItems?: number; ratingDistribution?: Record<number, number> }>({});
 
   useEffect(() => {
+    const isPreview = new URLSearchParams(window.location.search).get("preview") === "landing-draft";
+    setPreviewMode(isPreview);
+    if (isPreview) {
+      try {
+        const raw = sessionStorage.getItem(LANDING_PREVIEW_STORAGE_KEY) || localStorage.getItem(LANDING_PREVIEW_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { settings?: LandingPageSettings; expiresAt?: number };
+          if (!parsed.expiresAt || parsed.expiresAt > Date.now()) {
+            setSettings(parsed.settings ?? defaultLandingSettings);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load landing preview draft", error);
+      }
+    }
+
     landingSettingsApi.public().then(setSettings).catch((error) => {
       console.error("Failed to load landing page settings", error);
       setSettings(defaultLandingSettings);
@@ -47,6 +65,7 @@ export function LandingPage() {
 
   return (
     <div style={themeStyle}>
+      {previewMode ? <div className="preview-ribbon" role="status">Chế độ xem trước - dữ liệu chưa lưu</div> : null}
       <HeroSection hero={settings.hero} />
       <AboutSection value={settings.about} />
       <USPSection items={settings.uspItems} />

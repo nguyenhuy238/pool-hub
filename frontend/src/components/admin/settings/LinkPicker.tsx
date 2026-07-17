@@ -3,15 +3,15 @@
 import { useEffect } from "react";
 import type { LinkType } from "@/lib/api/landingSettingsApi";
 
-const sectionOptions = ["#hero", "#services", "#pricing", "#availability", "#booking", "#reviews", "#gallery", "#contact"];
+const sectionOptions = ["#hero", "#about", "#services", "#pricing", "#booking", "#reviews", "#gallery", "#contact"];
 const routeOptions = ["/", "/booking", "/login"];
 
 export function validateLink(type: LinkType, value: string) {
   if (!value) return "Link không được để trống.";
   if (type === "external" && !/^https?:\/\//i.test(value)) return "External URL phải bắt đầu bằng http:// hoặc https://.";
-  if (type === "section" && !value.startsWith("#")) return "Section link phải bắt đầu bằng #.";
-  if (type === "internal" && !value.startsWith("/")) return "Internal route phải bắt đầu bằng /.";
-  if (type === "phone" && !value.startsWith("tel:")) return "Phone link phải bắt đầu bằng tel:.";
+  if (type === "section" && !sectionOptions.includes(value)) return "Section này không tồn tại trên trang chủ.";
+  if (type === "internal" && !value.startsWith("/")) return "Route nội bộ phải bắt đầu bằng /.";
+  if (type === "phone" && !value.startsWith("tel:")) return "Link gọi điện phải bắt đầu bằng tel:.";
   if (type === "email" && !value.startsWith("mailto:")) return "Email link phải bắt đầu bằng mailto:.";
   return "";
 }
@@ -63,11 +63,11 @@ export function LinkPicker({
       <label>
         <span>{label}</span>
         <select value={type} onChange={(event) => changeType(event.target.value as LinkType)}>
-          <option value="section">Scroll tới section</option>
-          <option value="internal">Internal route</option>
-          <option value="external">External URL</option>
-          <option value="phone">Phone call</option>
-          <option value="map">Google Maps direction</option>
+          <option value="section">Cuộn tới section</option>
+          <option value="internal">Route nội bộ</option>
+          <option value="external">URL bên ngoài</option>
+          <option value="phone">Gọi điện</option>
+          <option value="map">Chỉ đường Google Maps</option>
           <option value="email">Email</option>
         </select>
       </label>

@@ -4,6 +4,7 @@ namespace PoolHub.Core.DTOs.Landing;
 
 public class LandingPageSettingsDto
 {
+    public int SchemaVersion { get; set; } = 1;
     public GeneralInfoDto GeneralInfo { get; set; } = new();
     public PromotionBannerDto PromotionBanner { get; set; } = new();
     public HeroSectionDto Hero { get; set; } = new();

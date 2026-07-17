@@ -52,9 +52,9 @@ export function MediaPicker({
         <div className="media-input-row">
           <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="/uploads/landing/example.jpg" />
           <FileUploadButton mediaType={mediaType} folder={folder} altText={altText} onUploaded={(asset) => onChange(asset.url)} />
-          <button type="button" className="ghost-btn" onClick={() => setLibraryOpen(true)}>Chọn media</button>
-          <button type="button" className="ghost-btn" onClick={() => setPreviewOpen((open) => !open)}>Preview</button>
-          <button type="button" className="danger-btn" onClick={() => onChange("")}>Clear</button>
+          <button type="button" className="ghost-btn" onClick={() => setLibraryOpen(true)}>{value ? "Thay thế" : "Chọn từ thư viện"}</button>
+          {value ? <button type="button" className="ghost-btn" onClick={() => setPreviewOpen((open) => !open)}>{previewOpen ? "Ẩn preview" : "Preview"}</button> : null}
+          {value ? <button type="button" className="danger-btn" onClick={() => onChange("")}>Xóa</button> : null}
         </div>
       </label>
       {helperText ? <p className="field-help">{helperText}</p> : null}
