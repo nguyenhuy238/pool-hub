@@ -421,16 +421,17 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     public async Task<PagedResult<BookingCalendarItem>> GetCalendarAsync(BookingCalendarRequest request, CancellationToken ct)
     {
+        ValidateCalendarRequest(request);
         await ApplyAutomaticBookingStatusesAsync(_clock.UtcNow, ct);
-        if (request.From > request.To) throw new ValidationException("'from' must be earlier than 'to'.");
 
-        var pageSize = Math.Min(request.PageSize, 200);
+        var pageNumber = Math.Max(1, request.PageNumber);
+        var pageSize = Math.Clamp(request.PageSize, 1, 200);
         var query = db.Bookings.AsNoTracking().Where(b => b.StartTimeUtc < request.To && b.EndTimeUtc > request.From);
         if (request.TableId.HasValue) query = query.Where(b => b.TableId == request.TableId.Value || db.BookingTables.Any(bt => bt.BookingId == b.BookingId && bt.TableId == request.TableId.Value));
         if (request.Status.HasValue) query = query.Where(b => b.Status == request.Status.Value);
 
         var total = await query.CountAsync(ct);
-        var bookings = await query.OrderBy(b => b.StartTimeUtc).Skip((request.PageNumber - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        var bookings = await query.OrderBy(b => b.StartTimeUtc).Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         var items = new List<BookingCalendarItem>();
         foreach (var b in bookings)
         {
@@ -457,7 +458,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             });
         }
 
-        return new PagedResult<BookingCalendarItem> { Items = items, PageNumber = request.PageNumber, PageSize = pageSize, TotalCount = total };
+        return new PagedResult<BookingCalendarItem> { Items = items, PageNumber = pageNumber, PageSize = pageSize, TotalCount = total };
     }
 
     public async Task<IEnumerable<PublicBookingSlotDto>> GetPublicCalendarAsync(long tableId, DateTime date, CancellationToken ct)
@@ -951,6 +952,18 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             throw new ValidationException("Booking times must use UTC.");
         if (endTimeUtc <= startTimeUtc)
             throw new ValidationException("End time must be after start time.");
+    }
+
+    private static void ValidateCalendarRequest(BookingCalendarRequest request)
+    {
+        if (request.From == default)
+            throw new ValidationException("'from' is required.");
+        if (request.To == default)
+            throw new ValidationException("'to' is required.");
+        if (request.From.Kind != DateTimeKind.Utc || request.To.Kind != DateTimeKind.Utc)
+            throw new ValidationException("'from' and 'to' must be ISO-8601 UTC values.");
+        if (request.From >= request.To)
+            throw new ValidationException("'from' must be earlier than 'to'.");
     }
 
     private static string AppendAutomaticNote(string? note, string reason) =>

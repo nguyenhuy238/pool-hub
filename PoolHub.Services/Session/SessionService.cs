@@ -127,6 +127,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         var now = _clock.UtcNow;
         var sessionIds = activeRows.Select(x => x.SessionId).ToList();
+        var customerIds = activeRows
+            .Where(x => x.CustomerId.HasValue)
+            .Select(x => x.CustomerId!.Value)
+            .Distinct()
+            .ToList();
         var assignments = await db.SessionTableAssignments.AsNoTracking()
             .Where(x => sessionIds.Contains(x.SessionId))
             .Select(x => new
@@ -143,10 +148,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             .ToDictionary(
                 x => x.Key,
                 x => x.Sum(assignment => GetDurationMinutes(assignment.StartedAtUtc, assignment.EndedAtUtc ?? now, assignment.DurationMinutes)));
+        var customerNames = await db.Customers.AsNoTracking()
+            .Where(x => customerIds.Contains(x.CustomerId))
+            .Select(x => new { x.CustomerId, x.FullName })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.FullName, ct);
 
         foreach (var row in activeRows)
         {
             row.DurationMinutes = durationBySession.GetValueOrDefault(row.SessionId);
+            row.CustomerName = row.CustomerId.HasValue && customerNames.TryGetValue(row.CustomerId.Value, out var customerName)
+                ? customerName
+                : "Khách vãng lai";
         }
 
         return activeRows;

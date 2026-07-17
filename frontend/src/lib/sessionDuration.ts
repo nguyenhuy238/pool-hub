@@ -1,9 +1,11 @@
+import { utcTimestampMs } from "@/lib/dateTime";
+
 export function getSessionElapsedMs(startedAtUtc?: string, endedAtUtc?: string) {
   if (!startedAtUtc) return 0;
-  const startedAt = new Date(startedAtUtc).getTime();
+  const startedAt = utcTimestampMs(startedAtUtc);
   if (!Number.isFinite(startedAt)) return 0;
 
-  const endedAt = endedAtUtc ? new Date(endedAtUtc).getTime() : Date.now();
+  const endedAt = endedAtUtc ? utcTimestampMs(endedAtUtc) : Date.now();
   if (!Number.isFinite(endedAt)) return 0;
 
   return Math.max(0, endedAt - startedAt);

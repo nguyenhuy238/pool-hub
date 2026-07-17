@@ -220,6 +220,14 @@ export type Session = {
   endedAtUtc?: string;
   tableId?: number;
   tableName?: string;
+  customerName?: string;
+  currentTable?: {
+    tableId: number;
+    tableCode?: string;
+    tableName?: string;
+    zoneId?: number;
+    floorId?: number;
+  };
   durationMinutes?: number;
   note?: string;
   assignments?: SessionTableAssignment[];

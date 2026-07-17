@@ -8,6 +8,7 @@ public class ActiveSessionResponse
     public DateTime StartedAtUtc { get; set; }
     public int DurationMinutes { get; set; }
     public long? CustomerId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
     public long? BookingId { get; set; }
     public ActiveSessionTableDto? CurrentTable { get; set; }
 }
