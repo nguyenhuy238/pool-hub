@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "next lint",
+    "test": "playwright test -c playwright.unit.config.ts",
     "start": "next start",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"

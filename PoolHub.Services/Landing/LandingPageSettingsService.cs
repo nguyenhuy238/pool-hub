@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Landing;
 using PoolHub.Core.Entities;
@@ -14,7 +16,11 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
     private const string LandingPageKey = "landing_page";
+    private const int CurrentSchemaVersion = 1;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = false };
+    private static readonly HashSet<string> AllowedLinkTypes = ["section", "internal", "external", "phone", "map", "email"];
+    private static readonly HashSet<string> PublicSectionTargets = ["#hero", "#about", "#services", "#pricing", "#booking", "#reviews", "#gallery", "#contact"];
+    private static readonly HashSet<string> MapDisplayModes = ["embed", "placeholder", "external", "hidden"];
 
     public async Task<LandingPageSettingsDto> GetPublicLandingPageAsync(CancellationToken ct)
         => await GetOrCreateSettingsAsync(ct);
@@ -116,6 +122,7 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
 
     public async Task<LandingPageSettingsDto> UpdateSettingsAsync(LandingPageSettingsDto dto, long currentUserId, CancellationToken ct)
     {
+        dto = NormalizeSettings(dto);
         ValidateSettings(dto);
         var setting = await GetOrCreateEntityAsync(ct);
         var oldJson = setting.SettingValueJson;
@@ -169,6 +176,15 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
     public void ValidateSettings(LandingPageSettingsDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.GeneralInfo.CenterName)) throw new ValidationException("Center name is required.");
+        if (!string.IsNullOrWhiteSpace(dto.GeneralInfo.Email) && !IsValidEmail(dto.GeneralInfo.Email)) throw new ValidationException("Email is invalid.");
+        if (!string.IsNullOrWhiteSpace(dto.GeneralInfo.Hotline) && !IsValidPhone(dto.GeneralInfo.Hotline)) throw new ValidationException("Hotline is invalid.");
+        if (!string.IsNullOrWhiteSpace(dto.GeneralInfo.Address) && !HasUsefulAddressText(dto.GeneralInfo.Address)) throw new ValidationException("Address must contain meaningful text.");
+        if (!MapDisplayModes.Contains(dto.GeneralInfo.MapDisplayMode)) throw new ValidationException("Map display mode is invalid.");
+        if (dto.PromotionBanner.StartAtUtc.HasValue && dto.PromotionBanner.EndAtUtc.HasValue &&
+            dto.PromotionBanner.EndAtUtc.Value <= dto.PromotionBanner.StartAtUtc.Value)
+        {
+            throw new ValidationException("Promotion banner end date must be after start date.");
+        }
         if (string.IsNullOrWhiteSpace(dto.Hero.Title)) throw new ValidationException("Hero title is required.");
         if (dto.BookingPolicy.MinDurationMinutes <= 0) throw new ValidationException("Minimum duration must be greater than zero.");
         if (dto.BookingPolicy.DefaultDurationMinutes <= 0) throw new ValidationException("Default duration must be greater than zero.");
@@ -214,7 +230,7 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
             ValidateMediaExtension(item.CheckInImageUrl, "Review check-in image", [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"]);
         }
         foreach (var item in dto.SocialLinks) ValidateSocialUrl(item);
-        ValidateLink(dto.PromotionBanner.CtaLinkType, dto.PromotionBanner.CtaLink, "Promotion CTA");
+        if (dto.PromotionBanner.IsEnabled) ValidateLink(dto.PromotionBanner.CtaLinkType, dto.PromotionBanner.CtaLink, "Promotion CTA");
         ValidateLink(dto.Hero.PrimaryCtaLinkType, dto.Hero.PrimaryCtaLink, "Hero primary CTA");
         ValidateLink(dto.Hero.SecondaryCtaLinkType, dto.Hero.SecondaryCtaLink, "Hero secondary CTA");
         foreach (var item in dto.Services.Where(item => !string.IsNullOrWhiteSpace(item.CtaText)))
@@ -228,7 +244,7 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
         var setting = await GetOrCreateEntityAsync(ct);
         try
         {
-            return JsonSerializer.Deserialize<LandingPageSettingsDto>(setting.SettingValueJson, JsonOptions) ?? CreateDefault();
+            return NormalizeSettings(JsonSerializer.Deserialize<LandingPageSettingsDto>(setting.SettingValueJson, JsonOptions) ?? CreateDefault());
         }
         catch (JsonException)
         {
@@ -301,6 +317,10 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
     {
         if (info.Latitude is < -90 or > 90) throw new ValidationException("Latitude must be between -90 and 90.");
         if (info.Longitude is < -180 or > 180) throw new ValidationException("Longitude must be between -180 and 180.");
+        if (info.MapDisplayMode == "embed" && string.IsNullOrWhiteSpace(info.GoogleMapsEmbedUrl))
+        {
+            throw new ValidationException("Google Maps embed URL is required when embedded map mode is selected.");
+        }
         if (!string.IsNullOrWhiteSpace(info.GoogleMapsEmbedUrl) &&
             !info.GoogleMapsEmbedUrl.StartsWith("https://www.google.com/maps/embed", StringComparison.OrdinalIgnoreCase))
         {
@@ -338,11 +358,12 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
 
     private static void ValidateLink(string type, string value, string fieldName)
     {
+        if (!AllowedLinkTypes.Contains(type)) throw new ValidationException($"{fieldName} link type is invalid.");
         if (string.IsNullOrWhiteSpace(value)) throw new ValidationException($"{fieldName} link is required.");
         if (type == "external") ValidateUrl(value, fieldName, allowRelative: false);
         if (type == "phone" && !value.StartsWith("tel:", StringComparison.OrdinalIgnoreCase)) throw new ValidationException($"{fieldName} phone link must start with tel:.");
         if (type == "email" && !value.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)) throw new ValidationException($"{fieldName} email link must start with mailto:.");
-        if (type == "section" && !value.StartsWith('#')) throw new ValidationException($"{fieldName} section link must start with #.");
+        if (type == "section" && !PublicSectionTargets.Contains(value)) throw new ValidationException($"{fieldName} section target is not available on the public landing page.");
         if (type == "internal" && !value.StartsWith('/')) throw new ValidationException($"{fieldName} internal link must start with /.");
         if (type == "map" &&
             !value.StartsWith("https://maps.google.com", StringComparison.OrdinalIgnoreCase) &&
@@ -351,6 +372,164 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
             throw new ValidationException($"{fieldName} map link must use Google Maps.");
         }
     }
+
+    private static LandingPageSettingsDto NormalizeSettings(LandingPageSettingsDto? dto)
+    {
+        dto ??= CreateDefault();
+        dto.SchemaVersion = CurrentSchemaVersion;
+        dto.GeneralInfo ??= new GeneralInfoDto();
+        dto.PromotionBanner ??= new PromotionBannerDto();
+        dto.Hero ??= new HeroSectionDto();
+        dto.About ??= new AboutSectionDto();
+        dto.BookingPolicy ??= new BookingPolicyDto();
+        dto.Seo ??= new SeoSettingsDto();
+        dto.Footer ??= new FooterSettingsDto();
+        dto.Legal ??= new LegalSettingsDto();
+        dto.Theme ??= new ThemeSettingsDto();
+        dto.QrCode ??= new QrCodeSettingsDto();
+        dto.DepositPayment ??= new DepositPaymentSettingsDto();
+        dto.UspItems ??= [];
+        dto.Services ??= [];
+        dto.PricingHighlights ??= [];
+        dto.Gallery ??= [];
+        dto.Reviews ??= [];
+        dto.SocialLinks ??= [];
+
+        dto.GeneralInfo.CenterName = Clean(dto.GeneralInfo.CenterName);
+        dto.GeneralInfo.Slogan = Clean(dto.GeneralInfo.Slogan);
+        dto.GeneralInfo.ShortDescription = Clean(dto.GeneralInfo.ShortDescription);
+        dto.GeneralInfo.Hotline = Clean(dto.GeneralInfo.Hotline);
+        dto.GeneralInfo.Email = Clean(dto.GeneralInfo.Email);
+        dto.GeneralInfo.Address = Clean(dto.GeneralInfo.Address);
+        dto.GeneralInfo.OpeningHours = Clean(dto.GeneralInfo.OpeningHours);
+        dto.GeneralInfo.FacebookUrl = NullIfWhiteSpace(dto.GeneralInfo.FacebookUrl);
+        dto.GeneralInfo.TikTokUrl = NullIfWhiteSpace(dto.GeneralInfo.TikTokUrl);
+        dto.GeneralInfo.ZaloUrl = NullIfWhiteSpace(dto.GeneralInfo.ZaloUrl);
+        dto.GeneralInfo.GoogleMapsUrl = NullIfWhiteSpace(dto.GeneralInfo.GoogleMapsUrl);
+        dto.GeneralInfo.GoogleMapsEmbedUrl = NullIfWhiteSpace(dto.GeneralInfo.GoogleMapsEmbedUrl);
+        dto.GeneralInfo.GoogleMapsShareUrl = NullIfWhiteSpace(dto.GeneralInfo.GoogleMapsShareUrl);
+        dto.GeneralInfo.GoogleMapsDirectionUrl = NullIfWhiteSpace(dto.GeneralInfo.GoogleMapsDirectionUrl);
+        dto.GeneralInfo.PlaceId = NullIfWhiteSpace(dto.GeneralInfo.PlaceId);
+        dto.GeneralInfo.LogoUrl = NullIfWhiteSpace(dto.GeneralInfo.LogoUrl);
+        dto.GeneralInfo.FaviconUrl = NullIfWhiteSpace(dto.GeneralInfo.FaviconUrl);
+        dto.GeneralInfo.MapDisplayMode = Clean(dto.GeneralInfo.MapDisplayMode).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(dto.GeneralInfo.MapDisplayMode)) dto.GeneralInfo.MapDisplayMode = "placeholder";
+
+        dto.PromotionBanner.Content = Clean(dto.PromotionBanner.Content);
+        dto.PromotionBanner.CtaText = Clean(dto.PromotionBanner.CtaText);
+        dto.PromotionBanner.CtaLink = Clean(dto.PromotionBanner.CtaLink);
+        dto.PromotionBanner.CtaLinkType = Clean(dto.PromotionBanner.CtaLinkType).ToLowerInvariant();
+        dto.Hero.Subtitle = Clean(dto.Hero.Subtitle);
+        dto.Hero.Title = Clean(dto.Hero.Title);
+        dto.Hero.Description = Clean(dto.Hero.Description);
+        dto.Hero.PrimaryCtaText = Clean(dto.Hero.PrimaryCtaText);
+        dto.Hero.PrimaryCtaLink = Clean(dto.Hero.PrimaryCtaLink);
+        dto.Hero.PrimaryCtaLinkType = Clean(dto.Hero.PrimaryCtaLinkType).ToLowerInvariant();
+        dto.Hero.SecondaryCtaText = Clean(dto.Hero.SecondaryCtaText);
+        dto.Hero.SecondaryCtaLink = Clean(dto.Hero.SecondaryCtaLink);
+        dto.Hero.SecondaryCtaLinkType = Clean(dto.Hero.SecondaryCtaLinkType).ToLowerInvariant();
+        dto.Hero.BackgroundImageUrl = Clean(dto.Hero.BackgroundImageUrl);
+        dto.Hero.BackgroundVideoUrl = NullIfWhiteSpace(dto.Hero.BackgroundVideoUrl);
+        dto.Hero.FallbackImageUrl = Clean(dto.Hero.FallbackImageUrl);
+        dto.Hero.Badges = dto.Hero.Badges
+            .SelectMany(x => (x ?? string.Empty).Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .Select(Clean)
+            .Where(x => x.Length > 0)
+            .Take(6)
+            .ToList();
+
+        dto.About.Eyebrow = Clean(dto.About.Eyebrow);
+        dto.About.Title = Clean(dto.About.Title);
+        dto.About.Description = Clean(dto.About.Description);
+        dto.About.ImageUrl = NullIfWhiteSpace(dto.About.ImageUrl);
+        NormalizeOrdered(dto.UspItems);
+        NormalizeOrdered(dto.Services);
+        NormalizeOrdered(dto.PricingHighlights);
+        NormalizeOrdered(dto.Gallery);
+
+        foreach (var item in dto.Services)
+        {
+            item.PriceText = NullIfWhiteSpace(item.PriceText);
+            item.CtaText = NullIfWhiteSpace(item.CtaText);
+            item.CtaLink = NullIfWhiteSpace(item.CtaLink);
+            item.CtaLinkType = Clean(item.CtaLinkType).ToLowerInvariant();
+        }
+
+        foreach (var item in dto.Gallery)
+        {
+            item.ImageUrl = Clean(item.ImageUrl);
+            item.AltText = Clean(item.AltText);
+            item.Caption = NullIfWhiteSpace(item.Caption);
+            item.ImageType = Clean(item.ImageType);
+        }
+
+        foreach (var item in dto.Reviews)
+        {
+            item.CustomerName = Clean(item.CustomerName);
+            item.AvatarUrl = NullIfWhiteSpace(item.AvatarUrl);
+            item.Content = Clean(item.Content);
+            item.CheckInImageUrl = NullIfWhiteSpace(item.CheckInImageUrl);
+        }
+
+        foreach (var item in dto.SocialLinks)
+        {
+            item.Platform = Clean(item.Platform);
+            item.Url = Clean(item.Url);
+            item.Icon = Clean(item.Icon);
+        }
+
+        dto.BookingPolicy.SuccessMessage = Clean(dto.BookingPolicy.SuccessMessage);
+        dto.BookingPolicy.PolicyNote = Clean(dto.BookingPolicy.PolicyNote);
+        dto.Seo.MetaTitle = Clean(dto.Seo.MetaTitle);
+        dto.Seo.MetaDescription = Clean(dto.Seo.MetaDescription);
+        dto.Seo.MetaKeywords = NullIfWhiteSpace(dto.Seo.MetaKeywords);
+        dto.Seo.OgImageUrl = NullIfWhiteSpace(dto.Seo.OgImageUrl);
+        dto.Seo.CanonicalUrl = NullIfWhiteSpace(dto.Seo.CanonicalUrl);
+        dto.Footer.MenuTitle = Clean(dto.Footer.MenuTitle);
+        dto.Footer.PolicyTitle = Clean(dto.Footer.PolicyTitle);
+        dto.Footer.Copyright = Clean(dto.Footer.Copyright);
+        dto.Legal.PrivacyPolicy = Clean(dto.Legal.PrivacyPolicy);
+        dto.Legal.TermsOfService = Clean(dto.Legal.TermsOfService);
+        dto.Theme.PrimaryColor = Clean(dto.Theme.PrimaryColor);
+        dto.Theme.AccentColor = Clean(dto.Theme.AccentColor);
+        dto.QrCode.ImageUrl = NullIfWhiteSpace(dto.QrCode.ImageUrl);
+        dto.QrCode.Caption = NullIfWhiteSpace(dto.QrCode.Caption);
+        dto.DepositPayment.PaymentMethodCode = Clean(dto.DepositPayment.PaymentMethodCode);
+        dto.DepositPayment.PaymentMethodName = Clean(dto.DepositPayment.PaymentMethodName);
+        dto.DepositPayment.BankName = Clean(dto.DepositPayment.BankName);
+        dto.DepositPayment.BankCode = Clean(dto.DepositPayment.BankCode);
+        dto.DepositPayment.BankAccountNumber = Clean(dto.DepositPayment.BankAccountNumber);
+        dto.DepositPayment.BankAccountName = Clean(dto.DepositPayment.BankAccountName);
+        dto.DepositPayment.DepositQrImageUrl = NullIfWhiteSpace(dto.DepositPayment.DepositQrImageUrl);
+        dto.DepositPayment.TransferContentTemplate = Clean(dto.DepositPayment.TransferContentTemplate);
+
+        return dto;
+    }
+
+    private static void NormalizeOrdered<T>(List<T> items) where T : OrderedLandingItemDto
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            items[i].Title = Clean(items[i].Title);
+            items[i].Description = Clean(items[i].Description);
+            items[i].ImageUrl = NullIfWhiteSpace(items[i].ImageUrl);
+            if (items[i].DisplayOrder <= 0) items[i].DisplayOrder = i + 1;
+        }
+    }
+
+    private static string Clean(string? value) => string.IsNullOrWhiteSpace(value) ? string.Empty : Regex.Replace(value.Trim(), @"\s+", " ");
+    private static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : Clean(value);
+    private static bool IsValidEmail(string value)
+    {
+        try { return new MailAddress(value).Address == value; }
+        catch { return false; }
+    }
+    private static bool IsValidPhone(string value)
+    {
+        var digits = value.Count(char.IsDigit);
+        return digits is >= 8 and <= 15 && Regex.IsMatch(value, @"^[0-9+()\s.-]+$");
+    }
+    private static bool HasUsefulAddressText(string value) => value.Trim().Length >= 8 && value.Any(char.IsLetter);
 
     private static LandingPageSettingsDto CreateDefault() => new()
     {

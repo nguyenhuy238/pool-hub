@@ -1374,6 +1374,8 @@ textarea:focus {
 
 .settings-tabs button {
   min-height: 40px;
+  display: grid;
+  gap: 4px;
   text-align: left;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1383,7 +1385,15 @@ textarea:focus {
   cursor: pointer;
   font-weight: 750;
 }
-
+.section-status {
+  font-size: 11px;
+  font-weight: 800;
+}
+.section-status.clean { color: var(--muted); }
+.section-status.dirty { color: #87610e; }
+.section-status.error { color: var(--danger); }
+.section-status.saved { color: #187344; }
+.section-status.disabled { color: #6b7280; }
 .settings-tabs button.active {
   background: #e5f3ee;
   color: var(--brand);
@@ -1393,7 +1403,17 @@ textarea:focus {
 .settings-panel {
   min-height: 520px;
 }
-
+.preview-ribbon {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 10px 16px;
+  background: #fff5d8;
+  color: #79580d;
+  border-bottom: 1px solid #f4dda0;
+  text-align: center;
+  font-weight: 850;
+}
 .settings-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

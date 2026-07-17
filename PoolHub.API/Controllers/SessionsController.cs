@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/sessions")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
+[Authorize(Roles = RoleConstants.Operation)]
 public class SessionsController(ISessionService sessionService) : ControllerBase
 {
     [HttpGet]

@@ -6,6 +6,16 @@ import { useToast } from "@/components/toast";
 
 const imageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".ico"];
 const videoExtensions = [".mp4", ".webm"];
+const allowedMimeByExtension: Record<string, string[]> = {
+  ".jpg": ["image/jpeg"],
+  ".jpeg": ["image/jpeg"],
+  ".png": ["image/png"],
+  ".webp": ["image/webp"],
+  ".gif": ["image/gif"],
+  ".ico": ["image/x-icon", "image/vnd.microsoft.icon", "application/octet-stream"],
+  ".mp4": ["video/mp4"],
+  ".webm": ["video/webm"]
+};
 
 export function FileUploadButton({
   mediaType,
@@ -35,6 +45,10 @@ export function FileUploadButton({
     const validExtension = imageExtensions.includes(extension) || isVideo;
     if (!validExtension || (mediaType === "image" && isVideo) || (mediaType === "video" && !isVideo)) {
       toast("Định dạng file không hợp lệ.", "error");
+      return;
+    }
+    if (!allowedMimeByExtension[extension]?.includes(file.type)) {
+      toast("MIME type của file không khớp định dạng được hỗ trợ.", "error");
       return;
     }
     const maxSize = isVideo ? 30 * 1024 * 1024 : 5 * 1024 * 1024;

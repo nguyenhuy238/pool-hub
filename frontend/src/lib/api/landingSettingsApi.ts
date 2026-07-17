@@ -1,5 +1,7 @@
 import { apiFetch } from "@/lib/api/client";
 
+export const LANDING_PREVIEW_STORAGE_KEY = "poolhub:landing-preview";
+
 export type GeneralInfoSettings = {
   centerName: string;
   slogan: string;
@@ -18,7 +20,7 @@ export type GeneralInfoSettings = {
   latitude?: number;
   longitude?: number;
   placeId?: string;
-  mapDisplayMode: "embed" | "placeholder" | "external";
+  mapDisplayMode: "embed" | "placeholder" | "external" | "hidden";
   logoUrl?: string;
   faviconUrl?: string;
 };
@@ -120,6 +122,7 @@ export type SeoSettings = {
 };
 
 export type LandingPageSettings = {
+  schemaVersion?: number;
   generalInfo: GeneralInfoSettings;
   promotionBanner: PromotionBannerSettings;
   hero: HeroSettings;
@@ -176,6 +179,7 @@ export type TableTypePricingSummary = {
 };
 
 export const defaultLandingSettings: LandingPageSettings = {
+  schemaVersion: 1,
   generalInfo: {
     centerName: "PoolHub Center",
     slogan: "Billiards & Entertainment",

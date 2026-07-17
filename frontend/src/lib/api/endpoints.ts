@@ -35,7 +35,7 @@ type UpdateCustomerPayload = Pick<CustomerDto, "fullName" | "status"> & {
 };
 
 export const venueApi = {
-  layout: () => apiFetch<VenueLayoutResponse>("/api/venue-tables/layout", { skipAuth: true }),
+  layout: () => apiFetch<VenueLayoutResponse>("/api/venue-tables/layout"),
   floors: (params: Record<string, string | number | undefined> = {}) => apiFetch<Floor[] | { items?: Floor[] }>(`/api/floors${toQuery(params)}`),
   zones: (params: Record<string, string | number | undefined> = {}) => apiFetch<Zone[] | { items?: Zone[] }>(`/api/zones${toQuery(params)}`),
   tableTypes: (params: Record<string, string | number | undefined> = {}) => apiFetch<TableType[] | { items?: TableType[] }>(`/api/table-types${toQuery(params)}`),

@@ -16,7 +16,7 @@ export function ContactSection({ info }: { info: GeneralInfoSettings }) {
           <a className="secondary-btn" href={directionUrl} target="_blank" rel="noreferrer">Chỉ đường</a>
         </div>
       </div>
-      {info.mapDisplayMode === "embed" && info.googleMapsEmbedUrl ? (
+      {info.mapDisplayMode === "hidden" ? null : info.mapDisplayMode === "embed" && info.googleMapsEmbedUrl ? (
         <div className="contact-map"><iframe title={`Bản đồ ${info.centerName}`} src={info.googleMapsEmbedUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" /></div>
       ) : info.mapDisplayMode === "external" ? (
         <a className="map-placeholder" href={directionUrl} target="_blank" rel="noreferrer"><span>Mở Google Maps</span></a>

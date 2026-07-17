@@ -12,6 +12,15 @@ public static class BookingStatuses
     public const int Expired = 8;
 }
 
+public static class TableOperationalStatuses
+{
+    public const int Available = 1;
+    public const int InUse = 2;
+    public const int Reserved = 3;
+    public const int Maintenance = 4;
+    public const int Inactive = 5;
+}
+
 public static class BookingDepositStatuses
 {
     public const int NotRequired = 1;

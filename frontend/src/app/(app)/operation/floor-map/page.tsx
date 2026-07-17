@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ApiError } from "@/lib/api/client";
 import { invoiceApi, sessionApi, venueApi } from "@/lib/api/endpoints";
 import { dateTime, label, tableStatus } from "@/lib/status";
 import { Badge, ConfirmDialog, Modal, PageHeader, SearchFilterBar, StateBlock, useLoad } from "@/components/ui";
@@ -44,9 +45,13 @@ export default function FloorMapPage() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const { data: layout, loading, error, reload } = useLoad(async () => {
-    const response = await venueApi.layout();
-    setLastUpdated(new Date().toISOString());
-    return response;
+    try {
+      const response = await venueApi.layout();
+      setLastUpdated(new Date().toISOString());
+      return response;
+    } catch (err) {
+      throw new Error(getFloorMapErrorMessage(err));
+    }
   }, []);
 
   const floors = useMemo(() => layout?.floors ?? [], [layout?.floors]);
@@ -263,7 +268,7 @@ function ZoneSection({ floor, zone, onSelect }: {
                 <span>{table.tableTypeName}</span>
                 <span>{table.capacity} khách</span>
               </div>
-              {table.activeSessionId ? <div className="table-card-note">Phiên #{table.activeSessionId}</div> : null}
+              {table.activeSessionId ? <div className="table-card-note">Phiên #{table.activeSessionId}{table.activeSessionStartedAtUtc ? ` - bắt đầu ${dateTime(table.activeSessionStartedAtUtc)}` : ""}</div> : null}
               {!table.activeSessionId && table.nextBookingId ? <div className="table-card-note">Booking {table.nextBookingCode ?? `#${table.nextBookingId}`} - {dateTime(table.nextBookingStartTimeUtc)}</div> : null}
             </button>
           ))}
@@ -292,6 +297,7 @@ function TableDetailModal({ table, onClose, onStart, onEnd, onInvoice }: {
         <div><span>Sức chứa</span><strong>{table.capacity} khách</strong></div>
         <div><span>Trạng thái</span><strong>{label(tableStatus, table.operationalStatus)}</strong></div>
         <div><span>Session</span><strong>{table.activeSessionId ? `#${table.activeSessionId}` : "-"}</strong></div>
+        <div><span>Bắt đầu</span><strong>{table.activeSessionStartedAtUtc ? dateTime(table.activeSessionStartedAtUtc) : "-"}</strong></div>
       </div>
 
       {table.nextBookingId ? (
@@ -319,4 +325,16 @@ function TableDetailModal({ table, onClose, onStart, onEnd, onInvoice }: {
       </div>
     </Modal>
   );
+}
+
+function getFloorMapErrorMessage(err: unknown) {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+    if (err.status === 403) return "Bạn không có quyền xem sơ đồ bàn.";
+    if (err.status === 404) return "Endpoint sơ đồ bàn chưa được cấu hình hoặc frontend/backend chưa đồng bộ.";
+    if (err.status === 500) return "Không thể tải sơ đồ bàn. Vui lòng thử lại.";
+    if (err.status === 0) return "Không kết nối được backend. Vui lòng kiểm tra API server.";
+  }
+
+  return err instanceof Error ? err.message : "Không thể tải sơ đồ bàn. Vui lòng thử lại.";
 }

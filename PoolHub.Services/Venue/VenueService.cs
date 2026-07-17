@@ -44,33 +44,43 @@ public class VenueService(PoolHubDbContext db, IClock? clock = null) : IVenueSer
             .AsNoTracking()
             .ToDictionaryAsync(x => x.TableTypeId, x => x.Name, ct);
 
-        // 2. Lấy danh sách TableId đang có Session active (Status=1=Active, EndedAtUtc=null)
-        //    Dùng SessionTableAssignment để biết bàn nào đang chơi
         var activeAssignments = await db.SessionTableAssignments
             .Where(a => a.EndedAtUtc == null)
             .Join(db.Sessions.Where(s => s.Status == 1),
                 a => a.SessionId, s => s.SessionId,
-                (a, s) => new { a.TableId, a.SessionId })
+                (a, s) => new { a.TableId, a.SessionId, s.StartedAtUtc })
             .ToListAsync(ct);
 
-        // Map TableId → SessionId (lấy session đầu tiên nếu có nhiều)
         var activeSessionMap = activeAssignments
             .GroupBy(x => x.TableId)
-            .ToDictionary(g => g.Key, g => g.First().SessionId);
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartedAtUtc).First());
 
         var now = _clock.UtcNow;
-        var nextBookings = await db.Bookings
+        var directBookingRows = await db.Bookings
             .AsNoTracking()
             .Where(b => b.TableId.HasValue &&
                         b.EndTimeUtc > now &&
                         b.Status == BookingStatuses.Confirmed)
             .OrderBy(b => b.StartTimeUtc)
-            .Select(b => new { b.TableId, b.BookingId, b.BookingCode, b.StartTimeUtc })
+            .Select(b => new BookingTableHold(b.TableId!.Value, b.BookingId, b.BookingCode, b.StartTimeUtc))
             .ToListAsync(ct);
 
-        var nextBookingMap = nextBookings
-            .GroupBy(x => x.TableId!.Value)
-            .ToDictionary(g => g.Key, g => g.First());
+        var multiTableBookingRows = await db.BookingTables
+            .AsNoTracking()
+            .Join(db.Bookings.AsNoTracking().Where(b =>
+                    b.EndTimeUtc > now &&
+                    b.Status == BookingStatuses.Confirmed),
+                bt => bt.BookingId,
+                b => b.BookingId,
+                (bt, b) => new { bt.TableId, b.BookingId, b.BookingCode, b.StartTimeUtc })
+            .OrderBy(x => x.StartTimeUtc)
+            .Select(x => new BookingTableHold(x.TableId, x.BookingId, x.BookingCode, x.StartTimeUtc))
+            .ToListAsync(ct);
+
+        var nextBookingMap = directBookingRows
+            .Concat(multiTableBookingRows)
+            .GroupBy(x => x.TableId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartTimeUtc).First());
 
         var activeZoneIds = zones.Select(z => z.ZoneId).ToHashSet();
         var tablesByZone = tables
@@ -99,16 +109,9 @@ public class VenueService(PoolHubDbContext db, IClock? clock = null) : IVenueSer
                         Tables = tablesByZone.GetValueOrDefault(zone.ZoneId, [])
                             .Select(table =>
                             {
-                                // Ưu tiên session active, rồi booking sắp tới, rồi trạng thái lưu trong DB.
-                                var activeSessionId = activeSessionMap.TryGetValue(table.TableId, out var sid) ? sid : (long?)null;
+                                var activeSession = activeSessionMap.GetValueOrDefault(table.TableId);
                                 var nextBooking = nextBookingMap.GetValueOrDefault(table.TableId);
-                                var operationalStatus = !table.IsActive
-                                    ? 5
-                                    : activeSessionId.HasValue
-                                        ? 2
-                                        : nextBooking is not null && table.OperationalStatus == 1
-                                            ? 3
-                                            : table.OperationalStatus;
+                                var operationalStatus = ResolveDisplayStatus(table.IsActive, table.OperationalStatus, activeSession is not null, nextBooking is not null);
 
                                 return new VenueTableLayoutItem
                                 {
@@ -122,7 +125,8 @@ public class VenueService(PoolHubDbContext db, IClock? clock = null) : IVenueSer
                                     PositionX = table.PositionX,
                                     PositionY = table.PositionY,
                                     IsActive = table.IsActive,
-                                    ActiveSessionId = activeSessionId,
+                                    ActiveSessionId = activeSession?.SessionId,
+                                    ActiveSessionStartedAtUtc = activeSession?.StartedAtUtc,
                                     NextBookingId = nextBooking?.BookingId,
                                     NextBookingCode = nextBooking?.BookingCode,
                                     NextBookingStartTimeUtc = nextBooking?.StartTimeUtc
@@ -142,13 +146,28 @@ public class VenueService(PoolHubDbContext db, IClock? clock = null) : IVenueSer
         {
             Floors = floorGroups,
             TotalTables = allTableItems.Count,
-            AvailableTables = allTableItems.Count(t => t.OperationalStatus == 1),
-            OccupiedTables = allTableItems.Count(t => t.OperationalStatus == 2),
-            ReservedTables = allTableItems.Count(t => t.OperationalStatus == 3),
-            MaintenanceTables = allTableItems.Count(t => t.OperationalStatus == 4),
-            InactiveTables = allTableItems.Count(t => t.OperationalStatus == 5),
+            AvailableTables = allTableItems.Count(t => t.OperationalStatus == TableOperationalStatuses.Available),
+            OccupiedTables = allTableItems.Count(t => t.OperationalStatus == TableOperationalStatuses.InUse),
+            ReservedTables = allTableItems.Count(t => t.OperationalStatus == TableOperationalStatuses.Reserved),
+            MaintenanceTables = allTableItems.Count(t => t.OperationalStatus == TableOperationalStatuses.Maintenance),
+            InactiveTables = allTableItems.Count(t => t.OperationalStatus == TableOperationalStatuses.Inactive),
             FetchedAtUtc = now
         };
     }
+
+    private static int ResolveDisplayStatus(bool isActive, int storedOperationalStatus, bool hasOpenSession, bool hasUpcomingBooking)
+    {
+        if (!isActive || storedOperationalStatus == TableOperationalStatuses.Inactive)
+            return TableOperationalStatuses.Inactive;
+        if (storedOperationalStatus == TableOperationalStatuses.Maintenance)
+            return TableOperationalStatuses.Maintenance;
+        if (hasOpenSession)
+            return TableOperationalStatuses.InUse;
+        if (hasUpcomingBooking)
+            return TableOperationalStatuses.Reserved;
+        return TableOperationalStatuses.Available;
+    }
+
+    private sealed record BookingTableHold(long TableId, long BookingId, string BookingCode, DateTime StartTimeUtc);
 }
 

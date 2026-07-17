@@ -16,6 +16,7 @@ export function validateMap(info: GeneralInfoSettings) {
 
 export function GoogleMapPicker({ value, onChange }: { value: GeneralInfoSettings; onChange: (value: GeneralInfoSettings) => void }) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const errors = validateMap(value);
   const set = (patch: Partial<GeneralInfoSettings>) => onChange({ ...value, ...patch });
 
@@ -24,17 +25,22 @@ export function GoogleMapPicker({ value, onChange }: { value: GeneralInfoSetting
       <h3>Google Maps</h3>
       <div className="settings-form-grid">
         <label className="full-field"><span>Địa chỉ hiển thị</span><input value={value.address} onChange={(event) => set({ address: event.target.value })} /></label>
-        <label className="full-field"><span>Google Maps embed URL</span><input value={value.googleMapsEmbedUrl || ""} onChange={(event) => set({ googleMapsEmbedUrl: event.target.value })} /></label>
         <label className="full-field"><span>Google Maps share URL</span><input value={value.googleMapsShareUrl || ""} onChange={(event) => set({ googleMapsShareUrl: event.target.value })} /></label>
-        <label className="full-field"><span>Direction button URL</span><input value={value.googleMapsDirectionUrl || ""} onChange={(event) => set({ googleMapsDirectionUrl: event.target.value })} /></label>
-        <label><span>Latitude</span><input type="number" step="any" value={value.latitude ?? ""} onChange={(event) => set({ latitude: event.target.value === "" ? undefined : Number(event.target.value) })} /></label>
-        <label><span>Longitude</span><input type="number" step="any" value={value.longitude ?? ""} onChange={(event) => set({ longitude: event.target.value === "" ? undefined : Number(event.target.value) })} /></label>
-        <label><span>Place ID</span><input value={value.placeId || ""} onChange={(event) => set({ placeId: event.target.value })} /></label>
-        <label><span>Map display mode</span><select value={value.mapDisplayMode} onChange={(event) => set({ mapDisplayMode: event.target.value as GeneralInfoSettings["mapDisplayMode"] })}><option value="embed">Embed iframe</option><option value="placeholder">Static map placeholder</option><option value="external">External link only</option></select></label>
+        <label className="full-field"><span>Google Maps embed URL</span><input value={value.googleMapsEmbedUrl || ""} onChange={(event) => set({ googleMapsEmbedUrl: event.target.value })} /></label>
+        <label><span>Chế độ hiển thị bản đồ</span><select value={value.mapDisplayMode} onChange={(event) => set({ mapDisplayMode: event.target.value as GeneralInfoSettings["mapDisplayMode"] })}><option value="hidden">Ẩn bản đồ</option><option value="embed">Bản đồ nhúng</option><option value="placeholder">Placeholder tĩnh</option><option value="external">Chỉ mở Google Maps</option></select></label>
       </div>
+      <button type="button" className="ghost-btn" onClick={() => setAdvancedOpen((open) => !open)}>{advancedOpen ? "Ẩn cài đặt nâng cao" : "Cài đặt nâng cao"}</button>
+      {advancedOpen ? (
+        <div className="settings-form-grid">
+          <label className="full-field"><span>Direction URL tùy chỉnh</span><input value={value.googleMapsDirectionUrl || ""} onChange={(event) => set({ googleMapsDirectionUrl: event.target.value })} /></label>
+          <label><span>Latitude</span><input type="number" step="any" value={value.latitude ?? ""} onChange={(event) => set({ latitude: event.target.value === "" ? undefined : Number(event.target.value) })} /></label>
+          <label><span>Longitude</span><input type="number" step="any" value={value.longitude ?? ""} onChange={(event) => set({ longitude: event.target.value === "" ? undefined : Number(event.target.value) })} /></label>
+          <label><span>Place ID</span><input value={value.placeId || ""} onChange={(event) => set({ placeId: event.target.value })} /></label>
+        </div>
+      ) : null}
       {errors.map((error) => <p className="field-error" key={error}>{error}</p>)}
       <div className="actions">
-        <button type="button" className="ghost-btn" onClick={() => setPreviewOpen((open) => !open)}>Preview Map</button>
+        <button type="button" className="ghost-btn" onClick={() => setPreviewOpen((open) => !open)}>Xem trước bản đồ</button>
         <a className="ghost-btn" href={value.googleMapsShareUrl || value.googleMapsDirectionUrl || "https://www.google.com/maps"} target="_blank" rel="noreferrer">Mở Google Maps</a>
         <button type="button" className="ghost-btn" disabled={!value.googleMapsShareUrl} onClick={() => set({ googleMapsDirectionUrl: value.googleMapsShareUrl })}>Dùng link chỉ đường này</button>
       </div>

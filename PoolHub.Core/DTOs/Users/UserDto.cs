@@ -14,4 +14,5 @@ public class UserDto
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
     public List<string> Roles { get; set; } = [];
+    public List<string> Permissions { get; set; } = [];
 }

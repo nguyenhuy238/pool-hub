@@ -15,15 +15,13 @@ namespace PoolHub.API.Controllers;
 [Route("api/bookings")]
 public class BookingsController(IBookingService bookingService, ISessionService sessionService, ICrudService crud) : ControllerBase
 {
-    private const string OperationRoles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier;
-
     [HttpGet]
     [Authorize]
     public async Task<ActionResult<ApiResponse<PagedResult<BookingDto>>>> Get([FromQuery] BookingQueryRequest request, CancellationToken ct) =>
         Ok(ApiResponse<PagedResult<BookingDto>>.Ok(await bookingService.GetBookingsAsync(request, ct)));
 
     [HttpGet("calendar")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<PagedResult<BookingCalendarItem>>>> GetCalendar([FromQuery] BookingCalendarRequest request, CancellationToken ct) =>
         Ok(ApiResponse<PagedResult<BookingCalendarItem>>.Ok(await bookingService.GetCalendarAsync(request, ct)));
 
@@ -58,12 +56,12 @@ public class BookingsController(IBookingService bookingService, ISessionService 
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.CreatePublicAsync(request, ct)));
 
     [HttpPut("{id:long}")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<BookingDto>>> Update(long id, [FromBody] UpdateBookingRequest request, CancellationToken ct) =>
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.UpdateAsync(id, request, ct)));
 
     [HttpPut("{id:long}/confirm")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<BookingDto>>> Confirm(long id, CancellationToken ct) =>
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.ConfirmAsync(id, User.GetUserId(), ct), "Booking confirmed"));
 
@@ -93,22 +91,22 @@ public class BookingsController(IBookingService bookingService, ISessionService 
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.MockPayDepositAsync(id, ct), "Deposit paid"));
 
     [HttpPut("{id:long}/cancel")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<BookingDto>>> Cancel(long id, [FromBody] CancelBookingRequest request, CancellationToken ct) =>
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.CancelAsync(id, request, ct), "Booking cancelled"));
 
     [HttpPut("{id:long}/no-show")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<BookingDto>>> NoShow(long id, [FromBody] NoShowBookingRequest request, CancellationToken ct) =>
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.MarkNoShowAsync(id, request, ct), "Booking marked no-show"));
 
     [HttpPut("{id:long}/complete")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<BookingDto>>> Complete(long id, CancellationToken ct) =>
         Ok(ApiResponse<BookingDto>.Ok(await bookingService.MarkCompletedAsync(id, ct), "Booking completed"));
 
     [HttpPost("{id:long}/start-session")]
-    [Authorize(Roles = OperationRoles)]
+    [Authorize(Roles = RoleConstants.Operation)]
     public async Task<ActionResult<ApiResponse<SessionDto>>> StartSession(long id, [FromBody] StartSessionRequest request, CancellationToken ct) =>
         Ok(ApiResponse<SessionDto>.Ok(await sessionService.StartFromBookingAsync(id, request.TableId > 0 ? request.TableId : null, User.GetUserId(), ct), "Session started"));
 

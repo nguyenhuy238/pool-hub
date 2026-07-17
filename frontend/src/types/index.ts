@@ -408,6 +408,7 @@ export type VenueTableLayoutItem = {
   operationalStatus: number;
   isActive: boolean;
   activeSessionId?: number;
+  activeSessionStartedAtUtc?: string;
   nextBookingId?: number;
   nextBookingCode?: string;
   nextBookingStartTimeUtc?: string;
