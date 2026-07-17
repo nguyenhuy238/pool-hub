@@ -11,7 +11,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/venue-tables")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
+[Authorize(Roles = RoleConstants.Operation)]
 public class VenueTablesController(ICrudService s, IVenueService venueService) : ControllerBase
 {
     [HttpGet("layout")]
@@ -20,11 +20,9 @@ public class VenueTablesController(ICrudService s, IVenueService venueService) :
         Ok(ApiResponse<VenueLayoutResponse>.Ok(await venueService.GetLayoutAsync(ct)));
 
     [HttpGet]
-    [Authorize(Policy = PermissionConstants.VenueManage)]
     public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] PaginationRequest r, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await s.GetVenueTablesAsync(r, ct)));
 
     [HttpGet("{id:int}")]
-    [Authorize(Policy = PermissionConstants.VenueManage)]
     public async Task<ActionResult<ApiResponse<object>>> GetById(int id, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await s.GetVenueTableAsync(id, ct)));
 
     [HttpPost]

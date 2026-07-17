@@ -299,7 +299,8 @@ public class AuthService(
         LastLoginAtUtc = user.LastLoginAtUtc,
         CreatedAtUtc = user.CreatedAtUtc,
         UpdatedAtUtc = user.UpdatedAtUtc,
-        Roles = await GetRolesAsync(user.UserId, ct)
+        Roles = await GetRolesAsync(user.UserId, ct),
+        Permissions = await GetPermissionsAsync(user.UserId, ct)
     };
 
     private Task<List<string>> GetRolesAsync(long userId, CancellationToken ct) =>
