@@ -12,4 +12,5 @@ public class VenueTable : BaseEntity
     public decimal PositionX { get; set; }
     public decimal PositionY { get; set; }
     public int OperationalStatus { get; set; } = 1;
+    public bool IsActive { get; set; } = true;
 }

@@ -376,7 +376,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     public async Task<List<AvailableTableDto>> GetAvailabilityAsync(BookingAvailabilityRequest request, CancellationToken ct)
     {
-        await ApplyAutomaticBookingStatusesAsync(_clock.UtcNow, ct);
+        await ExpirePendingDepositsAsync(_clock.UtcNow, ct);
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
 
         var requestedTableIds = NormalizeTableIds(request.TableIds, request.TableId);

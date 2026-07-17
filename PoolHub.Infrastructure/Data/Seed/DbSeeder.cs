@@ -86,6 +86,381 @@ public static class DbSeeder
         await db.SaveChangesAsync(ct);
     }
 
+    private static async Task EnsureRolesAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var definitions = new[]
+        {
+            new Role { Name = RoleConstants.Admin, Description = "Full system admin", IsSystem = true },
+            new Role { Name = RoleConstants.Manager, Description = "Operations manager", IsSystem = true },
+            new Role { Name = RoleConstants.Staff, Description = "Floor staff", IsSystem = true },
+            new Role { Name = RoleConstants.Cashier, Description = "Cashier", IsSystem = true },
+            new Role { Name = RoleConstants.Customer, Description = "Registered customer", IsSystem = true },
+            new Role { Name = RoleConstants.Guest, Description = "Anonymous guest", IsSystem = true }
+        };
+
+        var existing = await db.Roles.Select(x => x.Name).ToListAsync(ct);
+        var missing = definitions.Where(x => !existing.Contains(x.Name)).ToList();
+        if (missing.Count == 0) return;
+
+        db.Roles.AddRange(missing);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsurePermissionsAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var definitions = PermissionConstants.All.Select(code =>
+        {
+            var group = code.Split('.')[0];
+            return new Permission
+            {
+                Code = code,
+                Name = code.Replace('.', ' '),
+                Group = group,
+                Description = $"Allows {code.Replace('.', ' ')} operations."
+            };
+        }).ToList();
+
+        var existingCodes = await db.Permissions.Select(x => x.Code).ToListAsync(ct);
+        var missing = definitions.Where(x => !existingCodes.Contains(x.Code)).ToList();
+        if (missing.Count > 0)
+        {
+            db.Permissions.AddRange(missing);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var roleMap = await db.Roles.ToDictionaryAsync(x => x.Name, x => x.RoleId, ct);
+        var permissionMap = await db.Permissions.Where(x => x.IsActive)
+            .ToDictionaryAsync(x => x.Code, x => x.PermissionId, ct);
+        var rolePermissions = new Dictionary<string, string[]>
+        {
+            [RoleConstants.Admin] = PermissionConstants.All,
+            [RoleConstants.Manager] =
+            [
+                PermissionConstants.UsersManage, PermissionConstants.RolesManage,
+                PermissionConstants.CustomersManage, PermissionConstants.VenueManage,
+                PermissionConstants.PricingManage, PermissionConstants.ProductsManage,
+                PermissionConstants.InventoryManage, PermissionConstants.ReportsView,
+                PermissionConstants.AuditView
+            ],
+            [RoleConstants.Staff] = [PermissionConstants.CustomersManage],
+            [RoleConstants.Cashier] = [PermissionConstants.DiscountsManage, PermissionConstants.PaymentsManage]
+        };
+
+        foreach (var (roleName, codes) in rolePermissions)
+        {
+            if (!roleMap.TryGetValue(roleName, out var roleId)) continue;
+            foreach (var code in codes)
+            {
+                var permissionId = permissionMap[code];
+                if (!await db.RolePermissions.AnyAsync(
+                    x => x.RoleId == roleId && x.PermissionId == permissionId, ct))
+                {
+                    db.RolePermissions.Add(new RolePermission { RoleId = roleId, PermissionId = permissionId });
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDemoUsersAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var roleMap = await db.Roles.ToDictionaryAsync(x => x.Name, x => x.RoleId, ct);
+        var demos = new[]
+        {
+            new { FullName = "Admin", Email = "admin@poolhub.com", Password = "Admin@123", Role = RoleConstants.Admin },
+            new { FullName = "Manager", Email = "manager@poolhub.com", Password = "Manager@123", Role = RoleConstants.Manager },
+            new { FullName = "Staff 1", Email = "staff1@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff },
+            new { FullName = "Staff 2", Email = "staff2@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff },
+            new { FullName = "Cashier", Email = "cashier@poolhub.com", Password = "Cashier@123", Role = RoleConstants.Cashier }
+        };
+
+        foreach (var demo in demos)
+        {
+            var email = demo.Email.Trim().ToLowerInvariant();
+            var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
+            if (user is null)
+            {
+                user = new User
+                {
+                    FullName = demo.FullName,
+                    Email = email,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(demo.Password, 12),
+                    EmailConfirmed = true,
+                    Status = UserStatus.Active
+                };
+                db.Users.Add(user);
+                await db.SaveChangesAsync(ct);
+            }
+            else
+            {
+                var changed = false;
+                if (!string.Equals(user.Email, email, StringComparison.Ordinal))
+                {
+                    user.Email = email;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(user.FullName))
+                {
+                    user.FullName = demo.FullName;
+                    changed = true;
+                }
+
+                if (!user.EmailConfirmed)
+                {
+                    user.EmailConfirmed = true;
+                    changed = true;
+                }
+
+                if (user.Status != UserStatus.Active)
+                {
+                    user.Status = UserStatus.Active;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(demo.Password, user.PasswordHash))
+                {
+                    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demo.Password, 12);
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    user.UpdatedAtUtc = DateTime.UtcNow;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+
+            var roleId = roleMap[demo.Role];
+            var hasRole = await db.UserRoles.AnyAsync(x => x.UserId == user.UserId && x.RoleId == roleId, ct);
+            if (!hasRole)
+            {
+                db.UserRoles.Add(new UserRole { UserId = user.UserId, RoleId = roleId });
+                await db.SaveChangesAsync(ct);
+            }
+        }
+    }
+
+    private static async Task EnsureDemoDiscountsAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        if (await db.Discounts.AnyAsync(ct)) return;
+        var now = DateTime.UtcNow;
+        var discounts = new[]
+        {
+            new Discount { DiscountCode = "DISCOUNT10", Name = "10% off table time", DiscountType = "PERCENTAGE", Value = 10, AppliesTo = "TIME", StartsAtUtc = now.AddDays(-10), EndsAtUtc = now.AddYears(1), IsActive = true },
+            new Discount { DiscountCode = "POOLVIP20", Name = "20% off total bill", DiscountType = "PERCENTAGE", Value = 20, AppliesTo = "ALL", StartsAtUtc = now.AddDays(-5), EndsAtUtc = now.AddYears(1), IsActive = true, MaxAmount = 50000 },
+            new Discount { DiscountCode = "FIXED50K", Name = "50K fixed discount", DiscountType = "FIXED", Value = 50000, AppliesTo = "ALL", StartsAtUtc = now.AddDays(-10), EndsAtUtc = now.AddYears(1), IsActive = true, MinTimeSubtotal = 100000 }
+        };
+        db.Discounts.AddRange(discounts);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDepositPaymentMethodAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        if (await db.PaymentMethods.AnyAsync(x => x.Code == "DEPOSIT", ct)) return;
+
+        db.PaymentMethods.Add(new PaymentMethod
+        {
+            Name = "Deposit Applied",
+            Code = "DEPOSIT",
+            Description = "System payment method used when applying booking deposits to invoices.",
+            IsActive = true
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDemoVenueLayoutAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var floors = await db.Floors.OrderBy(x => x.FloorId).ToListAsync(ct);
+        if (floors.Count > 0)
+        {
+            floors[0].Name = "Floor 1";
+            floors[0].IsActive = true;
+            floors[0].DisplayOrder = 1;
+        }
+        if (floors.Count > 1)
+        {
+            floors[1].Name = "Floor 2 - VIP";
+            floors[1].IsActive = true;
+            floors[1].DisplayOrder = 2;
+        }
+
+        var zones = await db.Zones.OrderBy(x => x.ZoneId).ToListAsync(ct);
+        var zoneNames = new[] { "Zone A", "Zone B", "VIP Zone", "Zone D - Snooker" };
+        for (var index = 0; index < zones.Count && index < zoneNames.Length; index++)
+        {
+            zones[index].Name = zoneNames[index];
+            zones[index].IsActive = true;
+        }
+
+        var tableNameByCode = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["A01"] = "Table A01",
+            ["A02"] = "Table A02",
+            ["B01"] = "Table B01 Carom",
+            ["V01"] = "VIP Table 01",
+            ["V02"] = "VIP Table 02"
+        };
+
+        var tables = await db.VenueTables.ToListAsync(ct);
+        foreach (var table in tables)
+        {
+            if (tableNameByCode.TryGetValue(table.TableCode, out var name))
+            {
+                table.TableName = name;
+            }
+            else if (table.TableName.Contains("BÃ", StringComparison.OrdinalIgnoreCase))
+            {
+                table.TableName = table.TableCode.StartsWith("V", StringComparison.OrdinalIgnoreCase)
+                    ? $"VIP Table {table.TableCode.TrimStart('V')}"
+                    : $"Table {table.TableCode}";
+            }
+
+            table.IsActive = true;
+            if (table.OperationalStatus is < 1 or > 5)
+            {
+                table.OperationalStatus = 1;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task EnsureDefaultPricingCoverageAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        var activePlans = await db.PricingPlans
+            .Where(x => x.IsActive)
+            .OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.PricingPlanId)
+            .ToListAsync(ct);
+        var defaultPlan = activePlans.FirstOrDefault();
+
+        if (defaultPlan is null)
+        {
+            defaultPlan = new PricingPlan
+            {
+                Name = "Default 2026",
+                IsDefault = true,
+                IsActive = true,
+                StartsAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            };
+            db.PricingPlans.Add(defaultPlan);
+            await db.SaveChangesAsync(ct);
+            activePlans.Add(defaultPlan);
+        }
+
+        var activePlanIds = activePlans.Select(x => x.PricingPlanId).ToList();
+        var tableTypes = await db.TableTypes
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.TableTypeId)
+            .ToListAsync(ct);
+        var existingRules = await db.PricingPlanRules
+            .Where(x => activePlanIds.Contains(x.PricingPlanId))
+            .ToListAsync(ct);
+
+        var startOfDay = TimeSpan.Zero;
+        var firstDemoShift = TimeSpan.FromHours(8);
+        var lastDemoShiftEnd = new TimeSpan(23, 59, 59);
+        var endOfDay = TimeSpan.FromTicks(TimeSpan.TicksPerDay - 1);
+
+        foreach (var tableType in tableTypes)
+        {
+            var fallbackRate = GetDefaultHourlyRate(tableType);
+            for (var day = 0; day <= 6; day++)
+            {
+                var dayRules = existingRules
+                    .Where(x => x.TableTypeId == tableType.TableTypeId && x.DayOfWeek == day && x.IsActive)
+                    .ToList();
+
+                if (dayRules.Count == 0)
+                {
+                    AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, day, startOfDay, endOfDay, fallbackRate);
+                    continue;
+                }
+
+                foreach (var planRules in dayRules.GroupBy(x => x.PricingPlanId))
+                {
+                    var rate = planRules.OrderBy(x => x.StartTime).FirstOrDefault()?.HourlyRate ?? fallbackRate;
+                    AddRuleIfMissing(planRules.Key, tableType.TableTypeId, day, startOfDay, firstDemoShift, rate);
+                    AddRuleIfMissing(planRules.Key, tableType.TableTypeId, day, lastDemoShiftEnd, endOfDay, rate);
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        void AddRuleIfMissing(long pricingPlanId, long tableTypeId, int dayOfWeek, TimeSpan startTime, TimeSpan endTime, decimal hourlyRate)
+        {
+            var exists = existingRules.Any(x =>
+                x.PricingPlanId == pricingPlanId &&
+                x.TableTypeId == tableTypeId &&
+                x.DayOfWeek == dayOfWeek &&
+                x.StartTime == startTime);
+            if (exists)
+            {
+                return;
+            }
+
+            var rule = new PricingPlanRule
+            {
+                PricingPlanId = pricingPlanId,
+                TableTypeId = tableTypeId,
+                DayOfWeek = dayOfWeek,
+                StartTime = startTime,
+                EndTime = endTime,
+                HourlyRate = hourlyRate,
+                MinimumMinutes = 30,
+                BillingBlockMinutes = 15,
+                IsActive = true
+            };
+            existingRules.Add(rule);
+            db.PricingPlanRules.Add(rule);
+        }
+    }
+
+    private static decimal GetDefaultHourlyRate(TableType tableType)
+    {
+        return tableType.Code.ToUpperInvariant() switch
+        {
+            "POOL_VIP" => 90000,
+            "CAROM" => 60000,
+            "SNOOKER" => 90000,
+            _ => 50000
+        };
+    }
+
+    private static async Task EnsureDemoCustomerReviewsAsync(PoolHubDbContext db, CancellationToken ct)
+    {
+        if (await db.CustomerReviews.AnyAsync(ct)) return;
+
+        var customers = await db.Customers.OrderBy(x => x.CustomerId).Take(3).ToListAsync(ct);
+        if (customers.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var reviews = customers.Select((customer, index) => new CustomerReview
+        {
+            CustomerId = customer.CustomerId,
+            Rating = index == 2 ? 4 : 5,
+            Content = index switch
+            {
+                0 => "Fast booking and helpful staff.",
+                1 => "Clean space, quick drinks, and a comfortable session.",
+                _ => "VIP table was good and checkout was clear."
+            },
+            DisplayName = customer.FullName,
+            Status = CustomerReviewStatuses.Approved,
+            IsFeatured = true,
+            DisplayOrder = index + 1,
+            Source = CustomerReviewSources.AdminImport,
+            ApprovedAtUtc = now,
+            CreatedAtUtc = now.AddDays(-(index + 1))
+        }).ToList();
+
+        db.CustomerReviews.AddRange(reviews);
+        await db.SaveChangesAsync(ct);
+    }
+
     private const string DefaultBankTransferDescription =
         "{\"vietqr\":true,\"bankCode\":\"MB\",\"bankName\":\"MB Bank\",\"accountNo\":\"989420048989\",\"accountName\":\"POOLHUB\"}";
 
