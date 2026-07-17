@@ -149,14 +149,6 @@ public static class ServiceCollectionExtensions
         services.AddSwaggerGen(c =>
         {
             c.SwaggerDoc("v1", new OpenApiInfo { Title = "PoolHub API", Version = "v1" });
-            
-            var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-            var xmlPath = System.IO.Path.Combine(AppContext.BaseDirectory, xmlFile);
-            if (System.IO.File.Exists(xmlPath))
-            {
-                c.IncludeXmlComments(xmlPath);
-            }
-
             c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Name = "Authorization",
@@ -166,7 +158,13 @@ public static class ServiceCollectionExtensions
                 In = ParameterLocation.Header,
                 Description = "Input: Bearer {accessToken}"
             });
-            c.OperationFilter<PoolHub.API.Filters.SecurityRequirementsOperationFilter>();
+            c.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
+                {
+                    new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
+                    Array.Empty<string>()
+                }
+            });
         });
 
         return services;

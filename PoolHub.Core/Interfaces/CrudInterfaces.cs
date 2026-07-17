@@ -33,16 +33,7 @@ public interface ICrudService
     Task DeleteVenueTableAsync(long id, CancellationToken ct);
 
     Task<PagedResult<PricingPlanDto>> GetPricingPlansAsync(PaginationRequest request, CancellationToken ct);
-    Task<PricingPlanDto> GetPricingPlanAsync(long id, CancellationToken ct);
-    Task<PricingPlanDto> CreatePricingPlanAsync(PricingPlanDto dto, CancellationToken ct);
-    Task<PricingPlanDto> UpdatePricingPlanAsync(long id, PricingPlanDto dto, CancellationToken ct);
-    Task DeletePricingPlanAsync(long id, CancellationToken ct);
-
     Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PaginationRequest request, CancellationToken ct);
-    Task<PricingPlanRuleDto> GetPricingPlanRuleAsync(long id, CancellationToken ct);
-    Task<PricingPlanRuleDto> CreatePricingPlanRuleAsync(long planId, PricingPlanRuleDto dto, CancellationToken ct);
-    Task<PricingPlanRuleDto> UpdatePricingPlanRuleAsync(long planId, long ruleId, PricingPlanRuleDto dto, CancellationToken ct);
-    Task DeletePricingPlanRuleAsync(long planId, long ruleId, CancellationToken ct);
 
     Task<PagedResult<ProductCategoryDto>> GetProductCategoriesAsync(PaginationRequest request, CancellationToken ct);
     Task<ProductCategoryDto> CreateProductCategoryAsync(ProductCategoryDto dto, CancellationToken ct);

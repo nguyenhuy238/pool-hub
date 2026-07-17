@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using PoolHub.Core.DTOs.Common;
 using PoolHub.Core.DTOs.Venue;
 using PoolHub.Shared;
-using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.Services.Common;
 
