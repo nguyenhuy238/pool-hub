@@ -25,13 +25,24 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit, IC
         if (request.IsActive.HasValue) query = query.Where(x => x.IsActive == request.IsActive);
         if (!string.IsNullOrWhiteSpace(request.DiscountType)) query = query.Where(x => x.DiscountType == request.DiscountType);
         if (!string.IsNullOrWhiteSpace(request.AppliesTo)) query = query.Where(x => x.AppliesTo == request.AppliesTo);
+        if (request.IsVoucher.HasValue) query = query.Where(x => x.IsVoucher == request.IsVoucher.Value);
+        if (request.CustomerId.HasValue) query = query.Where(x => x.CustomerId == request.CustomerId.Value);
+        else query = query.Where(x => x.CustomerId == null);
+        if (request.OnlyTemplates == true)
+        {
+            var nowUtc = _clock.UtcNow;
+            query = query.Where(x => x.IsVoucher && x.PointsRequired > 0 && x.CustomerId == null && (x.EndsAtUtc == null || x.EndsAtUtc > nowUtc));
+        }
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.DiscountId)
             .Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize)
             .Select(x => new DiscountDto {
                 DiscountId = x.DiscountId, DiscountCode = x.DiscountCode, Name = x.Name, DiscountType = x.DiscountType,
                 Value = x.Value, MaxAmount = x.MaxAmount, MinTimeSubtotal = x.MinTimeSubtotal, AppliesTo = x.AppliesTo,
-                StartsAtUtc = x.StartsAtUtc, EndsAtUtc = x.EndsAtUtc, IsActive = x.IsActive
+                StartsAtUtc = x.StartsAtUtc, EndsAtUtc = x.EndsAtUtc, IsActive = x.IsActive,
+                IsVoucher = x.IsVoucher, PointsRequired = x.PointsRequired, CustomerId = x.CustomerId,
+                CustomerName = x.CustomerId.HasValue ? db.Customers.Where(c => c.CustomerId == x.CustomerId.Value).Select(c => c.FullName).FirstOrDefault() : null,
+                MaxUsage = x.MaxUsage, UsageCount = x.UsageCount
             }).ToListAsync(ct);
         return Page(items, request.PageNumber, request.PageSize, total);
     }
@@ -341,12 +352,18 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit, IC
         entity.Name = request.Name.Trim(); entity.DiscountType = NormalizeDiscountType(request.DiscountType);
         entity.Value = request.Value; entity.MaxAmount = request.MaxAmount; entity.MinTimeSubtotal = request.MinTimeSubtotal;
         entity.AppliesTo = "TIME"; entity.StartsAtUtc = request.StartsAtUtc; entity.EndsAtUtc = request.EndsAtUtc; entity.IsActive = request.IsActive;
+        entity.IsVoucher = request.IsVoucher;
+        entity.PointsRequired = request.PointsRequired;
+        entity.CustomerId = request.CustomerId;
+        entity.MaxUsage = request.MaxUsage;
     }
 
     private static DiscountDto MapDiscount(Discount x) => new() {
         DiscountId = x.DiscountId, DiscountCode = x.DiscountCode, Name = x.Name, DiscountType = x.DiscountType,
         Value = x.Value, MaxAmount = x.MaxAmount, MinTimeSubtotal = x.MinTimeSubtotal, AppliesTo = x.AppliesTo,
-        StartsAtUtc = x.StartsAtUtc, EndsAtUtc = x.EndsAtUtc, IsActive = x.IsActive
+        StartsAtUtc = x.StartsAtUtc, EndsAtUtc = x.EndsAtUtc, IsActive = x.IsActive,
+        IsVoucher = x.IsVoucher, PointsRequired = x.PointsRequired, CustomerId = x.CustomerId,
+        MaxUsage = x.MaxUsage, UsageCount = x.UsageCount
     };
     private static PaymentMethodDto MapPaymentMethod(PaymentMethod x) => new() {
         PaymentMethodId = x.PaymentMethodId, Name = x.Name, Code = x.Code, Description = x.Description, IsActive = x.IsActive

@@ -37,4 +37,6 @@ public interface ICustomerService
     Task<PagedResult<CustomerBookingHistoryDto>> GetBookingHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
     Task<PagedResult<CustomerSessionHistoryDto>> GetSessionHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
     Task<PagedResult<CustomerInvoiceHistoryDto>> GetInvoiceHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
+    Task<PoolHub.Core.DTOs.Admin.DiscountDto> ExchangeVoucherAsync(long customerId, long voucherTemplateId, long actorUserId, CancellationToken ct);
+    Task<PagedResult<CustomerPointHistoryDto>> GetPointHistoryAsync(long customerId, PaginationRequest request, CancellationToken ct);
 }

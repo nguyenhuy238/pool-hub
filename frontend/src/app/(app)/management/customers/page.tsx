@@ -72,7 +72,8 @@ export default function CustomersPage() {
       <DataTable rows={rows as unknown as Record<string, unknown>[]} columns={[
         { key: "fullName", label: "Họ và tên", render: (row) => <strong>{String(row.fullName)}</strong> },
         { key: "phoneNumber", label: "Số điện thoại", render: (row) => String(row.phoneNumber || "-") },
-        { key: "email", label: "Email", render: (row) => String(row.email || "-") },
+        { key: "loyaltyPoints", label: "Điểm hiện có", render: (row) => <Badge tone="green">🪙 {Number(row.loyaltyPoints || 0)}</Badge> },
+        { key: "totalPointsEarned", label: "Tổng tích lũy", render: (row) => <strong>{Number(row.totalPointsEarned || 0)}</strong> },
         { key: "totalBookings", label: "Số lần đặt bàn", render: (row) => <strong>{row.totalBookings as number}</strong> },
         { key: "status", label: "Trạng thái", render: (row) => <Badge tone={row.status ? "green" : "red"}>{row.status ? "Đang hoạt động" : "Đã khóa"}</Badge> },
         { key: "createdAtUtc", label: "Ngày tham gia", render: (row) => dateTime(String(row.createdAtUtc)) }

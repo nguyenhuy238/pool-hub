@@ -29,4 +29,6 @@ public static class AuditActions
     public const string CustomerReviewHidden = "CUSTOMER_REVIEW_HIDDEN";
     public const string CustomerReviewInvitationCreated = "CUSTOMER_REVIEW_INVITATION_CREATED";
     public const string CustomerReviewInvitationUsed = "CUSTOMER_REVIEW_INVITATION_USED";
+    public const string CustomerVoucherExchanged = "CUSTOMER_VOUCHER_EXCHANGED";
+    public const string CustomerPointsEarned = "CUSTOMER_POINTS_EARNED";
 }

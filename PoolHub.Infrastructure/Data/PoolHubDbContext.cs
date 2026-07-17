@@ -17,7 +17,7 @@ public class PoolHubDbContext(
     [
         nameof(AuditLog), nameof(User), nameof(Role), nameof(Customer), nameof(RefreshToken),
         nameof(PasswordResetToken), nameof(SiteSetting), nameof(MediaAsset), nameof(Discount), nameof(CustomerReview), nameof(CustomerReviewInvitation),
-        nameof(PaymentMethod), nameof(Permission), nameof(RolePermission)
+        nameof(PaymentMethod), nameof(Permission), nameof(RolePermission), nameof(CustomerPointHistory)
     ];
 
     public DbSet<Role> Roles => Set<Role>();
@@ -28,6 +28,7 @@ public class PoolHubDbContext(
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerPointHistory> CustomerPointHistories => Set<CustomerPointHistory>();
     public DbSet<Floor> Floors => Set<Floor>();
     public DbSet<Zone> Zones => Set<Zone>();
     public DbSet<TableType> TableTypes => Set<TableType>();

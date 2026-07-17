@@ -197,4 +197,12 @@ public class CustomersController(ICustomerService customerService) : ControllerB
     public async Task<ActionResult<ApiResponse<object>>> Invoices(
         long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
         Ok(ApiResponse<object>.Ok(await customerService.GetInvoiceHistoryAsync(id, request, ct)));
+
+    [HttpPost("{id:long}/exchange-voucher/{templateId:long}")]
+    public async Task<ActionResult<ApiResponse<object>>> ExchangeVoucher(long id, long templateId, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await customerService.ExchangeVoucherAsync(id, templateId, User.GetUserId(), ct), "Đổi voucher thành công."));
+
+    [HttpGet("{id:long}/point-history")]
+    public async Task<ActionResult<ApiResponse<object>>> PointHistory(long id, [FromQuery] PaginationRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<object>.Ok(await customerService.GetPointHistoryAsync(id, request, ct)));
 }
