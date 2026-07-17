@@ -2,13 +2,15 @@ import { apiFetch, toQuery } from "@/lib/api/client";
 import type { CustomerReview, PagedResult, PublicReview, ReviewInvitation, ReviewInvitationLink } from "@/types";
 
 export type CreatePublicReviewPayload = {
+  referenceCode?: string;
   bookingCode?: string;
   sessionCode?: string;
   invoiceCode?: string;
-  phoneNumber: string;
+  phoneNumber?: string;
   fullName?: string;
   rating: number;
-  content: string;
+  content?: string;
+  isAnonymous?: boolean;
   avatarUrl?: string;
   checkInImageUrl?: string;
 };
@@ -20,7 +22,7 @@ export const customerReviewsApi = {
     apiFetch<CustomerReview>("/api/public/reviews", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
   invitation: (token: string) =>
     apiFetch<ReviewInvitation>(`/api/public/reviews/invitations/${encodeURIComponent(token)}`, { skipAuth: true }),
-  submitInvitation: (token: string, body: { rating: number; content: string; displayName?: string; avatarUrl?: string; checkInImageUrl?: string }) =>
+  submitInvitation: (token: string, body: { rating: number; content?: string; displayName?: string; isAnonymous?: boolean; avatarUrl?: string; checkInImageUrl?: string }) =>
     apiFetch<CustomerReview>(`/api/public/reviews/invitations/${encodeURIComponent(token)}/submit`, { method: "POST", body: JSON.stringify(body), skipAuth: true }),
   list: (params: Record<string, string | number | boolean | null | undefined> = {}) =>
     apiFetch<PagedResult<CustomerReview>>(`/api/customer-reviews${toQuery(params)}`),

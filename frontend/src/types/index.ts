@@ -16,6 +16,8 @@ export type PagedResult<T> = {
   pageNumber?: number;
   pageSize?: number;
   totalPages?: number;
+  averageRating?: number;
+  ratingDistribution?: Record<number, number>;
 };
 
 export type AuthUser = {
@@ -79,6 +81,7 @@ export type PublicReview = {
   rating: number;
   content: string;
   displayName: string;
+  isVerified?: boolean;
   avatarUrl?: string;
   checkInImageUrl?: string;
   isFeatured?: boolean;
@@ -91,6 +94,7 @@ export type CustomerReview = PublicReview & {
   customerPublicId?: string;
   customerName?: string;
   phoneNumber?: string;
+  isAnonymous?: boolean;
   bookingCode?: string;
   sessionCode?: string;
   invoiceCode?: string;

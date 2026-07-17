@@ -18,6 +18,7 @@ import type { PublicReview } from "@/types";
 export function LandingPage() {
   const [settings, setSettings] = useState<LandingPageSettings>(defaultLandingSettings);
   const [reviews, setReviews] = useState<PublicReview[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<{ averageRating?: number; totalItems?: number; ratingDistribution?: Record<number, number> }>({});
 
   useEffect(() => {
     landingSettingsApi.public().then(setSettings).catch((error) => {
@@ -25,8 +26,18 @@ export function LandingPage() {
       setSettings(defaultLandingSettings);
     });
     customerReviewsApi.publicList({ pageNumber: 1, pageSize: 6 })
-      .then((value) => setReviews(value.items || value.data || []))
-      .catch(() => setReviews([]));
+      .then((value) => {
+        setReviews(value.items || value.data || []);
+        setReviewSummary({
+          averageRating: value.averageRating,
+          totalItems: value.totalItems ?? value.totalCount,
+          ratingDistribution: value.ratingDistribution
+        });
+      })
+      .catch(() => {
+        setReviews([]);
+        setReviewSummary({});
+      });
   }, []);
 
   const themeStyle = {
@@ -42,7 +53,7 @@ export function LandingPage() {
       <ServicesSection items={settings.services} />
       <PricingSection />
       <BookingWizard policy={settings.bookingPolicy} />
-      <ReviewSection items={reviews.length ? reviews : activeSorted(settings.reviews).filter((item) => item.isFeatured)} />
+      <ReviewSection items={reviews.length ? reviews : activeSorted(settings.reviews).filter((item) => item.isFeatured)} summary={reviewSummary} />
       <GallerySection items={settings.gallery} />
       <ContactSection info={settings.generalInfo} />
       <LandingFooter info={settings.generalInfo} bookingPolicy={settings.bookingPolicy} socialLinks={settings.socialLinks || []} footer={settings.footer} legal={settings.legal} qrCode={settings.qrCode} />

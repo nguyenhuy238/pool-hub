@@ -1,4 +1,5 @@
 using PoolHub.Core.DTOs.Common;
+using PoolHub.Shared;
 
 namespace PoolHub.Core.DTOs.CustomerReview;
 
@@ -15,6 +16,8 @@ public class CustomerReviewDto
     public int Rating { get; set; }
     public string Content { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public bool IsAnonymous { get; set; }
+    public bool IsVerified { get; set; }
     public string? AvatarUrl { get; set; }
     public string? CheckInImageUrl { get; set; }
     public int Status { get; set; }
@@ -34,6 +37,7 @@ public class PublicReviewDto
     public int Rating { get; set; }
     public string Content { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public bool IsVerified { get; set; }
     public string? AvatarUrl { get; set; }
     public string? CheckInImageUrl { get; set; }
     public bool IsFeatured { get; set; }
@@ -57,15 +61,23 @@ public class PublicReviewQueryRequest : PaginationRequest
     public int? MinRating { get; set; }
 }
 
+public class PublicReviewPagedResult : PagedResult<PublicReviewDto>
+{
+    public double AverageRating { get; set; }
+    public Dictionary<int, int> RatingDistribution { get; set; } = [];
+}
+
 public class CreatePublicReviewRequest
 {
+    public string? ReferenceCode { get; set; }
     public string? BookingCode { get; set; }
     public string? SessionCode { get; set; }
     public string? InvoiceCode { get; set; }
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
     public string? FullName { get; set; }
     public int Rating { get; set; }
-    public string Content { get; set; } = string.Empty;
+    public string? Content { get; set; }
+    public bool IsAnonymous { get; set; }
     public string? AvatarUrl { get; set; }
     public string? CheckInImageUrl { get; set; }
 }
@@ -121,8 +133,9 @@ public class ReviewInvitationLinkDto
 public class SubmitReviewInvitationRequest
 {
     public int Rating { get; set; }
-    public string Content { get; set; } = string.Empty;
+    public string? Content { get; set; }
     public string? DisplayName { get; set; }
+    public bool IsAnonymous { get; set; }
     public string? AvatarUrl { get; set; }
     public string? CheckInImageUrl { get; set; }
 }
