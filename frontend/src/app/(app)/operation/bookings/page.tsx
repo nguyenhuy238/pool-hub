@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { getTotalPages } from "@/lib/api/client";
-import { formatVietnamTime, utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
+import { formatVietnamTime, utcTimestampMs, utcToVietnamDatetimeLocal, vietnamDatetimeLocalToUtcIso } from "@/lib/dateTime";
 import { dateTime, label, bookingStatus, depositStatus, money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
@@ -64,10 +64,8 @@ function getDepositFlowLabel(bookingStatusValue: number, depositStatusValue?: nu
 }
 
 function getStartSessionState(row: Record<string, unknown>, nowMs: number) {
-  const startTimeUtc = typeof row.startTimeUtc === "string" ? row.startTimeUtc : "";
-  const endTimeUtc = typeof row.endTimeUtc === "string" ? row.endTimeUtc : "";
-  const startMs = new Date(startTimeUtc).getTime();
-  const endMs = new Date(endTimeUtc).getTime();
+  const startMs = utcTimestampMs(typeof row.startTimeUtc === "string" ? row.startTimeUtc : null);
+  const endMs = utcTimestampMs(typeof row.endTimeUtc === "string" ? row.endTimeUtc : null);
 
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
     return { canStart: false, message: "Thời gian booking không hợp lệ." };

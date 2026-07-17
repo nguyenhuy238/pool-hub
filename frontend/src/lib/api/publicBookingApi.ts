@@ -54,6 +54,7 @@ export const publicBookingApi = {
     body: JSON.stringify(toBookingPayload(request)),
     skipAuth: true
   }),
+  getBooking: (bookingId: number) => apiFetch<Booking>(`/api/bookings/public/${bookingId}`, { skipAuth: true }),
   submitDepositTransfer: (bookingId: number) => apiFetch<Booking>(`/api/bookings/${bookingId}/deposit/submit-transfer`, {
     method: "POST",
     skipAuth: true

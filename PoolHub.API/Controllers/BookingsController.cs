@@ -19,8 +19,8 @@ public class BookingsController(IBookingService bookingService, ISessionService 
 
     [HttpGet]
     [Authorize]
-    public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] PaginationRequest request, CancellationToken ct) =>
-        Ok(ApiResponse<object>.Ok(await crud.GetBookingsCrudAsync(request, ct)));
+    public async Task<ActionResult<ApiResponse<PagedResult<BookingDto>>>> Get([FromQuery] BookingQueryRequest request, CancellationToken ct) =>
+        Ok(ApiResponse<PagedResult<BookingDto>>.Ok(await bookingService.GetBookingsAsync(request, ct)));
 
     [HttpGet("calendar")]
     [Authorize(Roles = OperationRoles)]
@@ -39,8 +39,13 @@ public class BookingsController(IBookingService bookingService, ISessionService 
 
     [HttpGet("{id:long}")]
     [Authorize]
-    public async Task<ActionResult<ApiResponse<object>>> GetById(long id, CancellationToken ct) =>
-        Ok(ApiResponse<object>.Ok(await crud.GetBookingAsync(id, ct)));
+    public async Task<ActionResult<ApiResponse<BookingDto>>> GetById(long id, CancellationToken ct) =>
+        Ok(ApiResponse<BookingDto>.Ok(await bookingService.GetByIdAsync(id, ct)));
+
+    [HttpGet("public/{id:long}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<BookingDto>>> GetPublicBookingById(long id, CancellationToken ct) =>
+        Ok(ApiResponse<BookingDto>.Ok(await bookingService.GetByIdAsync(id, ct)));
 
     [HttpPost]
     [AllowAnonymous]

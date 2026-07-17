@@ -74,6 +74,8 @@ export type Customer = {
   email?: string;
   note?: string;
   status: boolean;
+  loyaltyPoints?: number;
+  totalPointsEarned?: number;
 };
 
 export type PublicReview = {
@@ -322,6 +324,9 @@ export type Invoice = {
   invoiceId: number;
   invoiceCode?: string;
   sessionId: number;
+  customerId?: number;
+  customerName?: string;
+  customerPhone?: string;
   timeSubtotalAmount?: number;
   productSubtotalAmount?: number;
   subtotalAmount?: number;
@@ -334,6 +339,7 @@ export type Invoice = {
   remainingAmount?: number;
   paymentStatus?: number;
   status?: number;
+  note?: string;
   lines?: InvoiceLine[];
   discounts?: InvoiceDiscount[];
   payments?: InvoicePayment[];
@@ -440,6 +446,7 @@ export type Notification = { notificationId: number; title?: string; message?: s
 export type Discount = {
   discountId: number; discountCode: string; name: string; discountType: string; value: number;
   maxAmount?: number; minTimeSubtotal?: number; appliesTo: "TIME"; startsAtUtc: string; endsAtUtc?: string; isActive: boolean;
+  isVoucher?: boolean; pointsRequired?: number; customerId?: number; maxUsage?: number; usageCount?: number;
 };
 export type InventoryTransaction = {
   inventoryTransactionId: number; productId: number; productName: string; transactionType: number;
@@ -481,6 +488,8 @@ export type CustomerDto = {
   status: boolean;
   createdAtUtc: string;
   totalBookings: number;
+  loyaltyPoints?: number;
+  totalPointsEarned?: number;
 };
 
 export type CustomerBookingHistory = {
@@ -509,6 +518,16 @@ export type CustomerInvoiceHistory = {
   paymentStatus: number;
   status: number;
   issuedAtUtc?: string;
+};
+
+export type CustomerPointHistory = {
+  customerPointHistoryId: number;
+  customerId: number;
+  points: number;
+  transactionType: string;
+  description: string;
+  referenceId?: number;
+  createdAtUtc: string;
 };
 
 export type SelectOption = { value: string; label: string };

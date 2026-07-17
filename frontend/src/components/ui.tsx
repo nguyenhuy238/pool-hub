@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, unwrapList } from "@/lib/api/client";
 import { useToast } from "@/components/toast";
 import type { SelectOption } from "@/types";
@@ -201,17 +201,17 @@ export function useLoad<T>(loader: () => Promise<T>, deps: React.DependencyList 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function reload() {
-    setLoading(true);
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       setData(await loader());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được dữ liệu.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }
+  }, [loader]);
 
   useEffect(() => {
     reload();
@@ -394,7 +394,7 @@ export function SearchableSelect({
               }}
             />
           </div>
-          <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+          <div style={{ maxHeight: "320px", overflowY: "auto" }}>
             {filteredOptions.length === 0 ? (
               <div style={{ padding: "12px", color: "#888", textAlign: "center", fontSize: "14px" }}>
                 Không tìm thấy kết quả

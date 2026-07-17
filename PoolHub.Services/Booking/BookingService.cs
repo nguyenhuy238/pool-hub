@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Common;
@@ -10,12 +11,17 @@ using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using PoolHub.Shared.Time;
+using System;
+using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
 using EntityBooking = PoolHub.Core.Entities.Booking;
 using EntityCustomer = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Booking;
 
-public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IClock? clock = null) : IBookingService
+[Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IClock? clock = null, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IBookingService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
     private const int BookingDepositPercent = 30;
@@ -28,7 +34,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private const int MaxActiveBookingsPerPhonePerDay = 2;
 
     public BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger)
-        : this(db, emailService, logger, new NoOpPosNotificationService(), null)
+        : this(db, emailService, logger, new NoOpPosNotificationService(), null, null, null)
     {
     }
 
@@ -68,6 +74,10 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> GetByIdAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        if (booking.Status == BookingStatuses.PendingDeposit)
+        {
+            await CheckAndConfirmDepositFromPayOsAsync(booking, ct);
+        }
         if (await ApplyAutomaticBookingStatusAsync(booking, _clock.UtcNow, ct))
         {
             await db.SaveChangesAsync(ct);
@@ -140,6 +150,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.Status = BookingStatuses.Confirmed;
         booking.ConfirmedByUserId = confirmedByUserId;
         booking.ConfirmedAtUtc ??= now;
+        await CreateBookingConfirmedNotificationAsync(booking, ct);
         await db.SaveChangesAsync(ct);
         await posNotificationService.NotifyBookingUpdateAsync((int)booking.BookingId, ct);
         await TrySendBookingConfirmedEmailAsync(booking, ct);
@@ -201,6 +212,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.Status = BookingStatuses.Confirmed;
         booking.ConfirmedAtUtc ??= now;
         booking.UpdatedAtUtc = now;
+        await CreateBookingConfirmedNotificationAsync(booking, ct);
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
 
@@ -212,6 +224,15 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     public async Task<BookingDto> SubmitDepositTransferAsync(long id, CancellationToken ct)
     {
         var booking = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
+        if (booking.Status == BookingStatuses.PendingDeposit)
+        {
+            await CheckAndConfirmDepositFromPayOsAsync(booking, ct);
+            if (booking.Status == BookingStatuses.Confirmed)
+            {
+                return await MapAsync(booking, ct);
+            }
+        }
+
         var now = _clock.UtcNow;
         if (await ApplyAutomaticBookingStatusAsync(booking, now, ct))
         {
@@ -266,6 +287,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         booking.ConfirmedByUserId = confirmedByUserId;
         booking.ConfirmedAtUtc ??= now;
         booking.UpdatedAtUtc = now;
+        await CreateBookingConfirmedNotificationAsync(booking, ct);
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
 
@@ -763,17 +785,182 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (settings is null) return null;
 
         var transferContent = FormatBookingDepositTransferContent(booking.BookingCode, phoneNumber);
+        string? vietQrUrl = null;
+
+        var clientId = config?["PayOSSettings:ClientId"];
+        var apiKey = config?["PayOSSettings:ApiKey"];
+        var checksumKey = config?["PayOSSettings:ChecksumKey"];
+        var baseUrl = config?["EmailSettings:FrontendBaseUrl"] ?? "http://localhost:3000";
+
+        if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(checksumKey) && httpClientFactory != null && deposit.BookingDepositId > 0)
+        {
+            try
+            {
+                long orderCode = 100000000 + deposit.BookingDepositId;
+                long amount = (long)deposit.RequiredAmount;
+                if (amount <= 0) amount = (long)MinimumDepositAmount;
+                string cancelUrl = $"{baseUrl}/booking";
+                string returnUrl = $"{baseUrl}/booking";
+                string description = $"DEP {deposit.BookingDepositId}";
+                string? payosQrString = null;
+                long activePayOsOrderCode = orderCode;
+
+                var client = httpClientFactory.CreateClient();
+
+                string rawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
+                using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
+                var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawData));
+                var signature = BitConverter.ToString(hash).Replace("-", "").ToLower();
+
+                var payosBody = new
+                {
+                    orderCode = orderCode,
+                    amount = amount,
+                    description = description,
+                    cancelUrl = cancelUrl,
+                    returnUrl = returnUrl,
+                    signature = signature
+                };
+
+                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "https://api-merchant.payos.vn/v2/payment-requests");
+                req.Headers.Add("x-client-id", clientId);
+                req.Headers.Add("x-api-key", apiKey);
+                req.Content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(payosBody), System.Text.Encoding.UTF8, "application/json");
+
+                var res = await client.SendAsync(req, ct);
+                var resStr = await res.Content.ReadAsStringAsync(ct);
+
+                if (res.IsSuccessStatusCode && !resStr.Contains("\"code\":\"233\""))
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(resStr);
+                    if (doc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        if (dataEl.TryGetProperty("qrCode", out var qrEl) && qrEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            payosQrString = qrEl.GetString();
+                        }
+                    }
+                }
+
+                if (resStr.Contains("\"code\":\"233\"") || resStr.Contains("\"233\"") || resStr.Contains("tồn tại") || resStr.Contains("exists"))
+                {
+                    try
+                    {
+                        var checkReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"https://api-merchant.payos.vn/v2/payment-requests/{orderCode}");
+                        checkReq.Headers.Add("x-client-id", clientId);
+                        checkReq.Headers.Add("x-api-key", apiKey);
+                        var checkRes = await client.SendAsync(checkReq, ct);
+                        bool needNewOrderCode = true;
+
+                        if (checkRes.IsSuccessStatusCode)
+                        {
+                            var checkStr = await checkRes.Content.ReadAsStringAsync(ct);
+                            using var checkDoc = System.Text.Json.JsonDocument.Parse(checkStr);
+                            if (checkDoc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == System.Text.Json.JsonValueKind.Object)
+                            {
+                                var st = data.TryGetProperty("status", out var stProp) ? stProp.GetString() : null;
+                                decimal existingAmt = 0m;
+                                if (data.TryGetProperty("amount", out var amProp) && amProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                {
+                                    amProp.TryGetDecimal(out existingAmt);
+                                }
+
+                                if (string.Equals(st, "PENDING", StringComparison.OrdinalIgnoreCase) && existingAmt == amount)
+                                {
+                                    if (data.TryGetProperty("qrCode", out var qrEl) && qrEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    {
+                                        payosQrString = qrEl.GetString();
+                                    }
+                                    if (!string.IsNullOrWhiteSpace(payosQrString))
+                                    {
+                                        needNewOrderCode = false;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (needNewOrderCode)
+                        {
+                            long newOrderCode = long.Parse($"{DateTime.UtcNow:yyMMddHHmmss}{Random.Shared.Next(10, 99)}");
+                            activePayOsOrderCode = newOrderCode;
+                            string newRawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={newOrderCode}&returnUrl={returnUrl}";
+                            using var newHmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
+                            var newHash = newHmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(newRawData));
+                            var newSignature = BitConverter.ToString(newHash).Replace("-", "").ToLower();
+
+                            var newBody = new
+                            {
+                                orderCode = newOrderCode,
+                                amount = amount,
+                                description = description,
+                                cancelUrl = cancelUrl,
+                                returnUrl = returnUrl,
+                                signature = newSignature
+                            };
+
+                            var retryReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "https://api-merchant.payos.vn/v2/payment-requests");
+                            retryReq.Headers.Add("x-client-id", clientId);
+                            retryReq.Headers.Add("x-api-key", apiKey);
+                            retryReq.Content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(newBody), System.Text.Encoding.UTF8, "application/json");
+                            var retryRes = await client.SendAsync(retryReq, ct);
+                            var retryStr = await retryRes.Content.ReadAsStringAsync(ct);
+
+                            if (retryRes.IsSuccessStatusCode && !retryStr.Contains("\"code\":\"233\""))
+                            {
+                                using var retryDoc = System.Text.Json.JsonDocument.Parse(retryStr);
+                                if (retryDoc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+                                {
+                                    if (dataEl.TryGetProperty("qrCode", out var qrEl) && qrEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    {
+                                        payosQrString = qrEl.GetString();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Error checking or retrying existing deposit order code #{OrderCode}", orderCode);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(payosQrString))
+                {
+                    vietQrUrl = $"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={Uri.EscapeDataString(payosQrString)}";
+                    var currentNote = System.Text.RegularExpressions.Regex.Replace(booking.Note ?? "", @"PayOS_OrderCode:\d+\s*\|?\s*", "").Trim(' ', '|');
+                    booking.Note = string.IsNullOrWhiteSpace(currentNote) ? $"PayOS_OrderCode:{activePayOsOrderCode}" : $"{currentNote} | PayOS_OrderCode:{activePayOsOrderCode}";
+                    try { await db.SaveChangesAsync(ct); } catch { }
+                }
+                else
+                {
+                    throw new BusinessRuleException("Không thể tạo mã QR thanh toán cọc PayOS. Vui lòng kiểm tra lại cấu hình PayOS.");
+                }
+            }
+            catch (BusinessRuleException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error creating PayOS payment request for deposit #{DepositId}", deposit.BookingDepositId);
+                throw new BusinessRuleException("Lỗi kết nối tới cổng thanh toán PayOS. Vui lòng thử lại sau.");
+            }
+        }
+        else if (settings.CanBuildDynamicQr)
+        {
+            vietQrUrl = BankTransferQrHelper.BuildVietQrUrl(settings, deposit.RequiredAmount, transferContent);
+        }
 
         return new DepositPaymentInstructionDto
         {
             PaymentMethodCode = settings.PaymentMethodCode,
             PaymentMethodName = settings.PaymentMethodName,
-            BankName = string.IsNullOrWhiteSpace(settings.BankName) ? settings.BankCode : settings.BankName,
+            BankName = BankTransferQrHelper.ResolveBankName(settings.BankCode, settings.BankName),
             BankCode = settings.BankCode,
             BankAccountNumber = settings.AccountNumber,
             BankAccountName = settings.AccountName,
             QrImageUrl = settings.QrImageUrl,
-            VietQrUrl = settings.CanBuildDynamicQr ? BankTransferQrHelper.BuildVietQrUrl(settings, deposit.RequiredAmount, transferContent) : null,
+            VietQrUrl = vietQrUrl,
             Amount = deposit.RequiredAmount,
             TransferContent = transferContent,
             ExpiresAtUtc = booking.HoldExpiresAtUtc ?? deposit.DueAtUtc
@@ -996,12 +1183,29 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         {
             var (email, customerName, phoneNumber, tableName) = await GetEmailContextAsync(booking, ct);
             if (string.IsNullOrWhiteSpace(email)) return;
-            await emailService.SendBookingConfirmedAsync(email, customerName, phoneNumber, booking.BookingCode, tableName,
-                booking.StartTimeUtc, booking.EndTimeUtc, booking.NumberOfGuests, ct);
+
+            var bookingCode = booking.BookingCode;
+            var startUtc = booking.StartTimeUtc;
+            var endUtc = booking.EndTimeUtc;
+            var guests = booking.NumberOfGuests;
+            var bookingId = booking.BookingId;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await emailService.SendBookingConfirmedAsync(email, customerName, phoneNumber, bookingCode, tableName,
+                        startUtc, endUtc, guests, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send booking confirmed email for booking {BookingId}", bookingId);
+                }
+            });
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to send booking confirmed email for booking {BookingId}", booking.BookingId);
+            logger.LogWarning(ex, "Failed to prepare booking confirmed email for booking {BookingId}", booking.BookingId);
         }
     }
 
@@ -1011,12 +1215,128 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         {
             var (email, customerName, phoneNumber, tableName) = await GetEmailContextAsync(booking, ct);
             if (string.IsNullOrWhiteSpace(email)) return;
-            await emailService.SendBookingCancelledAsync(email, customerName, phoneNumber, booking.BookingCode, tableName,
-                booking.StartTimeUtc, booking.EndTimeUtc, booking.NumberOfGuests, reason, ct);
+
+            var bookingCode = booking.BookingCode;
+            var startUtc = booking.StartTimeUtc;
+            var endUtc = booking.EndTimeUtc;
+            var guests = booking.NumberOfGuests;
+            var bookingId = booking.BookingId;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await emailService.SendBookingCancelledAsync(email, customerName, phoneNumber, bookingCode, tableName,
+                        startUtc, endUtc, guests, reason, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send booking cancelled email for booking {BookingId}", bookingId);
+                }
+            });
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to send booking cancelled email for booking {BookingId}", booking.BookingId);
+            logger.LogWarning(ex, "Failed to prepare booking cancelled email for booking {BookingId}", booking.BookingId);
+        }
+    }
+
+    private async Task CreateBookingConfirmedNotificationAsync(EntityBooking booking, CancellationToken ct)
+    {
+        try
+        {
+            var customerName = await db.Customers.Where(c => c.CustomerId == booking.CustomerId).Select(c => c.FullName).FirstOrDefaultAsync(ct) ?? "Khách hàng";
+            var tableName = booking.TableId.HasValue
+                ? await db.VenueTables.Where(t => t.TableId == booking.TableId.Value).Select(t => t.TableName).FirstOrDefaultAsync(ct) ?? "Bàn"
+                : "Bàn";
+            var localStart = TimeZoneInfo.ConvertTimeFromUtc(BusinessTime.NormalizeUtc(booking.StartTimeUtc), BusinessTime.TimeZone);
+            var startTimeStr = localStart.ToString("HH:mm dd/MM/yyyy");
+
+            db.Notifications.Add(new PoolHub.Core.Entities.Notification
+            {
+                UserId = null,
+                CustomerId = booking.CustomerId,
+                Title = "Đặt bàn mới",
+                Message = $"[Đặt bàn mới] Khách hàng {customerName} vừa đặt bàn {tableName} lúc {startTimeStr}. Mã BK: {booking.BookingCode}",
+                NotificationType = "BOOKING",
+                IsRead = false,
+                CreatedAtUtc = _clock.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to create confirmed booking notification for booking {BookingId}", booking.BookingId);
+        }
+    }
+
+    private async Task CheckAndConfirmDepositFromPayOsAsync(EntityBooking booking, CancellationToken ct)
+    {
+        var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingId == booking.BookingId, ct);
+        if (deposit == null || (deposit.Status != BookingDepositStatuses.Pending && deposit.Status != BookingDepositStatuses.PendingVerification))
+            return;
+
+        var clientId = config?["PayOSSettings:ClientId"];
+        var apiKey = config?["PayOSSettings:ApiKey"];
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(apiKey) || httpClientFactory == null)
+            return;
+
+        var orderCodesToCheck = new HashSet<long> { 100000000 + deposit.BookingDepositId };
+        if (!string.IsNullOrEmpty(booking.Note))
+        {
+            var matches = System.Text.RegularExpressions.Regex.Matches(booking.Note, @"PayOS_OrderCode:(\d+)");
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                if (long.TryParse(m.Groups[1].Value, out var c)) orderCodesToCheck.Add(c);
+            }
+        }
+
+        var client = httpClientFactory.CreateClient();
+        foreach (var checkCode in orderCodesToCheck)
+        {
+            try
+            {
+                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"https://api-merchant.payos.vn/v2/payment-requests/{checkCode}?_t={DateTime.UtcNow.Ticks}");
+                req.Headers.Add("x-client-id", clientId);
+                req.Headers.Add("x-api-key", apiKey);
+                req.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate");
+                req.Headers.Add("Pragma", "no-cache");
+                var res = await client.SendAsync(req, ct);
+                if (res.IsSuccessStatusCode)
+                {
+                    var resStr = await res.Content.ReadAsStringAsync(ct);
+                    using var doc = System.Text.Json.JsonDocument.Parse(resStr);
+                    if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        var status = data.TryGetProperty("status", out var st) ? st.GetString() : null;
+                        decimal amountPaid = 0m;
+                        if (data.TryGetProperty("amountPaid", out var ap) && ap.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        {
+                            ap.TryGetDecimal(out amountPaid);
+                        }
+                        decimal amount = 0m;
+                        if (data.TryGetProperty("amount", out var am) && am.ValueKind == System.Text.Json.JsonValueKind.Number)
+                        {
+                            am.TryGetDecimal(out amount);
+                        }
+
+                        if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase) || (amountPaid > 0 && amountPaid >= deposit.RequiredAmount))
+                        {
+                            var payAmount = amountPaid > 0 ? amountPaid : (amount > 0 ? amount : deposit.RequiredAmount);
+                            await ConfirmDepositAsync(booking.BookingId, new ConfirmDepositRequest
+                            {
+                                PaidAmount = payAmount,
+                                TransactionCode = $"PAYOS_{checkCode}"
+                            }, 1, ct);
+                            await db.Entry(booking).ReloadAsync(ct);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error checking PayOS deposit status for booking #{BookingId}, checkCode #{CheckCode}", booking.BookingId, checkCode);
+            }
         }
     }
 }

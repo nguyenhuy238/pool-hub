@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './BookingWizard.css';
 import { availabilityApi, type LandingAvailability, type LandingPricing } from "@/lib/api/availabilityApi";
 import { publicBookingApi, type PublicBookingSlot } from "@/lib/api/publicBookingApi";
-import { addDaysToVietnamDateInput, getVietnamDateInputValue, getVietnamDayOfWeek } from "@/lib/dateTime";
+import { addDaysToVietnamDateInput, getVietnamDateInputValue, getVietnamDayOfWeek, utcTimestampMs } from "@/lib/dateTime";
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso, validateSlotRange } from "@/lib/timeSlots";
 import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
@@ -95,8 +95,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
       const booked = new Set<number>();
       dataArray.forEach((b) => {
         if (b.status === 3) return;
-        const bookingStart = new Date(b.startTimeUtc).getTime();
-        const bookingEnd = new Date(b.endTimeUtc).getTime();
+        const bookingStart = utcTimestampMs(b.startTimeUtc);
+        const bookingEnd = utcTimestampMs(b.endTimeUtc);
         for (let i = 0; i < timeSlots.length; i++) {
           const slotStart = new Date(slotToUtcIso(timeSlots[i])).getTime();
           const slotEnd = slotStart + 30 * 60 * 1000;
@@ -237,6 +237,30 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     return () => window.clearInterval(timer);
   }, [createdBooking]);
 
+  useEffect(() => {
+    if (!createdBooking?.bookingId || createdBooking.status !== 6) return;
+
+    let isSubscribed = true;
+    const interval = window.setInterval(async () => {
+      try {
+        const updated = await publicBookingApi.getBooking(createdBooking.bookingId);
+        if (isSubscribed && updated && updated.status !== createdBooking.status) {
+          setCreatedBooking(updated);
+          if (updated.status === 2) {
+            toast("Thanh toán cọc thành công! Đặt bàn của bạn đã được xác nhận.", "success");
+          }
+        }
+      } catch (e) {
+        // Ignore polling error
+      }
+    }, 2500);
+
+    return () => {
+      isSubscribed = false;
+      window.clearInterval(interval);
+    };
+  }, [createdBooking?.bookingId, createdBooking?.status]);
+
   const submitDepositTransfer = async () => {
     if (!createdBooking) return;
     setSaving(true);
@@ -304,28 +328,36 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const handleSlotClick = (index: number) => {
     if (pastSlots.has(index) || (bookedSlots.has(index) && selectedSlotIndexes.length !== 1)) return;
     
-    if (selectedSlotIndexes.length === 0 || selectedSlotIndexes.length === 2) {
-      setSelectedSlotIndexes([index]);
-    } else if (selectedSlotIndexes.length === 1) {
+    if (selectedSlotIndexes.length === 1) {
       const start = selectedSlotIndexes[0];
-      const end = index;
-      
-      if (end <= start) {
-        toast("Giờ kết thúc phải sau giờ bắt đầu. Nếu muốn đặt qua đêm, hãy bật Đặt qua đêm.", "error");
-      } else {
-        let hasBooked = false;
-        for (let i = start; i < end; i++) {
-          if (bookedSlots.has(i)) hasBooked = true;
-        }
-        
-        if (hasBooked) {
-          toast("Khoảng thời gian chọn bị vướng lịch đã đặt. Vui lòng chọn lại.", "error");
-          setSelectedSlotIndexes([index]);
-        } else {
-          setSelectedSlotIndexes([start, end]);
-        }
+      if (index === start) {
+        setSelectedSlotIndexes([]);
+        return;
       }
+      if (index < start) {
+        setSelectedSlotIndexes([index]);
+        return;
+      }
+      const end = index;
+      let hasBooked = false;
+      for (let i = start; i < end; i++) {
+        if (bookedSlots.has(i)) hasBooked = true;
+      }
+      if (hasBooked) {
+        toast("Khoảng thời gian chọn bị vướng lịch đã đặt. Vui lòng chọn lại.", "error");
+        setSelectedSlotIndexes([index]);
+      } else {
+        setSelectedSlotIndexes([start, end]);
+      }
+      return;
     }
+
+    if (selectedSlotIndexes.length === 2 && (index === selectedSlotIndexes[0] || index === selectedSlotIndexes[1])) {
+      setSelectedSlotIndexes([]);
+      return;
+    }
+
+    setSelectedSlotIndexes([index]);
   };
 
   const getSlotClass = (index: number) => {
@@ -563,62 +595,164 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     );
   };
 
-  const renderStep5 = () => (
-    <div className="bw-step bw-step-5 bw-success">
-      <div className="bw-success-icon">✓</div>
-      <h3>{createdBooking?.status === 2 ? "Đặt bàn đã xác nhận!" : "Đặt bàn thành công!"}</h3>
-      {createdBooking?.bookingCode ? <p>Mã booking: <strong>{createdBooking.bookingCode}</strong></p> : null}
-      {createdBooking?.status === 7 ? (
-        <p>Yêu cầu đặt nhiều bàn đang chờ quản lý duyệt.</p>
-      ) : createdBooking?.status === 6 ? (
-        <>
-          <p>
-            {createdBooking.deposit?.status === 9
-              ? "Bạn đã báo chuyển khoản. Booking đang chờ nhân viên xác minh cọc."
-              : "Vui lòng chuyển khoản tiền cọc theo thông tin bên dưới để giữ bàn."}
-          </p>
-          <div className="bw-pricing-box" style={{ marginBottom: 16 }}>
-            <h4>Tiền cọc cần thanh toán</h4>
-            <div className="bw-price-amount">{(createdBooking.depositPaymentInstruction?.amount || createdBooking.deposit?.requiredAmount || 0).toLocaleString("vi-VN")} đ</div>
-            {createdBooking.depositPaymentInstruction ? (
-              <PaymentQrCard
-                title="Quét mã chuyển khoản đặt cọc"
-                qrUrl={createdBooking.depositPaymentInstruction.vietQrUrl || createdBooking.depositPaymentInstruction.qrImageUrl}
-                bankName={createdBooking.depositPaymentInstruction.bankName}
-                bankCode={createdBooking.depositPaymentInstruction.bankCode}
-                accountNumber={createdBooking.depositPaymentInstruction.bankAccountNumber}
-                accountName={createdBooking.depositPaymentInstruction.bankAccountName}
-                amount={createdBooking.depositPaymentInstruction.amount}
-                transferContent={createdBooking.depositPaymentInstruction.transferContent}
-                note="Tiền cọc sẽ được trừ vào hóa đơn cuối cùng."
-                onCopy={(message) => toast(message, "success")}
-              />
-            ) : (
-              <div className="inline-alert error">Chưa cấu hình phương thức chuyển khoản. Vui lòng liên hệ nhân viên.</div>
-            )}
-            <p className="bw-price-note">Tiền cọc sẽ được trừ vào hóa đơn cuối cùng. Thời hạn giữ bàn: {depositCountdown || "--:--"}</p>
+  const renderStep5 = () => {
+    if (!createdBooking) return null;
+    const isPaidOrConfirmed = createdBooking.status === 2;
+    const isPendingDeposit = createdBooking.status === 6;
+    const isWaitingApproval = createdBooking.status === 7;
+
+    return (
+      <div className="bw-step bw-step-5">
+        {isPaidOrConfirmed ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '24px',
+            padding: '44px 36px',
+            borderRadius: '20px',
+            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+            border: '2px solid #34d399',
+            boxShadow: '0 12px 30px -5px rgba(16, 185, 129, 0.2)',
+            marginBottom: '32px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '92px',
+              height: '92px',
+              borderRadius: '50%',
+              background: '#10b981',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '48px',
+              boxShadow: '0 0 0 16px rgba(16, 185, 129, 0.22)',
+              fontWeight: 'bold',
+              flexShrink: 0,
+              animation: 'popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            }}>
+              ✓
+            </div>
+            <div>
+              <h3 style={{ margin: '0 0 12px', color: '#065f46', fontSize: '28px', fontWeight: 800 }}>
+                Đặt bàn thành công!
+              </h3>
+              <p style={{ margin: '0 0 10px', color: '#047857', fontSize: '17px', lineHeight: '1.6' }}>
+                Mã booking: <strong style={{ fontSize: '19px', color: '#065f46', background: 'rgba(255,255,255,0.7)', padding: '4px 12px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>{createdBooking.bookingCode}</strong>
+              </p>
+              <p style={{ margin: 0, color: '#047857', fontSize: '15.5px', lineHeight: '1.6', maxWidth: '580px', marginLeft: 'auto', marginRight: 'auto' }}>
+                {policy.successMessage || "Hệ thống đã xác nhận thanh toán tiền cọc thành công. Chúc mừng bạn đã hoàn tất đặt bàn!"}
+              </p>
+            </div>
           </div>
-          {createdBooking.deposit?.status === 9 ? (
-            <div className="inline-note">Nhân viên sẽ kiểm tra giao dịch và xác nhận booking sau khi nhận đủ cọc.</div>
-          ) : createdBooking.depositPaymentInstruction ? (
-            <button className="primary-btn" onClick={submitDepositTransfer} disabled={saving}>
-              {saving ? "Đang xử lý..." : "Tôi đã chuyển khoản"}
-            </button>
-          ) : null}
-        </>
-      ) : (
-        <p>{policy.successMessage}</p>
-      )}
-      <button className="outline-btn" onClick={() => {
-        setStep(1);
-        setSelectedTable(null);
-        setCreatedBooking(null);
-        setCustomerInfo({ customerName: '', phoneNumber: '', email: '', numberOfGuests: 4, note: '' });
-      }}>
-        Đặt bàn khác
-      </button>
-    </div>
-  );
+        ) : isWaitingApproval ? (
+          <div style={{ textAlign: 'center', marginBottom: 24, padding: '24px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '12px' }}>⏳</div>
+            <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#b45309', marginBottom: '8px' }}>Yêu cầu đặt bàn đang chờ duyệt</h3>
+            <p style={{ color: '#78350f', marginBottom: '8px' }}>Mã booking: <strong>{createdBooking.bookingCode}</strong></p>
+            <p style={{ color: '#92400e', fontSize: '14px', margin: 0 }}>Yêu cầu đặt nhiều bàn hoặc khung giờ đặc biệt đang được nhân viên kiểm tra và phê duyệt.</p>
+          </div>
+        ) : isPendingDeposit ? (
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <h3 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>
+              Thanh toán tiền cọc để giữ bàn
+            </h3>
+            <p style={{ color: '#475569', marginBottom: '16px' }}>
+              Mã booking: <strong style={{ color: '#0f172a' }}>{createdBooking.bookingCode}</strong>
+            </p>
+            <p style={{ color: '#64748b', fontSize: '15px', marginBottom: '20px' }}>
+              {createdBooking.deposit?.status === 9
+                ? "Bạn đã báo chuyển khoản. Booking đang chờ nhân viên xác minh cọc."
+                : "Vui lòng chuyển khoản tiền cọc theo thông tin bên dưới để giữ bàn."}
+            </p>
+            <div className="bw-pricing-box" style={{ marginBottom: 16, textAlign: 'left' }}>
+              <h4 style={{ textAlign: 'center' }}>Tiền cọc cần thanh toán</h4>
+              <div className="bw-price-amount" style={{ textAlign: 'center' }}>{(createdBooking.depositPaymentInstruction?.amount || createdBooking.deposit?.requiredAmount || 0).toLocaleString("vi-VN")} đ</div>
+              {createdBooking.depositPaymentInstruction ? (
+                <PaymentQrCard
+                  title="Quét mã PayOS đặt cọc"
+                  qrUrl={createdBooking.depositPaymentInstruction.vietQrUrl}
+                  bankName={createdBooking.depositPaymentInstruction.bankName}
+                  bankCode={createdBooking.depositPaymentInstruction.bankCode}
+                  accountNumber={createdBooking.depositPaymentInstruction.bankAccountNumber}
+                  accountName={createdBooking.depositPaymentInstruction.bankAccountName}
+                  amount={createdBooking.depositPaymentInstruction.amount}
+                  transferContent={createdBooking.depositPaymentInstruction.transferContent}
+                  note="Tiền cọc sẽ được trừ vào hóa đơn cuối cùng."
+                  onCopy={(message) => toast(message, "success")}
+                />
+              ) : (
+                <div className="inline-alert error">Chưa cấu hình phương thức chuyển khoản. Vui lòng liên hệ nhân viên.</div>
+              )}
+              <p className="bw-price-note" style={{ textAlign: 'center' }}>Tiền cọc sẽ được trừ vào hóa đơn cuối cùng. Thời hạn giữ bàn: {depositCountdown || "--:--"}</p>
+            </div>
+            {createdBooking.deposit?.status === 9 ? (
+              <div className="inline-note">Nhân viên sẽ kiểm tra giao dịch và xác nhận booking sau khi nhận đủ cọc.</div>
+            ) : createdBooking.depositPaymentInstruction ? (
+              <button className="primary-btn" onClick={submitDepositTransfer} disabled={saving}>
+                {saving ? "Đang xử lý..." : "Tôi đã chuyển khoản"}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '24px',
+            padding: '44px 36px',
+            borderRadius: '20px',
+            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+            border: '2px solid #34d399',
+            boxShadow: '0 12px 30px -5px rgba(16, 185, 129, 0.2)',
+            marginBottom: '32px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '92px',
+              height: '92px',
+              borderRadius: '50%',
+              background: '#10b981',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '48px',
+              boxShadow: '0 0 0 16px rgba(16, 185, 129, 0.22)',
+              fontWeight: 'bold',
+              flexShrink: 0,
+              animation: 'popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            }}>
+              ✓
+            </div>
+            <div>
+              <h3 style={{ margin: '0 0 12px', color: '#065f46', fontSize: '28px', fontWeight: 800 }}>
+                Đặt bàn thành công!
+              </h3>
+              {createdBooking?.bookingCode ? <p style={{ margin: '0 0 10px', color: '#047857', fontSize: '17px', lineHeight: '1.6' }}>Mã booking: <strong style={{ fontSize: '19px', color: '#065f46', background: 'rgba(255,255,255,0.7)', padding: '4px 12px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>{createdBooking.bookingCode}</strong></p> : null}
+              <p style={{ margin: 0, color: '#047857', fontSize: '15.5px', lineHeight: '1.6', maxWidth: '580px', marginLeft: 'auto', marginRight: 'auto' }}>
+                {policy.successMessage || "Yêu cầu đặt bàn của bạn đã được ghi nhận!"}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <button className="outline-btn" onClick={() => {
+            setStep(1);
+            setSelectedTable(null);
+            setCreatedBooking(null);
+            setCustomerInfo({ customerName: '', phoneNumber: '', email: '', numberOfGuests: 4, note: '' });
+          }}>
+            Đặt bàn khác
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <section className="landing-section booking-wizard-section" id="booking">

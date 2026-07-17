@@ -90,6 +90,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
+      cache: options.cache ?? "no-store",
       headers,
       signal: timeoutController?.signal ?? options.signal,
       credentials: "include"
