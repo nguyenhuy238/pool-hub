@@ -1,28 +1,33 @@
 "use client";
 
-import { miscApi } from "@/lib/api/endpoints";
-import { money } from "@/lib/status";
-import { PageHeader, StateBlock, useLoad } from "@/components/ui";
+import { useMemo } from "react";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { useLoad } from "@/components/ui";
+import { useAuth } from "@/components/auth-provider";
+import { dashboardData } from "@/features/dashboard/dashboard-data";
+import { resolveDashboardConfig } from "@/features/dashboard/dashboard-registry";
 
 export default function DashboardPage() {
-  const { data, loading, error } = useLoad(() => miscApi.dashboardSummary(), []);
+  const { user, roles } = useAuth();
+  const { data, loading, error } = useLoad(() => dashboardData.summary(), []);
+  const config = useMemo(
+    () => resolveDashboardConfig({
+      roles,
+      permissions: user?.permissions ?? [],
+      summary: data
+    }),
+    [data, roles, user?.permissions]
+  );
 
   return (
-    <>
-      <PageHeader title="Dashboard" description="Tổng quan vận hành lấy từ các API hiện có." />
-      <StateBlock loading={loading} error={error} />
-      {data ? <div className="kpi-grid">
-        {[
-          ["Tổng số bàn", data.totalTables],
-          ["Bàn đang sử dụng", data.inUseTables],
-          ["Bàn trống", data.availableTables],
-          ["Booking hôm nay", data.todayBookings],
-          ["Session đang chạy", data.activeSessions],
-          ["Doanh thu hôm nay", money(data.todayRevenue)],
-          ["Sản phẩm sắp hết", data.lowStockProducts],
-          ["Thông báo mới", data.unreadNotifications]
-        ].map(([labelText, value]) => <div className="card metric" key={labelText}><span>{labelText}</span><strong>{value}</strong></div>)}
-      </div> : null}
-    </>
+    <DashboardShell
+      title={config.title}
+      description={config.description}
+      metrics={config.metrics}
+      actions={config.actions}
+      loading={loading}
+      error={error}
+      updatedAt={data ? new Date() : undefined}
+    />
   );
 }

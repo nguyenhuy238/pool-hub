@@ -359,6 +359,10 @@ export type DashboardSummary = {
   ordersToday?: number;
   totalCustomers?: number;
   invoicesToday?: number;
+  successfulPaymentsToday?: number;
+  pendingPayments?: number;
+  longRunningSessions?: number;
+  upcomingBookings?: number;
 };
 
 export type RevenuePoint = { date: string; amount: number };

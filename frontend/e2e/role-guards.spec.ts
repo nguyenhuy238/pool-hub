@@ -56,6 +56,7 @@ test.describe("role route guard smoke", () => {
     await login(page, accounts.admin.email, accounts.admin.password);
     for (const path of [
       "/admin/dashboard",
+      "/admin/analytics",
       "/admin/users",
       "/admin/roles",
       "/admin/audit-logs",
@@ -69,7 +70,7 @@ test.describe("role route guard smoke", () => {
 
   test("manager can access management, audit, reports but not users or roles", async ({ page }) => {
     await login(page, accounts.manager.email, accounts.manager.password);
-    for (const path of ["/management/floors", "/management/products", "/admin/audit-logs", "/admin/reports"]) {
+    for (const path of ["/dashboard", "/management/floors", "/management/products", "/admin/audit-logs", "/admin/reports", "/admin/analytics"]) {
       await expectAllowed(page, path);
     }
     await expectForbidden(page, "/admin/users");

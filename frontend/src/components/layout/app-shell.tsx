@@ -4,19 +4,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { MANAGEMENT_READ_ROLES, OPERATION_ROLES, ROLES } from "@/lib/auth/constants";
+import { DASHBOARD_ROLES, MANAGEMENT_READ_ROLES, OPERATION_ROLES, PERMISSIONS, ROLES } from "@/lib/auth/constants";
 import { NotificationDropdown } from "./notification-dropdown";
 
 type NavItem = {
   href?: string;
   label: string;
   roles: string[];
-  children?: { href: string; label: string; roles: string[] }[];
+  permissions?: string[];
+  children?: { href: string; label: string; roles: string[]; permissions?: string[] }[];
 };
 
 const nav: NavItem[] = [
-  { href: "/admin/dashboard", label: "Tổng quan quản trị", roles: [ROLES.ADMIN] },
-  { href: "/dashboard", label: "Tổng quan vận hành", roles: OPERATION_ROLES },
+  { href: "/dashboard", label: "Tổng quan", roles: DASHBOARD_ROLES },
   {
     label: "Sơ đồ & Cơ sở",
     roles: OPERATION_ROLES,
@@ -49,15 +49,60 @@ const nav: NavItem[] = [
       { href: "/admin/payments/history", label: "Lịch sử giao dịch", roles: [ROLES.ADMIN, ROLES.CASHIER] },
     ]
   },
-  { href: "/admin/reports", label: "Báo cáo", roles: [ROLES.ADMIN, ROLES.MANAGER] },
+  { href: "/admin/analytics", label: "Phân tích", roles: [ROLES.ADMIN, ROLES.MANAGER], permissions: [PERMISSIONS.REPORTS_VIEW] },
+  { href: "/admin/reports", label: "Báo cáo", roles: [ROLES.ADMIN, ROLES.MANAGER], permissions: [PERMISSIONS.REPORTS_VIEW] },
   { href: "/admin/landing-settings", label: "Cấu hình trang chủ", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { href: "/admin/audit-logs", label: "Nhật ký hệ thống", roles: MANAGEMENT_READ_ROLES },
   { href: "/change-password", label: "Đổi mật khẩu", roles: OPERATION_ROLES },
   { href: "/notifications", label: "Thông báo", roles: OPERATION_ROLES }
 ];
 
-function NavDropdown({ item, pathname, roles }: { item: NavItem; pathname: string; roles: string[] }) {
-  const allowedChildren = item.children?.filter((child) => child.roles.some((role) => roles.includes(role))) || [];
+function canAccess(item: { roles: string[]; permissions?: string[] }, roles: string[], permissions: string[]) {
+  return item.roles.some((role) => roles.includes(role)) || Boolean(item.permissions?.some((permission) => permissions.includes(permission)));
+}
+
+const breadcrumbLabels: Record<string, string> = {
+  admin: "Quản trị",
+  analytics: "Phân tích",
+  dashboard: "Tổng quan",
+  operation: "Vận hành",
+  management: "Quản lý",
+  bookings: "Đặt bàn",
+  sessions: "Phiên chơi",
+  orders: "Đơn hàng",
+  invoices: "Hóa đơn",
+  payments: "Thanh toán",
+  reports: "Báo cáo",
+  inventory: "Tồn kho",
+  users: "Người dùng",
+  roles: "Vai trò",
+  "audit-logs": "Nhật ký hệ thống",
+  notifications: "Thông báo",
+  profile: "Hồ sơ",
+  "change-password": "Đổi mật khẩu"
+};
+
+const roleLabels: Record<string, string> = {
+  [ROLES.ADMIN]: "Quản trị viên",
+  [ROLES.MANAGER]: "Quản lý",
+  [ROLES.STAFF]: "Nhân viên",
+  [ROLES.CASHIER]: "Thu ngân",
+  [ROLES.CUSTOMER]: "Khách hàng",
+  [ROLES.GUEST]: "Khách"
+};
+
+function formatBreadcrumb(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean);
+  if (!segments.length) return "trang chủ";
+  return segments.map((segment) => breadcrumbLabels[segment] ?? segment).join(" / ");
+}
+
+function formatRoles(roles: string[]) {
+  return roles.map((role) => roleLabels[role] ?? role).join(", ") || "Khách";
+}
+
+function NavDropdown({ item, pathname, roles, permissions }: { item: NavItem; pathname: string; roles: string[]; permissions: string[] }) {
+  const allowedChildren = item.children?.filter((child) => canAccess(child, roles, permissions)) || [];
   const isActive = allowedChildren.some((child) => pathname === child.href);
   const [open, setOpen] = useState(isActive);
 
@@ -90,7 +135,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "/";
   const { user, logout } = useAuth();
   const roles = user?.roles || [];
-  const allowed = nav.filter((item) => item.roles.some((role) => roles.includes(role)));
+  const permissions = user?.permissions || [];
+  const allowed = nav.filter((item) => canAccess(item, roles, permissions));
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
@@ -113,7 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav>
           {allowed.map((item) => (
             item.children ? (
-              <NavDropdown key={item.label} item={item} pathname={pathname} roles={roles} />
+              <NavDropdown key={item.label} item={item} pathname={pathname} roles={roles} permissions={permissions} />
             ) : (
               <Link key={item.href} className={pathname === item.href ? "active" : ""} href={item.href as string}>{item.label}</Link>
             )
@@ -123,13 +169,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="main-shell">
         <header className="topbar">
           <div>
-            <div className="breadcrumb">PoolHub / {pathname.split("/").filter(Boolean).join(" / ") || "trang chủ"}</div>
+            <div className="breadcrumb">PoolHub / {formatBreadcrumb(pathname)}</div>
             <Link href="/profile"><strong>{user?.fullName || "PoolHub"}</strong></Link>
           </div>
           <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <NotificationDropdown />
             <button className="ghost-btn" onClick={toggleTheme}>{darkMode ? "Giao diện sáng" : "Giao diện tối"}</button>
-            <span className="role-badge">{roles.join(", ") || "Khách"}</span>
+            <span className="role-badge">{formatRoles(roles)}</span>
             <button className="ghost-btn" onClick={logout}>Đăng xuất</button>
           </div>
         </header>
