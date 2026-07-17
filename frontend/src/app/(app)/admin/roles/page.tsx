@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { RoleGuard } from "@/components/guards";
 import { useToast } from "@/components/toast";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SearchFilterBar, StateBlock, useDebouncedValue } from "@/components/ui";
+import { usePagination } from "@/hooks/usePagination";
 import { ROLES } from "@/lib/auth/constants";
 import { dateTime } from "@/lib/status";
 import { roleService, type Permission, type RolePayload } from "@/services/role-service";
@@ -14,7 +15,7 @@ export default function RolesPage() {
   const { hasRole } = useAuth();
   const toast = useToast();
   const isAdmin = hasRole(ROLES.ADMIN);
-  const [query, setQuery] = useState({ keyword: "", pageNumber: 1, pageSize: 10 });
+  const { query, setQuery, changePage, changePageSize, setFilter } = usePagination({ keyword: "" }, 10);
   const debouncedKeyword = useDebouncedValue(query.keyword, 350);
   const [result, setResult] = useState<PagedResult<Role> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,8 +55,8 @@ export default function RolesPage() {
     <PageHeader title="Vai trò và quyền hạn" description="Quản lý vai trò, phạm vi truy cập và số lượng người dùng được phân quyền."
       action={<RoleGuard roles={[ROLES.ADMIN]}><button className="primary-btn" onClick={() => setEditing("new")}>+ Tạo vai trò</button></RoleGuard>} />
     <SearchFilterBar>
-      <label><span>Tìm kiếm</span><input placeholder="Tên hoặc mô tả" value={query.keyword} onChange={(e) => setQuery({ ...query, keyword: e.target.value, pageNumber: 1 })} /></label>
-      <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => setQuery({ ...query, pageSize: Number(e.target.value), pageNumber: 1 })}><option>10</option><option>20</option><option>50</option></select></label>
+      <label><span>Tìm kiếm</span><input placeholder="Tên hoặc mô tả" value={query.keyword} onChange={(e) => setFilter("keyword", e.target.value)} /></label>
+      <label><span>Số dòng</span><select value={query.pageSize} onChange={(e) => changePageSize(Number(e.target.value))}><option>10</option><option>20</option><option>50</option></select></label>
     </SearchFilterBar>
     <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
     {!loading && rows.length ? <>
@@ -70,7 +71,7 @@ export default function RolesPage() {
         const role = row as unknown as Role;
         return <div className="action-group"><button className="ghost-btn compact" onClick={() => setDetail(role)}>Chi tiết</button><button className="ghost-btn compact" onClick={() => setPermissionRole(role)}>Quyền</button><button className="ghost-btn compact" onClick={() => setEditing(role)}>Sửa</button><button className="danger-btn compact" disabled={role.isSystem} onClick={() => setDeleting(role)}>Xóa</button></div>;
       } : undefined} />
-      <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
+      <Pagination pageNumber={result?.pageNumber ?? 1} totalPages={result?.totalPages ?? 1} onChange={changePage} />
     </> : null}
     {editing ? <RoleFormModal role={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); }} /> : null}
     {detail ? <RoleDetailModal role={detail} onClose={() => setDetail(null)} /> : null}

@@ -17,9 +17,15 @@ export function NotificationDropdown() {
 
   useEffect(() => {
     if (!user) return;
-    notificationService.getUnreadCount()
-      .then(res => setCount(res.count))
-      .catch(() => {});
+    const fetchCount = () => {
+      notificationService.getUnreadCount()
+        .then(res => setCount(res.count))
+        .catch(() => {});
+    };
+    fetchCount();
+    
+    window.addEventListener("notifications_updated", fetchCount);
+    return () => window.removeEventListener("notifications_updated", fetchCount);
   }, [user]);
 
   useEffect(() => {
