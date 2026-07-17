@@ -9,8 +9,10 @@ public class CustomerReview : BaseEntity
     public long? SessionId { get; set; }
     public long? InvoiceId { get; set; }
     public int Rating { get; set; }
-    public string Content { get; set; } = string.Empty;
+    public string? Content { get; set; }
     public string? DisplayName { get; set; }
+    public bool IsAnonymous { get; set; }
+    public bool IsVerified { get; set; }
     public string? AvatarUrl { get; set; }
     public string? CheckInImageUrl { get; set; }
     public int Status { get; set; } = 1;

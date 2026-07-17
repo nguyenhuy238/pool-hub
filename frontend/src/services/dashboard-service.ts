@@ -14,7 +14,7 @@ export type ReportQueryRequest = {
 
 export const dashboardService = {
   getStats: () =>
-    apiFetch<DashboardSummary>("/api/dashboard/stats"),
+    apiFetch<DashboardSummary>("/api/dashboard/summary"),
 
   getRevenueReport: (params?: ReportQueryRequest) => {
     const query = new URLSearchParams();

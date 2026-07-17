@@ -35,41 +35,59 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             query = query.Where(x => x.Rating >= request.MinRating.Value);
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var averageRating = total == 0 ? 0 : await query.AverageAsync(x => (double)x.Rating, ct);
+        var ratingDistribution = await query
+            .GroupBy(x => x.Rating)
+            .Select(x => new { Rating = x.Key, Count = x.Count() })
+            .ToDictionaryAsync(x => x.Rating, x => x.Count, ct);
+        var rows = await query
             .OrderByDescending(x => x.IsFeatured)
             .ThenBy(x => x.DisplayOrder)
             .ThenByDescending(x => x.ApprovedAtUtc ?? x.CreatedAtUtc)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(x => new PublicReviewDto
+            .ToListAsync(ct);
+
+        var items = rows.Select(x => new PublicReviewDto
             {
                 PublicId = x.PublicId,
                 Rating = x.Rating,
-                Content = x.Content,
-                DisplayName = x.DisplayName ?? "Khách hàng PoolHub",
-                AvatarUrl = x.AvatarUrl,
+                Content = x.Content ?? string.Empty,
+                DisplayName = PublicDisplayName(x),
+                IsVerified = x.IsVerified,
+                AvatarUrl = x.IsAnonymous ? null : x.AvatarUrl,
                 CheckInImageUrl = x.CheckInImageUrl,
                 IsFeatured = x.IsFeatured,
                 DisplayOrder = x.DisplayOrder,
                 CreatedAtUtc = x.CreatedAtUtc
             })
-            .ToListAsync(ct);
+            .ToList();
 
-        return Page(items, request, total);
+        return new PublicReviewPagedResult
+        {
+            Items = items,
+            PageNumber = request.PageNumber,
+            PageSize = request.PageSize,
+            TotalItems = total,
+            AverageRating = Math.Round(averageRating, 2),
+            RatingDistribution = Enumerable.Range(1, 5).ToDictionary(x => x, x => ratingDistribution.GetValueOrDefault(x))
+        };
     }
 
     public async Task<CustomerReviewDto> CreatePublicReviewAsync(CreatePublicReviewRequest request, CancellationToken ct)
     {
-        ValidateRatingAndContent(request.Rating, request.Content);
+        var content = NormalizeContent(request.Content);
+        ValidateRatingAndContent(request.Rating, content);
         var phone = PhoneNumberNormalizer.Normalize(request.PhoneNumber);
-        if (string.IsNullOrWhiteSpace(phone)) throw new ValidationException("Phone number is required.");
 
-        var context = await ResolveReviewContextAsync(request.BookingCode, request.SessionCode, request.InvoiceCode, phone, ct);
+        var context = await ResolveReviewContextAsync(request.ReferenceCode, request.BookingCode, request.SessionCode, request.InvoiceCode, phone, ct);
         var customer = context.CustomerId.HasValue
             ? await db.Customers.FirstOrDefaultAsync(x => x.CustomerId == context.CustomerId.Value, ct)
-            : await db.Customers.FirstOrDefaultAsync(x => x.PhoneNumber == phone, ct);
+            : !string.IsNullOrWhiteSpace(phone)
+                ? await db.Customers.FirstOrDefaultAsync(x => x.PhoneNumber == phone, ct)
+                : null;
 
-        if (customer is null && !string.IsNullOrWhiteSpace(request.FullName))
+        if (customer is null && !string.IsNullOrWhiteSpace(request.FullName) && !string.IsNullOrWhiteSpace(phone))
         {
             customer = new EntityCustomer
             {
@@ -81,10 +99,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             await db.SaveChangesAsync(ct);
         }
 
-        if (customer is not null)
-        {
-            await EnsureNoOpenDuplicateAsync(customer.CustomerId, context.BookingId, context.SessionId, context.InvoiceId, null, ct);
-        }
+        await EnsureNoOpenDuplicateAsync(context.BookingId, context.SessionId, context.InvoiceId, null, ct);
 
         var review = new EntityCustomerReview
         {
@@ -93,8 +108,10 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             SessionId = context.SessionId,
             InvoiceId = context.InvoiceId,
             Rating = request.Rating,
-            Content = request.Content.Trim(),
+            Content = content,
             DisplayName = !string.IsNullOrWhiteSpace(request.FullName) ? request.FullName.Trim() : customer?.FullName,
+            IsAnonymous = request.IsAnonymous,
+            IsVerified = context.IsVerified,
             AvatarUrl = NormalizeOptional(request.AvatarUrl),
             CheckInImageUrl = NormalizeOptional(request.CheckInImageUrl),
             Status = CustomerReviewStatuses.Pending,
@@ -102,7 +119,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         };
 
         db.CustomerReviews.Add(review);
-        await db.SaveChangesAsync(ct);
+        await SaveReviewMutationAsync(ct);
         return await GetReviewAsync(review.PublicId, ct);
     }
 
@@ -128,7 +145,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         {
             var search = request.Search.Trim();
             reviewSource = reviewSource.Where(x =>
-                x.Content.Contains(search) ||
+                (x.Content != null && x.Content.Contains(search)) ||
                 (x.DisplayName != null && x.DisplayName.Contains(search)) ||
                 (x.CustomerId.HasValue && db.Customers.AsNoTracking().Any(customer =>
                     customer.CustomerId == x.CustomerId.Value &&
@@ -160,8 +177,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
     public async Task<CustomerReviewDto> ApproveAsync(Guid publicId, ApproveCustomerReviewRequest request, long actorUserId, CancellationToken ct)
     {
         var review = await GetEntityAsync(publicId, ct);
-        if (review.CustomerId.HasValue)
-            await EnsureNoOpenDuplicateAsync(review.CustomerId.Value, review.BookingId, review.SessionId, review.InvoiceId, review.CustomerReviewId, ct);
+        await EnsureNoOpenDuplicateAsync(review.BookingId, review.SessionId, review.InvoiceId, review.CustomerReviewId, ct);
 
         var oldValues = Snapshot(review);
         review.Status = CustomerReviewStatuses.Approved;
@@ -215,10 +231,11 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
 
     public async Task<CustomerReviewDto> UpdateAsync(Guid publicId, UpdateCustomerReviewRequest request, long actorUserId, CancellationToken ct)
     {
-        ValidateRatingAndContent(1, request.Content);
+        var content = NormalizeContent(request.Content);
+        ValidateRatingAndContent(1, content);
         var review = await GetEntityAsync(publicId, ct);
         var oldValues = Snapshot(review);
-        review.Content = request.Content.Trim();
+        review.Content = content;
         review.DisplayName = NormalizeOptional(request.DisplayName);
         review.AvatarUrl = NormalizeOptional(request.AvatarUrl);
         review.CheckInImageUrl = NormalizeOptional(request.CheckInImageUrl);
@@ -302,7 +319,8 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
 
     public async Task<CustomerReviewDto> SubmitInvitationAsync(string token, SubmitReviewInvitationRequest request, CancellationToken ct)
     {
-        ValidateRatingAndContent(request.Rating, request.Content);
+        var content = NormalizeContent(request.Content);
+        ValidateRatingAndContent(request.Rating, content);
         var row = await GetInvitationProjectionAsync(token, ct);
         var invitation = row.Invitation;
         var mapped = MapInvitation(row);
@@ -317,8 +335,10 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
             SessionId = invitation.SessionId,
             InvoiceId = invitation.InvoiceId,
             Rating = request.Rating,
-            Content = request.Content.Trim(),
+            Content = content,
             DisplayName = NormalizeOptional(request.DisplayName) ?? row.Customer?.FullName,
+            IsAnonymous = request.IsAnonymous,
+            IsVerified = true,
             AvatarUrl = NormalizeOptional(request.AvatarUrl),
             CheckInImageUrl = NormalizeOptional(request.CheckInImageUrl),
             Status = CustomerReviewStatuses.Pending,
@@ -330,7 +350,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         invitation.UsedAtUtc = now;
         invitation.UpdatedAtUtc = now;
         db.CustomerReviews.Add(review);
-        await db.SaveChangesAsync(ct);
+        await SaveReviewMutationAsync(ct);
         await auditService.LogAsync(null, AuditActions.CustomerReviewInvitationUsed, nameof(EntityCustomerReviewInvitation),
             invitation.CustomerReviewInvitationId, invitation.PublicId,
             newValues: new { invitation.InvoiceId, invitation.SessionId, invitation.CustomerId, invitation.UsedAtUtc },
@@ -339,53 +359,129 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         return await GetReviewAsync(review.PublicId, ct);
     }
 
-    private async Task<ReviewContext> ResolveReviewContextAsync(string? bookingCode, string? sessionCode, string? invoiceCode, string phone, CancellationToken ct)
+    private async Task<ReviewContext> ResolveReviewContextAsync(string? referenceCode, string? bookingCode, string? sessionCode, string? invoiceCode, string? phone, CancellationToken ct)
     {
-        var provided = new[] { bookingCode, sessionCode, invoiceCode }.Count(x => !string.IsNullOrWhiteSpace(x));
+        var provided = new[] { referenceCode, bookingCode, sessionCode, invoiceCode }.Count(x => !string.IsNullOrWhiteSpace(x));
         if (provided == 0) return new ReviewContext(null, null, null, null);
-        if (provided > 1) throw new ValidationException("Only one of bookingCode, sessionCode, or invoiceCode can be provided.");
+        if (provided > 1) throw new ValidationException("Only one review code can be provided.");
+
+        if (!string.IsNullOrWhiteSpace(referenceCode))
+        {
+            var code = referenceCode.Trim();
+            var invoiceContext = await ResolveInvoiceCodeAsync(code, phone, ct);
+            if (invoiceContext is not null) return invoiceContext;
+
+            var sessionContext = await ResolveSessionCodeAsync(code, phone, ct);
+            if (sessionContext is not null) return sessionContext;
+
+            var bookingContext = await ResolveBookingCodeAsync(code, phone, ct);
+            if (bookingContext is not null) return bookingContext;
+
+            throw new NotFoundException("Review code not found.");
+        }
 
         if (!string.IsNullOrWhiteSpace(bookingCode))
         {
-            var row = await db.Bookings.AsNoTracking()
-                .Where(x => x.BookingCode == bookingCode.Trim())
-                .Select(x => new { x.BookingId, x.CustomerId, x.Status, CustomerPhone = db.Customers.Where(c => c.CustomerId == x.CustomerId).Select(c => c.PhoneNumber).FirstOrDefault() })
-                .FirstOrDefaultAsync(ct) ?? throw new NotFoundException("Booking code not found.");
-            EnsurePhoneMatches(phone, row.CustomerPhone);
-            if (row.Status != BookingStatuses.Completed)
-                throw new BusinessRuleException("Only completed bookings can be reviewed.");
-            return new ReviewContext(row.CustomerId, row.BookingId, null, null);
+            return await ResolveBookingCodeAsync(bookingCode.Trim(), phone, ct)
+                ?? throw new NotFoundException("Booking code not found.");
         }
 
         if (!string.IsNullOrWhiteSpace(sessionCode))
         {
-            var row = await db.Sessions.AsNoTracking()
-                .Where(x => x.SessionCode == sessionCode.Trim())
-                .Select(x => new { x.SessionId, x.CustomerId, x.EndedAtUtc, CustomerPhone = x.CustomerId.HasValue ? db.Customers.Where(c => c.CustomerId == x.CustomerId.Value).Select(c => c.PhoneNumber).FirstOrDefault() : null })
-                .FirstOrDefaultAsync(ct) ?? throw new NotFoundException("Session code not found.");
-            EnsurePhoneMatches(phone, row.CustomerPhone);
-            if (row.EndedAtUtc is null)
-                throw new BusinessRuleException("Only closed sessions can be reviewed.");
-            return new ReviewContext(row.CustomerId, null, row.SessionId, null);
+            return await ResolveSessionCodeAsync(sessionCode.Trim(), phone, ct)
+                ?? throw new NotFoundException("Session code not found.");
         }
 
+        return await ResolveInvoiceCodeAsync(invoiceCode!.Trim(), phone, ct)
+            ?? throw new NotFoundException("Invoice code not found.");
+    }
+
+    private async Task<ReviewContext?> ResolveInvoiceCodeAsync(string invoiceCode, string? phone, CancellationToken ct)
+    {
         var invoice = await db.Invoices.AsNoTracking()
-            .Where(x => x.InvoiceCode == invoiceCode!.Trim())
-            .Select(x => new { x.InvoiceId, x.CustomerId, x.SessionId, x.PaymentStatus, CustomerPhone = x.CustomerId.HasValue ? db.Customers.Where(c => c.CustomerId == x.CustomerId.Value).Select(c => c.PhoneNumber).FirstOrDefault() : null })
-            .FirstOrDefaultAsync(ct) ?? throw new NotFoundException("Invoice code not found.");
+            .Where(x => x.InvoiceCode == invoiceCode)
+            .Select(x => new
+            {
+                x.InvoiceId,
+                x.CustomerId,
+                x.SessionId,
+                x.PaymentStatus,
+                CustomerPhone = x.CustomerId.HasValue ? db.Customers.Where(c => c.CustomerId == x.CustomerId.Value).Select(c => c.PhoneNumber).FirstOrDefault() : null,
+                SessionEndedAtUtc = db.Sessions.Where(s => s.SessionId == x.SessionId).Select(s => s.EndedAtUtc).FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(ct);
+        if (invoice is null) return null;
+
         EnsurePhoneMatches(phone, invoice.CustomerPhone);
         if (invoice.PaymentStatus != InvoicePaymentStatuses.Paid)
             throw new BusinessRuleException("Only paid invoices can be reviewed.");
-        return new ReviewContext(invoice.CustomerId, null, invoice.SessionId, invoice.InvoiceId);
+        if (invoice.SessionEndedAtUtc is null)
+            throw new BusinessRuleException("Only closed sessions can be reviewed.");
+
+        return new ReviewContext(invoice.CustomerId, null, invoice.SessionId, invoice.InvoiceId, true);
     }
 
-    private async Task EnsureNoOpenDuplicateAsync(long customerId, long? bookingId, long? sessionId, long? invoiceId, long? currentReviewId, CancellationToken ct)
+    private async Task<ReviewContext?> ResolveSessionCodeAsync(string sessionCode, string? phone, CancellationToken ct)
+    {
+        var row = await db.Sessions.AsNoTracking()
+            .Where(x => x.SessionCode == sessionCode)
+            .Select(x => new
+            {
+                x.SessionId,
+                x.CustomerId,
+                x.EndedAtUtc,
+                CustomerPhone = x.CustomerId.HasValue ? db.Customers.Where(c => c.CustomerId == x.CustomerId.Value).Select(c => c.PhoneNumber).FirstOrDefault() : null,
+                PaidInvoiceId = db.Invoices.Where(i => i.SessionId == x.SessionId && i.PaymentStatus == InvoicePaymentStatuses.Paid).Select(i => (long?)i.InvoiceId).FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(ct);
+        if (row is null) return null;
+
+        EnsurePhoneMatches(phone, row.CustomerPhone);
+        if (row.EndedAtUtc is null)
+            throw new BusinessRuleException("Only closed sessions can be reviewed.");
+        if (row.PaidInvoiceId is null)
+            throw new BusinessRuleException("Only sessions with a paid invoice can be reviewed.");
+
+        return new ReviewContext(row.CustomerId, null, row.SessionId, row.PaidInvoiceId, true);
+    }
+
+    private async Task<ReviewContext?> ResolveBookingCodeAsync(string bookingCode, string? phone, CancellationToken ct)
+    {
+        var row = await db.Bookings.AsNoTracking()
+            .Where(x => x.BookingCode == bookingCode)
+            .Select(x => new
+            {
+                x.BookingId,
+                x.CustomerId,
+                x.Status,
+                CustomerPhone = db.Customers.Where(c => c.CustomerId == x.CustomerId).Select(c => c.PhoneNumber).FirstOrDefault(),
+                SessionId = db.Sessions.Where(s => s.BookingId == x.BookingId && s.EndedAtUtc != null).OrderByDescending(s => s.SessionId).Select(s => (long?)s.SessionId).FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(ct);
+        if (row is null) return null;
+
+        EnsurePhoneMatches(phone, row.CustomerPhone);
+        if (row.Status != BookingStatuses.Completed)
+            throw new BusinessRuleException("Only completed bookings can be reviewed.");
+        if (row.SessionId is null)
+            throw new BusinessRuleException("Only bookings with a closed session can be reviewed.");
+
+        var paidInvoiceId = await db.Invoices.AsNoTracking()
+            .Where(i => i.SessionId == row.SessionId.Value && i.PaymentStatus == InvoicePaymentStatuses.Paid)
+            .Select(i => (long?)i.InvoiceId)
+            .FirstOrDefaultAsync(ct);
+        if (paidInvoiceId is null)
+            throw new BusinessRuleException("Only bookings with a paid invoice can be reviewed.");
+
+        return new ReviewContext(row.CustomerId, row.BookingId, row.SessionId, paidInvoiceId, true);
+    }
+
+    private async Task EnsureNoOpenDuplicateAsync(long? bookingId, long? sessionId, long? invoiceId, long? currentReviewId, CancellationToken ct)
     {
         if (bookingId is null && sessionId is null && invoiceId is null) return;
 
         var exists = await db.CustomerReviews.AnyAsync(x =>
             x.CustomerReviewId != currentReviewId &&
-            x.CustomerId == customerId &&
             (x.Status == CustomerReviewStatuses.Pending || x.Status == CustomerReviewStatuses.Approved) &&
             ((bookingId.HasValue && x.BookingId == bookingId.Value) ||
              (sessionId.HasValue && x.SessionId == sessionId.Value) ||
@@ -400,7 +496,6 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
 
         return db.CustomerReviews.AnyAsync(x =>
             (x.Status == CustomerReviewStatuses.Pending || x.Status == CustomerReviewStatuses.Approved) &&
-            (!customerId.HasValue || x.CustomerId == customerId.Value) &&
             ((bookingId.HasValue && x.BookingId == bookingId.Value) ||
              (sessionId.HasValue && x.SessionId == sessionId.Value) ||
              (invoiceId.HasValue && x.InvoiceId == invoiceId.Value)), ct);
@@ -440,9 +535,12 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
                              customer,
                              (from assignment in db.SessionTableAssignments.AsNoTracking()
                               join table in db.VenueTables.AsNoTracking() on assignment.TableId equals table.TableId
-                              where assignment.SessionId == session.SessionId
+                             where assignment.SessionId == session.SessionId
                               orderby assignment.SessionTableAssignmentId
-                              select table.TableName).FirstOrDefault()))
+                              select table.TableName).FirstOrDefault(),
+                             db.CustomerReviews.Any(review =>
+                                 (review.Status == CustomerReviewStatuses.Pending || review.Status == CustomerReviewStatuses.Approved) &&
+                                 (review.SessionId == invitation.SessionId || review.InvoiceId == invitation.InvoiceId))))
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("Review invitation not found.");
 
@@ -480,6 +578,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         if (row.Invitation.Status == CustomerReviewInvitationStatuses.Expired || row.Invitation.ExpiresAtUtc <= _clock.UtcNow) return "Invitation expired.";
         if (row.Invoice.PaymentStatus != InvoicePaymentStatuses.Paid) return "Invoice is not paid.";
         if (row.Session.EndedAtUtc is null) return "Session is not closed.";
+        if (row.HasExistingReview) return "This invoice/session already has a review.";
         return null;
     }
 
@@ -494,8 +593,10 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         SessionCode = row.Session?.SessionCode,
         InvoiceCode = row.Invoice?.InvoiceCode,
         Rating = row.Review.Rating,
-        Content = row.Review.Content,
+        Content = row.Review.Content ?? string.Empty,
         DisplayName = row.Review.DisplayName ?? row.Customer?.FullName ?? "Khách hàng PoolHub",
+        IsAnonymous = row.Review.IsAnonymous,
+        IsVerified = row.Review.IsVerified,
         AvatarUrl = row.Review.AvatarUrl,
         CheckInImageUrl = row.Review.CheckInImageUrl,
         Status = row.Review.Status,
@@ -512,18 +613,56 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
     private static void ValidateRatingAndContent(int rating, string? content)
     {
         if (rating is < 1 or > 5) throw new ValidationException("Rating must be between 1 and 5.");
-        if (string.IsNullOrWhiteSpace(content)) throw new ValidationException("Review content is required.");
-        if (content.Trim().Length > 1000) throw new ValidationException("Review content must not exceed 1000 characters.");
+        if (content is not null && content.Length > 1000) throw new ValidationException("Review content must not exceed 1000 characters.");
     }
 
-    private static void EnsurePhoneMatches(string requestPhone, string? entityPhone)
+    private async Task SaveReviewMutationAsync(CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(entityPhone) && PhoneNumberNormalizer.Normalize(entityPhone) != requestPhone)
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            throw new ConflictException("This invoice/session already has a pending or approved review.");
+        }
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex) =>
+        ex.InnerException?.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true ||
+        ex.InnerException?.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) == true ||
+        ex.InnerException?.Message.Contains("IX_customer_reviews", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static void EnsurePhoneMatches(string? requestPhone, string? entityPhone)
+    {
+        if (!string.IsNullOrWhiteSpace(entityPhone) &&
+            !string.IsNullOrWhiteSpace(requestPhone) &&
+            PhoneNumberNormalizer.Normalize(entityPhone) != requestPhone)
             throw new BusinessRuleException("Phone number does not match the referenced booking/session/invoice.");
     }
 
+    private static string? NormalizeContent(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string PublicDisplayName(EntityCustomerReview review)
+    {
+        if (review.IsAnonymous) return "Khách hàng ẩn danh";
+        return AbbreviateName(review.DisplayName) ?? "Khách hàng PoolHub";
+    }
+
+    private static string? AbbreviateName(string? value)
+    {
+        var normalized = NormalizeOptional(value);
+        if (normalized is null) return null;
+        var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0];
+        if (parts.Length == 2) return $"{parts[0]} {parts[1][0]}.";
+        var middle = string.Join(" ", parts.Skip(1).Take(parts.Length - 2).Select(x => $"{x[0]}."));
+        return $"{parts[0]} {middle} {parts[^1]}";
+    }
 
     private static void NormalizePagination(PaginationRequest request)
     {
@@ -577,7 +716,7 @@ public class CustomerReviewService(PoolHubDbContext db, IAuditService auditServi
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private sealed record ReviewContext(long? CustomerId, long? BookingId, long? SessionId, long? InvoiceId);
+    private sealed record ReviewContext(long? CustomerId, long? BookingId, long? SessionId, long? InvoiceId, bool IsVerified = false);
     private sealed record ReviewProjection(EntityCustomerReview Review, EntityCustomer? Customer, EntityBooking? Booking, EntitySession? Session, EntityInvoice? Invoice);
-    private sealed record InvitationProjection(EntityCustomerReviewInvitation Invitation, EntityInvoice Invoice, EntitySession Session, EntityCustomer? Customer, string? TableName);
+    private sealed record InvitationProjection(EntityCustomerReviewInvitation Invitation, EntityInvoice Invoice, EntitySession Session, EntityCustomer? Customer, string? TableName, bool HasExistingReview);
 }

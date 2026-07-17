@@ -25,7 +25,7 @@ public partial class CrudService
     public async Task<FloorDto> GetFloorAsync(long id, CancellationToken ct)
     {
         var x = await db.Floors.FindAsync([id], ct) ?? throw new NotFoundException("Floor not found.");
-        return new FloorDto { FloorId = x.FloorId, Name = x.Name, Description = x.Description, DisplayOrder = x.DisplayOrder, IsActive = x.IsActive };
+        return new FloorDto { FloorId = x.FloorId, Name = x.Name, IsActive = x.IsActive };
     }
 
     public async Task<FloorDto> CreateFloorAsync(FloorDto d, CancellationToken ct)
@@ -80,7 +80,7 @@ public partial class CrudService
     public async Task<ZoneDto> GetZoneAsync(long id, CancellationToken ct)
     {
         var x = await db.Zones.FindAsync([id], ct) ?? throw new NotFoundException("Zone not found.");
-        return new ZoneDto { ZoneId = x.ZoneId, FloorId = x.FloorId, Name = x.Name, Description = x.Description, DisplayOrder = x.DisplayOrder, IsActive = x.IsActive };
+        return new ZoneDto { ZoneId = x.ZoneId, FloorId = x.FloorId, Name = x.Name, IsActive = x.IsActive };
     }
 
     public async Task<ZoneDto> CreateZoneAsync(ZoneDto d, CancellationToken ct)
@@ -138,7 +138,7 @@ public partial class CrudService
     public async Task<TableTypeDto> GetTableTypeAsync(long id, CancellationToken ct)
     {
         var x = await db.TableTypes.FindAsync([id], ct) ?? throw new NotFoundException("TableType not found.");
-        return new TableTypeDto { TableTypeId = x.TableTypeId, Name = x.Name, Code = x.Code, DefaultCapacity = x.DefaultCapacity, Description = x.Description, IsActive = x.IsActive };
+        return new TableTypeDto { TableTypeId = x.TableTypeId, Name = x.Name, Code = x.Code, DefaultCapacity = x.DefaultCapacity };
     }
 
     public async Task<TableTypeDto> CreateTableTypeAsync(TableTypeDto d, CancellationToken ct)
@@ -198,7 +198,7 @@ public partial class CrudService
     public async Task<VenueTableDto> GetVenueTableAsync(long id, CancellationToken ct)
     {
         var x = await db.VenueTables.FindAsync([id], ct) ?? throw new NotFoundException("VenueTable not found.");
-        return new VenueTableDto { TableId = x.TableId, ZoneId = x.ZoneId, TableTypeId = x.TableTypeId, TableCode = x.TableCode, TableName = x.TableName, Capacity = x.Capacity, OperationalStatus = x.OperationalStatus, IsActive = x.IsActive };
+        return new VenueTableDto { TableId = x.TableId, ZoneId = x.ZoneId, TableTypeId = x.TableTypeId, TableCode = x.TableCode, TableName = x.TableName, Capacity = x.Capacity, OperationalStatus = x.OperationalStatus };
     }
 
     public async Task<VenueTableDto> CreateVenueTableAsync(VenueTableDto d, CancellationToken ct)
@@ -222,7 +222,6 @@ public partial class CrudService
         x.TableName = d.TableName.Trim();
         x.Capacity = d.Capacity;
         x.OperationalStatus = d.OperationalStatus;
-        x.IsActive = d.IsActive;
         await db.SaveChangesAsync(ct);
         return await GetVenueTableAsync(id, ct);
     }

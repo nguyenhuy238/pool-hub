@@ -94,11 +94,14 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       signal: timeoutController?.signal ?? options.signal,
       credentials: "include"
     });
-  } catch (error) {
+  } catch {
     if (timeoutController?.signal.aborted && !options.signal?.aborted) {
       throw new ApiError("Backend phản hồi quá lâu. Vui lòng thử lại.", 408);
     }
-    throw error;
+    if (options.signal?.aborted) {
+      throw new ApiError("Yêu cầu đã bị hủy.", 499);
+    }
+    throw new ApiError("Không kết nối được backend. Vui lòng kiểm tra API server.", 0);
   } finally {
     if (timeoutId !== null) window.clearTimeout(timeoutId);
     options.signal?.removeEventListener("abort", abortFromCaller);
@@ -123,8 +126,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   if (!response.ok) {
     const fallback: Record<number, string> = {
       400: "Dữ liệu gửi lên không hợp lệ.",
+      401: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
       403: "Bạn không có quyền truy cập.",
-      404: "API không tồn tại hoặc backend chưa được cập nhật.",
+      404: "Endpoint chưa được cấu hình hoặc frontend/backend chưa đồng bộ.",
       409: "Dữ liệu bị xung đột.",
       500: "Backend gặp lỗi khi xử lý dữ liệu.",
       503: "Không thể kết nối dịch vụ hoặc cơ sở dữ liệu."

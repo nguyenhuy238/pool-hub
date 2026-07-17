@@ -3,6 +3,7 @@
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
+import { StarRatingInput } from "@/components/reviews/StarRatingInput";
 import type { ReviewInvitation } from "@/types";
 
 export default function NewReviewPage() {
@@ -21,7 +22,7 @@ function NewReviewContent() {
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ rating: 5, displayName: "", content: "" });
+  const [form, setForm] = useState({ rating: 0, displayName: "", content: "", isAnonymous: false });
 
   useEffect(() => {
     if (!token) {
@@ -37,14 +38,19 @@ function NewReviewContent() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!token || !form.content.trim()) return;
+    if (!token || saving) return;
+    if (!form.rating) {
+      setError("Vui lòng chọn số sao đánh giá.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       await customerReviewsApi.submitInvitation(token, {
         rating: Number(form.rating),
         displayName: form.displayName.trim() || undefined,
-        content: form.content.trim()
+        content: form.content.trim() || undefined,
+        isAnonymous: form.isAnonymous
       });
       setSubmitted(true);
     } catch (err) {
@@ -78,12 +84,13 @@ function NewReviewContent() {
               <div className="state-card">{invitation.reason || "Link đánh giá không còn khả dụng."}</div>
             ) : (
               <form className="form-grid" onSubmit={submit}>
-                <label><span>Số sao</span><select value={form.rating} onChange={(event) => setForm({ ...form, rating: Number(event.target.value) })}><option value={5}>5</option><option value={4}>4</option><option value={3}>3</option><option value={2}>2</option><option value={1}>1</option></select></label>
+                <label className="full-field"><span>Số sao</span><StarRatingInput value={form.rating} onChange={(rating) => setForm({ ...form, rating })} disabled={saving} /></label>
                 <label><span>Tên hiển thị</span><input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder={invitation.customerDisplayName} /></label>
-                <label className="full-field"><span>Nội dung đánh giá</span><textarea required rows={5} maxLength={1000} value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} /></label>
+                <label className="check-row"><input type="checkbox" checked={form.isAnonymous} onChange={(event) => setForm({ ...form, isAnonymous: event.target.checked })} /><span>Đăng ẩn danh</span></label>
+                <label className="full-field"><span>Nội dung góp ý</span><textarea rows={5} maxLength={1000} value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} /></label>
                 {error ? <div className="state-card error" style={{ gridColumn: "1 / -1" }}>{error}</div> : null}
                 <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
-                  <button className="primary-btn" disabled={saving}>{saving ? "Đang gửi..." : "Gửi đánh giá"}</button>
+                  <button type="submit" className="primary-btn" disabled={saving || !form.rating}>{saving ? "Đang gửi..." : "Gửi đánh giá"}</button>
                 </div>
               </form>
             )}

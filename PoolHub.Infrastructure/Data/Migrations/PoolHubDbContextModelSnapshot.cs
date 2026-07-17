@@ -435,7 +435,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("check_in_image_url");
 
                     b.Property<string>("Content")
-                        .IsRequired()
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("content");
@@ -464,6 +463,14 @@ namespace PoolHub.Infrastructure.Migrations
                     b.Property<bool>("IsFeatured")
                         .HasColumnType("bit")
                         .HasColumnName("is_featured");
+
+                    b.Property<bool>("IsAnonymous")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_anonymous");
+
+                    b.Property<bool>("IsVerified")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_verified");
 
                     b.Property<string>("Note")
                         .HasMaxLength(500)
@@ -505,14 +512,20 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.HasIndex("ApprovedByUserId");
 
-                    b.HasIndex("BookingId");
+                    b.HasIndex("BookingId")
+                        .IsUnique()
+                        .HasFilter("[booking_id] IS NOT NULL AND [status] IN (1, 2)");
 
-                    b.HasIndex("InvoiceId");
+                    b.HasIndex("InvoiceId")
+                        .IsUnique()
+                        .HasFilter("[invoice_id] IS NOT NULL AND [status] IN (1, 2)");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.HasIndex("SessionId");
+                    b.HasIndex("SessionId")
+                        .IsUnique()
+                        .HasFilter("[session_id] IS NOT NULL AND [status] IN (1, 2)");
 
                     b.HasIndex("CustomerId", "BookingId")
                         .IsUnique()

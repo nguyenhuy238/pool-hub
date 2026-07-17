@@ -5,9 +5,7 @@ namespace PoolHub.Core.DTOs.Venue;
 public class VenueTableDto
 {
     public long TableId { get; set; }
-
     public long ZoneId { get; set; }
-
     public long TableTypeId { get; set; }
 
     [Required(ErrorMessage = "Table Code is required.")]
@@ -20,6 +18,5 @@ public class VenueTableDto
     public int Capacity { get; set; }
 
     public int OperationalStatus { get; set; }
-
     public bool IsActive { get; set; }
 }

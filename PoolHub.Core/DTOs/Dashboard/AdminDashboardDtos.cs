@@ -3,13 +3,7 @@ namespace PoolHub.Core.DTOs.Dashboard;
 public class AdminDashboardSummaryDto : DashboardSummaryDto
 {
     public int ActiveTables { get; set; }
-    public int PendingBookings { get; set; }
-    public int ConfirmedBookings { get; set; }
-    public int UnpaidInvoices { get; set; }
-    public int TodayAuditLogs { get; set; }
-    public int OrdersToday { get; set; }
     public int TotalCustomers { get; set; }
-    public int InvoicesToday { get; set; }
 }
 
 public class RevenuePointDto

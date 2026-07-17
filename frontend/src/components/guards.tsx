@@ -5,18 +5,28 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import type { RoleName } from "@/types";
 
-export function ProtectedRoute({ children, roles = [] }: { children: React.ReactNode; roles?: RoleName[] }) {
-  const { isAuthenticated, isLoading, hasAnyRole } = useAuth();
+function hasAccess(userRoles: RoleName[], userPermissions: string[], roles: RoleName[], permissions: string[]) {
+  if (!roles.length && !permissions.length) return true;
+  return userRoles.some((role) => roles.includes(role)) || userPermissions.some((permission) => permissions.includes(permission));
+}
+
+export function ProtectedRoute({ children, roles = [], permissions = [] }: {
+  children: React.ReactNode;
+  roles?: RoleName[];
+  permissions?: string[];
+}) {
+  const { isAuthenticated, isLoading, roles: userRoles, user } = useAuth();
   const router = useRouter();
+  const allowed = hasAccess(userRoles, user?.permissions ?? [], roles, permissions);
 
   useEffect(() => {
     if (isLoading) return;
     if (!isAuthenticated) router.replace("/login");
-    else if (!hasAnyRole(roles)) router.replace("/403");
-  }, [hasAnyRole, isAuthenticated, isLoading, router, roles]);
+    else if (!allowed) router.replace("/403");
+  }, [allowed, isAuthenticated, isLoading, router]);
 
   if (isLoading) return <div className="state-card">Đang kiểm tra phiên đăng nhập...</div>;
-  if (!isAuthenticated || !hasAnyRole(roles)) return null;
+  if (!isAuthenticated || !allowed) return null;
   return <>{children}</>;
 }
 

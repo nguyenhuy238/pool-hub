@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { bookingApi, customerApi, pricingApi, sessionApi, venueApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
+import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, utcTimestampMs, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso } from "@/lib/timeSlots";
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
 import { formatElapsedDuration } from "@/lib/sessionDuration";
@@ -53,6 +53,20 @@ export default function SessionsPage() {
       customers: customersRes
     };
   }, []);
+  const reloadRef = useRef(reload);
+  const realtimeReloadTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
+
+  const scheduleRealtimeReload = useCallback(() => {
+    if (realtimeReloadTimerRef.current !== null) return;
+    realtimeReloadTimerRef.current = window.setTimeout(() => {
+      realtimeReloadTimerRef.current = null;
+      void reloadRef.current();
+    }, 250);
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setDurationTick((value) => value + 1), 1000);
@@ -61,16 +75,21 @@ export default function SessionsPage() {
 
   useEffect(() => {
     const cleanup = connectOperationHub({
-      onSessionUpdated: () => reload(),
-      onOrderUpdated: () => reload(),
-      onBookingUpdated: () => reload(),
-      onTableStatusChanged: () => reload(),
+      onSessionUpdated: scheduleRealtimeReload,
+      onOrderUpdated: scheduleRealtimeReload,
+      onBookingUpdated: scheduleRealtimeReload,
+      onTableStatusChanged: scheduleRealtimeReload,
       onStatusChange: setRealtimeStatus
     });
 
-    return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      cleanup();
+      if (realtimeReloadTimerRef.current !== null) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
+      }
+    };
+  }, [scheduleRealtimeReload]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -88,8 +107,8 @@ export default function SessionsPage() {
       Number(booking.status) === BOOKING_CONFIRMED &&
       Boolean(booking.tableId) &&
       !booking.hasSession &&
-      new Date(booking.startTimeUtc).getTime() <= now &&
-      new Date(booking.endTimeUtc).getTime() > now
+      utcTimestampMs(booking.startTimeUtc) <= now &&
+      utcTimestampMs(booking.endTimeUtc) > now
     );
   }, [data]);
 
@@ -222,7 +241,7 @@ export default function SessionsPage() {
             rows={activeSessions as unknown as Record<string, unknown>[]}
             columns={[
               { key: "sessionCode", label: "Ma session" },
-              { key: "customerId", label: "Khach hang", render: (row) => customerName(row.customerId) },
+              { key: "customerId", label: "Khach hang", render: (row) => String(row.customerName || customerName(row.customerId)) },
               { key: "currentTable", label: "Ban hien tai", render: (row) => {
                 const table = row.currentTable as any;
                 return table ? `${table.tableName || table.tableCode || table.tableId}` : String(row.tableName || row.tableId || "-");
@@ -315,7 +334,7 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   const isImmediatePeriod = useMemo(() => {
     if (!selectedPeriod || playDate !== getVietnamDateInputValue()) return false;
     const now = Date.now();
-    return new Date(selectedPeriod.startTimeUtc).getTime() <= now && new Date(selectedPeriod.endTimeUtc).getTime() > now;
+    return utcTimestampMs(selectedPeriod.startTimeUtc) <= now && utcTimestampMs(selectedPeriod.endTimeUtc) > now;
   }, [playDate, selectedPeriod]);
 
   useEffect(() => {
@@ -360,8 +379,8 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
     const slotStart = new Date(slotToUtcIso(slot)).getTime();
     const slotEnd = slotStart + 30 * 60 * 1000;
     return bookings.some((booking) => {
-      const start = new Date(booking.startTimeUtc).getTime();
-      const end = new Date(booking.endTimeUtc).getTime();
+      const start = utcTimestampMs(booking.startTimeUtc);
+      const end = utcTimestampMs(booking.endTimeUtc);
       return slotStart < end && start < slotEnd;
     });
   }

@@ -50,7 +50,7 @@ public class PaymentsController(IAdminManagementService admin, IInvoiceService i
 }
 
 [ApiController, Route("api/reports")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.ReportsView)]
+[Authorize(Policy = PermissionConstants.ReportsView)]
 public class ReportsController(IAdminManagementService service) : ControllerBase
 {
     [HttpGet("revenue")] public async Task<ActionResult<ApiResponse<object>>> Revenue([FromQuery] ReportQueryRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await service.GetRevenueReportAsync(request, ct)));

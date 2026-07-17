@@ -16,6 +16,8 @@ export type PagedResult<T> = {
   pageNumber?: number;
   pageSize?: number;
   totalPages?: number;
+  averageRating?: number;
+  ratingDistribution?: Record<number, number>;
 };
 
 export type AuthUser = {
@@ -79,6 +81,7 @@ export type PublicReview = {
   rating: number;
   content: string;
   displayName: string;
+  isVerified?: boolean;
   avatarUrl?: string;
   checkInImageUrl?: string;
   isFeatured?: boolean;
@@ -91,6 +94,7 @@ export type CustomerReview = PublicReview & {
   customerPublicId?: string;
   customerName?: string;
   phoneNumber?: string;
+  isAnonymous?: boolean;
   bookingCode?: string;
   sessionCode?: string;
   invoiceCode?: string;
@@ -216,6 +220,14 @@ export type Session = {
   endedAtUtc?: string;
   tableId?: number;
   tableName?: string;
+  customerName?: string;
+  currentTable?: {
+    tableId: number;
+    tableCode?: string;
+    tableName?: string;
+    zoneId?: number;
+    floorId?: number;
+  };
   durationMinutes?: number;
   note?: string;
   assignments?: SessionTableAssignment[];
@@ -355,6 +367,10 @@ export type DashboardSummary = {
   ordersToday?: number;
   totalCustomers?: number;
   invoicesToday?: number;
+  successfulPaymentsToday?: number;
+  pendingPayments?: number;
+  longRunningSessions?: number;
+  upcomingBookings?: number;
 };
 
 export type RevenuePoint = { date: string; amount: number };

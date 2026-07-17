@@ -25,6 +25,15 @@ public class CustomerReviewConfiguration : IEntityTypeConfiguration<CustomerRevi
         builder.HasIndex(x => new { x.CustomerId, x.InvoiceId })
             .IsUnique()
             .HasFilter("[customer_id] IS NOT NULL AND [invoice_id] IS NOT NULL AND [status] IN (1, 2)");
+        builder.HasIndex(x => x.BookingId)
+            .IsUnique()
+            .HasFilter("[booking_id] IS NOT NULL AND [status] IN (1, 2)");
+        builder.HasIndex(x => x.SessionId)
+            .IsUnique()
+            .HasFilter("[session_id] IS NOT NULL AND [status] IN (1, 2)");
+        builder.HasIndex(x => x.InvoiceId)
+            .IsUnique()
+            .HasFilter("[invoice_id] IS NOT NULL AND [status] IN (1, 2)");
 
         builder.Property(x => x.Content).HasMaxLength(1000);
         builder.Property(x => x.DisplayName).HasMaxLength(150);

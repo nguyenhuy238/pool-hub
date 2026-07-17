@@ -7,7 +7,7 @@ public class CreateBookingRequest
     public long? CustomerId { get; set; }
 
     public string? CustomerName { get; set; }
-    
+
     [Phone]
     public string? PhoneNumber { get; set; }
 

@@ -11,9 +11,27 @@ public class DashboardService(PoolHubDbContext db, IClock? clock = null) : IDash
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
 
-    public async Task<DashboardSummaryDto> GetSummaryAsync(long? userId, CancellationToken ct)
+    public async Task<DashboardSummaryDto> GetSummaryAsync(long? userId, IReadOnlyCollection<string> roles, IReadOnlyCollection<string> permissions, CancellationToken ct)
     {
         var (today, tomorrow) = BusinessTime.LocalDateRangeToUtc(BusinessTime.UtcToVietnamLocalDate(_clock.UtcNow));
+        var now = _clock.UtcNow;
+        var hasRole = (string role) => roles.Contains(role, StringComparer.OrdinalIgnoreCase);
+        var hasPermission = (string permission) => permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
+        var isInternal = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Staff) || hasRole(RoleConstants.Cashier);
+        var canViewRevenue = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Cashier) || hasPermission(PermissionConstants.ReportsView);
+        var canViewPayments = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Cashier) || hasPermission(PermissionConstants.PaymentsManage);
+        var canViewInventory = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasPermission(PermissionConstants.InventoryManage);
+        var canViewAudit = hasRole(RoleConstants.Admin) || hasPermission(PermissionConstants.AuditView);
+
+        if (!isInternal)
+        {
+            return new DashboardSummaryDto
+            {
+                UnreadNotifications = userId.HasValue
+                    ? await db.Notifications.CountAsync(x => !x.IsRead && x.UserId == userId.Value, ct)
+                    : 0
+            };
+        }
 
         return new DashboardSummaryDto
         {
@@ -24,20 +42,38 @@ public class DashboardService(PoolHubDbContext db, IClock? clock = null) : IDash
             MaintenanceTables = await db.VenueTables.CountAsync(x => x.OperationalStatus == 4, ct),
             TodayBookings = await db.Bookings.CountAsync(x => x.StartTimeUtc >= today && x.StartTimeUtc < tomorrow, ct),
             ActiveSessions = await db.Sessions.CountAsync(x => x.Status == 1, ct),
-            TodayRevenue = await db.Payments
-                .Where(x => x.PaymentStatus == PaymentStatuses.Completed && x.PaidAtUtc >= today && x.PaidAtUtc < tomorrow)
-                .SumAsync(x => (decimal?)x.Amount, ct) ?? 0,
-            LowStockProducts = await db.Products.CountAsync(x => x.StockQuantity <= 5, ct),
+            TodayRevenue = canViewRevenue
+                ? await db.Payments
+                    .Where(x => x.PaymentStatus == PaymentStatuses.Completed && x.PaidAtUtc >= today && x.PaidAtUtc < tomorrow)
+                    .SumAsync(x => (decimal?)x.Amount, ct) ?? 0
+                : 0,
+            LowStockProducts = canViewInventory ? await db.Products.CountAsync(x => x.IsActive && x.StockQuantity <= (x.LowStockThreshold ?? 5), ct) : 0,
             UnreadNotifications = userId.HasValue
                 ? await db.Notifications.CountAsync(x => !x.IsRead && x.UserId == userId.Value, ct)
-                : 0
+                : 0,
+            PendingBookings = await db.Bookings.CountAsync(x =>
+                x.Status == BookingStatuses.Pending ||
+                x.Status == BookingStatuses.PendingDeposit ||
+                x.Status == BookingStatuses.PendingApproval, ct),
+            ConfirmedBookings = await db.Bookings.CountAsync(x => x.Status == BookingStatuses.Confirmed, ct),
+            UnpaidInvoices = canViewPayments ? await db.Invoices.CountAsync(x => x.PaymentStatus != InvoicePaymentStatuses.Paid && x.Status != 3, ct) : 0,
+            OrdersToday = await db.Orders.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct),
+            InvoicesToday = canViewPayments ? await db.Invoices.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct) : 0,
+            SuccessfulPaymentsToday = canViewPayments ? await db.Payments.CountAsync(x => x.PaymentStatus == PaymentStatuses.Completed && x.PaidAtUtc >= today && x.PaidAtUtc < tomorrow, ct) : 0,
+            PendingPayments = canViewPayments ? await db.Payments.CountAsync(x => x.PaymentStatus == PaymentStatuses.Pending, ct) : 0,
+            LongRunningSessions = await db.Sessions.CountAsync(x => x.Status == 1 && x.StartedAtUtc <= now.AddHours(-3), ct),
+            UpcomingBookings = await db.Bookings.CountAsync(x =>
+                x.Status == BookingStatuses.Confirmed &&
+                x.StartTimeUtc >= now &&
+                x.StartTimeUtc < now.AddHours(2), ct),
+            TodayAuditLogs = canViewAudit ? await db.AuditLogs.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct) : 0
         };
     }
 
     public async Task<AdminDashboardSummaryDto> GetAdminSummaryAsync(CancellationToken ct)
     {
         var (today, tomorrow) = BusinessTime.LocalDateRangeToUtc(BusinessTime.UtcToVietnamLocalDate(_clock.UtcNow));
-        var summary = await GetSummaryAsync(null, ct);
+        var summary = await GetSummaryAsync(null, [RoleConstants.Admin], [PermissionConstants.ReportsView, PermissionConstants.PaymentsManage, PermissionConstants.InventoryManage, PermissionConstants.AuditView], ct);
 
         return new AdminDashboardSummaryDto
         {
@@ -52,13 +88,17 @@ public class DashboardService(PoolHubDbContext db, IClock? clock = null) : IDash
             LowStockProducts = summary.LowStockProducts,
             UnreadNotifications = await db.Notifications.CountAsync(x => !x.IsRead, ct),
             ActiveTables = await db.VenueTables.CountAsync(x => x.IsActive, ct),
-            PendingBookings = await db.Bookings.CountAsync(x => x.Status == 1, ct),
-            ConfirmedBookings = await db.Bookings.CountAsync(x => x.Status == 2, ct),
-            UnpaidInvoices = await db.Invoices.CountAsync(x => x.PaymentStatus != InvoicePaymentStatuses.Paid, ct),
+            PendingBookings = summary.PendingBookings,
+            ConfirmedBookings = summary.ConfirmedBookings,
+            UnpaidInvoices = summary.UnpaidInvoices,
+            OrdersToday = summary.OrdersToday,
+            TotalCustomers = await db.Customers.CountAsync(x => x.Status, ct),
+            InvoicesToday = summary.InvoicesToday,
+            SuccessfulPaymentsToday = summary.SuccessfulPaymentsToday,
+            PendingPayments = summary.PendingPayments,
+            LongRunningSessions = summary.LongRunningSessions,
+            UpcomingBookings = summary.UpcomingBookings,
             TodayAuditLogs = await db.AuditLogs.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
-            ,OrdersToday = await db.Orders.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
-            ,TotalCustomers = await db.Customers.CountAsync(x => x.Status, ct)
-            ,InvoicesToday = await db.Invoices.CountAsync(x => x.CreatedAtUtc >= today && x.CreatedAtUtc < tomorrow, ct)
         };
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { bookingApi, orderApi, productApi, sessionApi, venueApi } from "@/lib/api/endpoints";
 import { dateTime, label, money, sessionStatus } from "@/lib/status";
@@ -41,6 +41,20 @@ export default function SessionDetailPage() {
     ]);
     return { session, summary, orders, products, tables, activeSessions, upcomingBookings };
   }, [sessionId]);
+  const reloadRef = useRef(reload);
+  const realtimeReloadTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
+
+  const scheduleRealtimeReload = useCallback(() => {
+    if (realtimeReloadTimerRef.current !== null) return;
+    realtimeReloadTimerRef.current = window.setTimeout(() => {
+      realtimeReloadTimerRef.current = null;
+      void reloadRef.current();
+    }, 250);
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setDurationTick((value) => value + 1), 1000);
@@ -50,19 +64,24 @@ export default function SessionDetailPage() {
   useEffect(() => {
     const cleanup = connectOperationHub({
       onSessionUpdated: (payload) => {
-        if (!payload.sessionId || payload.sessionId === sessionId) reload();
+        if (!payload.sessionId || payload.sessionId === sessionId) scheduleRealtimeReload();
       },
       onOrderUpdated: (payload) => {
-        if (!payload.sessionId || payload.sessionId === sessionId) reload();
+        if (!payload.sessionId || payload.sessionId === sessionId) scheduleRealtimeReload();
       },
-      onBookingUpdated: () => reload(),
-      onTableStatusChanged: () => reload(),
+      onBookingUpdated: scheduleRealtimeReload,
+      onTableStatusChanged: scheduleRealtimeReload,
       onStatusChange: setRealtimeStatus
     });
 
-    return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+    return () => {
+      cleanup();
+      if (realtimeReloadTimerRef.current !== null) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
+      }
+    };
+  }, [scheduleRealtimeReload, sessionId]);
 
   const session = data?.session as Session | undefined;
   const summary = data?.summary as any;
