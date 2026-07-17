@@ -239,11 +239,15 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         var orders = await GetSessionSummaryOrdersAsync(sessionId, ct);
         var orderSubtotal = orders.Sum(x => x.SubtotalAmount);
         var timeSubtotal = assignmentDtos.Sum(x => x.Amount);
-        var existingInvoice = await db.Invoices.AsNoTracking()
+        var existingInvoice = await db.Invoices
             .Where(x => x.SessionId == sessionId)
             .OrderByDescending(x => x.InvoiceId)
-            .Select(x => new { x.InvoiceId, x.InvoiceCode, x.Status, x.DiscountAmount, x.GrandTotalAmount })
             .FirstOrDefaultAsync(ct);
+        if (existingInvoice != null && existingInvoice.Status != 3 && existingInvoice.PaymentStatus != InvoicePaymentStatuses.Paid && session.BookingId.HasValue)
+        {
+            await ApplyBookingDepositToInvoiceAsync(session, existingInvoice, ct);
+            await db.SaveChangesAsync(ct);
+        }
         var subtotal = timeSubtotal + orderSubtotal;
         var discountAmount = existingInvoice?.DiscountAmount ?? 0;
 
@@ -669,6 +673,12 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 });
             }
 
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (invoice is not null)
+        {
+            await ApplyBookingDepositToInvoiceAsync(session, invoice, ct);
             await db.SaveChangesAsync(ct);
         }
 
@@ -1456,6 +1466,114 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         }
 
         assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+    }
+
+    private async Task ApplyBookingDepositToInvoiceAsync(EntitySession session, EntityInvoice invoice, CancellationToken ct)
+    {
+        if (!session.BookingId.HasValue) return;
+
+        var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x =>
+            x.BookingId == session.BookingId.Value &&
+            x.Status == BookingDepositStatuses.Paid &&
+            x.PaidAmount > 0, ct);
+        if (deposit is null) return;
+
+        var appliedAmount = Math.Min(deposit.PaidAmount, invoice.GrandTotalAmount);
+        if (appliedAmount <= 0) return;
+
+        var paymentMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "DEPOSIT", ct);
+        if (paymentMethod is null)
+        {
+            paymentMethod = new PaymentMethod
+            {
+                Code = "DEPOSIT",
+                Name = "Deposit Applied",
+                Description = "System payment method used when applying booking deposits to invoices.",
+                IsActive = true
+            };
+            db.PaymentMethods.Add(paymentMethod);
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (await db.Payments.AnyAsync(x => x.InvoiceId == invoice.InvoiceId && x.PaymentMethodId == paymentMethod.PaymentMethodId, ct))
+            return;
+
+        db.Payments.Add(new Payment
+        {
+            InvoiceId = invoice.InvoiceId,
+            PaymentMethodId = paymentMethod.PaymentMethodId,
+            Amount = appliedAmount,
+            PaymentStatus = PaymentStatuses.Completed,
+            TransactionCode = $"DEPAPP{_clock.UtcNow:HHmmssddMMyyyy}",
+            PaidAtUtc = _clock.UtcNow,
+            Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
+        });
+
+        invoice.PaidAmount += appliedAmount;
+        invoice.PaymentStatus = invoice.PaidAmount >= invoice.GrandTotalAmount
+            ? InvoicePaymentStatuses.Paid
+            : InvoicePaymentStatuses.PartiallyPaid;
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
+        {
+            invoice.Status = 2;
+            await ProcessInvoicePaidRewardsAsync(invoice, ct);
+        }
+
+        deposit.AppliedAmount = appliedAmount;
+        deposit.AppliedToInvoiceId = invoice.InvoiceId;
+        if (deposit.PaidAmount > invoice.GrandTotalAmount)
+        {
+            deposit.RefundedAmount = deposit.PaidAmount - invoice.GrandTotalAmount;
+            deposit.RefundedAtUtc = _clock.UtcNow;
+            deposit.Status = BookingDepositStatuses.PartiallyRefunded;
+        }
+        else
+        {
+            deposit.Status = BookingDepositStatuses.AppliedToInvoice;
+        }
+    }
+
+    private async Task ProcessInvoicePaidRewardsAsync(EntityInvoice invoice, CancellationToken ct)
+    {
+        var appliedDiscounts = await db.InvoiceDiscounts.Where(x => x.InvoiceId == invoice.InvoiceId).ToListAsync(ct);
+        foreach (var ad in appliedDiscounts)
+        {
+            var disc = await db.Discounts.FindAsync([ad.DiscountId], ct);
+            if (disc != null)
+            {
+                disc.UsageCount++;
+                if (disc.MaxUsage > 0 && disc.UsageCount >= disc.MaxUsage)
+                {
+                    disc.IsActive = false;
+                }
+                db.Discounts.Update(disc);
+            }
+        }
+
+        if (invoice.CustomerId.HasValue)
+        {
+            var customer = await db.Customers.FindAsync([invoice.CustomerId.Value], ct);
+            if (customer != null && customer.Status)
+            {
+                int earnedPoints = (int)(invoice.GrandTotalAmount / 1000m);
+                if (earnedPoints > 0)
+                {
+                    customer.LoyaltyPoints += earnedPoints;
+                    customer.TotalPointsEarned += earnedPoints;
+                    db.Customers.Update(customer);
+
+                    db.CustomerPointHistories.Add(new CustomerPointHistory
+                    {
+                        CustomerId = customer.CustomerId,
+                        Points = earnedPoints,
+                        TransactionType = "EARN",
+                        Description = $"Tích điểm từ hóa đơn {invoice.InvoiceCode} ({invoice.GrandTotalAmount:N0} VND)",
+                        ReferenceId = invoice.InvoiceId,
+                        CreatedAtUtc = _clock.UtcNow
+                    });
+                }
+            }
+        }
     }
 
     private sealed record PricingCharge(

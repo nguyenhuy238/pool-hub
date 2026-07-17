@@ -53,7 +53,9 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService, IC
                 Note = c.Note,
                 Status = c.Status,
                 CreatedAtUtc = c.CreatedAtUtc,
-                TotalBookings = db.Bookings.Count(b => b.CustomerId == c.CustomerId)
+                TotalBookings = db.Bookings.Count(b => b.CustomerId == c.CustomerId),
+                LoyaltyPoints = c.LoyaltyPoints,
+                TotalPointsEarned = c.TotalPointsEarned
             })
             .ToListAsync(ct);
 
@@ -81,7 +83,9 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService, IC
                 Note = c.Note,
                 Status = c.Status,
                 CreatedAtUtc = c.CreatedAtUtc,
-                TotalBookings = db.Bookings.Count(b => b.CustomerId == c.CustomerId)
+                TotalBookings = db.Bookings.Count(b => b.CustomerId == c.CustomerId),
+                LoyaltyPoints = c.LoyaltyPoints,
+                TotalPointsEarned = c.TotalPointsEarned
             })
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException($"Customer with ID {id} not found.");
@@ -132,6 +136,7 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService, IC
         customer.Note = request.Note?.Trim();
         customer.Status = request.Status;
         customer.UpdatedAtUtc = _clock.UtcNow;
+        db.Customers.Update(customer);
 
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.CustomerUpdated, nameof(CustomerEntity),
@@ -149,6 +154,7 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService, IC
         var oldStatus = customer.Status;
         customer.Status = status;
         customer.UpdatedAtUtc = _clock.UtcNow;
+        db.Customers.Update(customer);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.CustomerStatusChanged, nameof(CustomerEntity),
             customer.CustomerId, customer.PublicId, new { Status = oldStatus }, new { Status = status },
@@ -214,6 +220,110 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService, IC
                 PaymentStatus = x.PaymentStatus,
                 Status = x.Status,
                 IssuedAtUtc = x.IssuedAtUtc
+            }).ToListAsync(ct);
+        return Page(items, request, total);
+    }
+
+    public async Task<PoolHub.Core.DTOs.Admin.DiscountDto> ExchangeVoucherAsync(long customerId, long voucherTemplateId, long actorUserId, CancellationToken ct)
+    {
+        var customer = await db.Customers.FindAsync([customerId], ct)
+            ?? throw new NotFoundException("Khách hàng không tồn tại.");
+        if (!customer.Status)
+            throw new BusinessRuleException("Khách hàng đang bị vô hiệu hóa.");
+
+        var template = await db.Discounts.FindAsync([voucherTemplateId], ct)
+            ?? throw new NotFoundException("Gói voucher không tồn tại.");
+        var now = _clock.UtcNow;
+        if (!template.IsActive || !template.IsVoucher || !template.PointsRequired.HasValue || template.PointsRequired.Value <= 0 || (template.EndsAtUtc.HasValue && template.EndsAtUtc.Value <= now))
+            throw new BusinessRuleException("Gói voucher này không hợp lệ hoặc đã hết thời hạn đổi thưởng.");
+        
+        if (customer.LoyaltyPoints < template.PointsRequired.Value)
+            throw new BusinessRuleException($"Khách hàng không đủ điểm tích lũy. Cần {template.PointsRequired.Value:N0} điểm, hiện có {customer.LoyaltyPoints:N0} điểm.");
+
+        customer.LoyaltyPoints -= template.PointsRequired.Value;
+        customer.UpdatedAtUtc = now;
+        db.Customers.Update(customer);
+
+        var randomSuffix = Guid.NewGuid().ToString("N")[..6].ToUpper();
+        var personalCode = $"V-{customer.CustomerId}-{randomSuffix}";
+        
+        var personalVoucher = new PoolHub.Core.Entities.Discount
+        {
+            DiscountCode = personalCode,
+            Name = $"{template.Name} (Đổi bởi {customer.FullName})",
+            DiscountType = template.DiscountType,
+            Value = template.Value,
+            MaxAmount = template.MaxAmount,
+            MinTimeSubtotal = template.MinTimeSubtotal,
+            AppliesTo = template.AppliesTo,
+            StartsAtUtc = now,
+            EndsAtUtc = template.EndsAtUtc,
+            IsActive = true,
+            IsVoucher = true,
+            PointsRequired = 0,
+            CustomerId = customer.CustomerId,
+            MaxUsage = 1,
+            UsageCount = 0
+        };
+        db.Discounts.Add(personalVoucher);
+
+        db.CustomerPointHistories.Add(new PoolHub.Core.Entities.CustomerPointHistory
+        {
+            CustomerId = customer.CustomerId,
+            Points = -template.PointsRequired.Value,
+            TransactionType = "REDEEM",
+            Description = $"Đổi voucher '{template.Name}' (Mã: {personalCode}" + (template.EndsAtUtc.HasValue ? $" - HSD: {template.EndsAtUtc.Value:dd/MM/yyyy HH:mm}" : "") + ")",
+            ReferenceId = personalVoucher.DiscountId,
+            CreatedAtUtc = now
+        });
+
+        await db.SaveChangesAsync(ct);
+        
+        await auditService.LogAsync(actorUserId, AuditActions.CustomerVoucherExchanged, nameof(CustomerEntity),
+            customer.CustomerId, customer.PublicId,
+            new { PointsDeducted = template.PointsRequired.Value },
+            new { PersonalVoucherCode = personalCode, RemainingPoints = customer.LoyaltyPoints },
+            $"Khách hàng {customer.FullName} đổi voucher {personalCode}.", ct);
+
+        return new PoolHub.Core.DTOs.Admin.DiscountDto
+        {
+            DiscountId = personalVoucher.DiscountId,
+            DiscountCode = personalVoucher.DiscountCode,
+            Name = personalVoucher.Name,
+            DiscountType = personalVoucher.DiscountType,
+            Value = personalVoucher.Value,
+            MaxAmount = personalVoucher.MaxAmount,
+            MinTimeSubtotal = personalVoucher.MinTimeSubtotal,
+            AppliesTo = personalVoucher.AppliesTo,
+            StartsAtUtc = personalVoucher.StartsAtUtc,
+            EndsAtUtc = personalVoucher.EndsAtUtc,
+            IsActive = personalVoucher.IsActive,
+            IsVoucher = personalVoucher.IsVoucher,
+            PointsRequired = personalVoucher.PointsRequired,
+            CustomerId = personalVoucher.CustomerId,
+            CustomerName = customer.FullName,
+            MaxUsage = personalVoucher.MaxUsage,
+            UsageCount = personalVoucher.UsageCount
+        };
+    }
+
+    public async Task<PagedResult<CustomerPointHistoryDto>> GetPointHistoryAsync(long customerId, PaginationRequest request, CancellationToken ct)
+    {
+        await EnsureCustomerExistsAsync(customerId, ct);
+        NormalizePagination(request);
+        var query = db.CustomerPointHistories.AsNoTracking().Where(x => x.CustomerId == customerId);
+        var total = await query.CountAsync(ct);
+        var items = await query.OrderByDescending(x => x.CreatedAtUtc)
+            .Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize)
+            .Select(x => new CustomerPointHistoryDto
+            {
+                CustomerPointHistoryId = x.CustomerPointHistoryId,
+                CustomerId = x.CustomerId,
+                Points = x.Points,
+                TransactionType = x.TransactionType,
+                Description = x.Description,
+                ReferenceId = x.ReferenceId,
+                CreatedAtUtc = x.CreatedAtUtc
             }).ToListAsync(ct);
         return Page(items, request, total);
     }

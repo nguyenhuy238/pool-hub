@@ -9,7 +9,7 @@ import type { Discount } from "@/types";
 
 export default function DiscountsPage() {
   const toast = useToast();
-  const [query, setQuery] = useState({ search: "", pageNumber: 1, pageSize: 20, isActive: "", discountType: "", appliesTo: "" });
+  const [query, setQuery] = useState({ search: "", pageNumber: 1, pageSize: 20, isActive: "", discountType: "", appliesTo: "", isVoucher: "" });
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [statusAction, setStatusAction] = useState<Discount | null>(null);
@@ -18,18 +18,20 @@ export default function DiscountsPage() {
     PageNumber: query.pageNumber,
     PageSize: query.pageSize,
     IsActive: query.isActive === "" ? undefined : query.isActive === "true",
+    IsVoucher: query.isVoucher === "" ? undefined : query.isVoucher === "true",
     DiscountType: query.discountType || undefined,
     AppliesTo: query.appliesTo || undefined
   }), [query]);
   const rawRows = useList(data);
   const rows = rawRows.filter((item) => {
     if (query.isActive !== "" && String(item.isActive) !== query.isActive) return false;
+    if (query.isVoucher !== "" && String(Boolean(item.isVoucher)) !== query.isVoucher) return false;
     if (query.discountType !== "" && item.discountType !== query.discountType) return false;
     if (query.appliesTo !== "" && item.appliesTo !== query.appliesTo) return false;
     return true;
   });
   return <>
-    <PageHeader title="Mã giảm giá" description="Quản lý chương trình giảm giá áp dụng cho tiền giờ chơi." action={<button className="primary-btn" onClick={() => setIsCreating(true)}>Tạo mã giảm giá</button>} />
+    <PageHeader title="Mã giảm giá & Gói Voucher" description="Quản lý các chương trình khuyến mãi chung và các gói Voucher đổi bằng điểm tích lũy." action={<button className="primary-btn" onClick={() => setIsCreating(true)}>+ Tạo chương trình mới</button>} />
     <ListControls
       search={query.search}
       pageNumber={query.pageNumber}
@@ -37,6 +39,14 @@ export default function DiscountsPage() {
       onChange={(next) => setQuery((prev) => ({ ...prev, ...next }))}
       extra={
         <>
+          <label>
+            <span>Loại khuyến mãi</span>
+            <select value={query.isVoucher} onChange={(e) => setQuery((prev) => ({ ...prev, isVoucher: e.target.value, pageNumber: 1 }))}>
+              <option value="false">🎟️ Mã giảm giá thường</option>
+              <option value="true">🎁 Gói Voucher đổi thưởng</option>
+              <option value="">Tất cả</option>
+            </select>
+          </label>
           <label>
             <span>Trạng thái</span>
             <select value={query.isActive} onChange={(e) => setQuery((prev) => ({ ...prev, isActive: e.target.value, pageNumber: 1 }))}>
@@ -65,21 +75,47 @@ export default function DiscountsPage() {
       }
     />
     {isCreating && (
-      <Modal title="Tạo mã giảm giá" onClose={() => setIsCreating(false)}>
-        <SmartForm<Discount> title="" initial={{ discountType: "PERCENTAGE", appliesTo: "TIME", isActive: true }}
+      <Modal title="Tạo mã giảm giá / Gói Voucher" onClose={() => setIsCreating(false)}>
+        <SmartForm<Discount> title="" initial={{ discountType: "PERCENTAGE", appliesTo: "TIME", isActive: true, isVoucher: false, pointsRequired: 0 }}
           fields={[
-            { name: "discountCode", label: "Mã giảm giá", required: true }, { name: "name", label: "Tên chương trình", required: true },
+            { name: "discountCode", label: "Mã giảm giá / Voucher", required: true }, { name: "name", label: "Tên chương trình / Gói voucher", required: true },
+            { name: "isVoucher", label: "Loại khuyến mãi", required: true, options: [{ value: "false", label: "🎟️ Mã giảm giá thường" }, { value: "true", label: "🎁 Gói Voucher (đổi bằng điểm)" }] },
+            { name: "pointsRequired", label: "Số điểm cần đổi (nếu là Gói Voucher)", type: "number" },
             { name: "discountType", label: "Hình thức giảm", required: true, options: [{ value: "PERCENTAGE", label: "Theo phần trăm" }, { value: "FIXED_AMOUNT", label: "Số tiền cố định" }] },
             { name: "value", label: "Giá trị", type: "number", required: true }, { name: "maxAmount", label: "Mức giảm tối đa", type: "number" },
             { name: "minTimeSubtotal", label: "Tiền giờ tối thiểu", type: "number" }, { name: "startsAtUtc", label: "Bắt đầu (UTC)", type: "datetime-local", required: true },
             { name: "endsAtUtc", label: "Kết thúc (UTC)", type: "datetime-local" }
-          ]} onSubmit={async value => { await discountApi.create(value); setIsCreating(false); reload(); }} />
+          ]} onSubmit={async value => {
+            const payload = {
+              ...value,
+              isVoucher: String(value.isVoucher) === "true",
+              pointsRequired: value.pointsRequired ? Number(value.pointsRequired) : 0
+            };
+            await discountApi.create(payload);
+            setIsCreating(false);
+            reload();
+          }} />
       </Modal>
     )}
     <StateBlock loading={loading && !rows.length} error={error} empty={!loading && !rows.length} />
     <DataTable rows={rows} columns={[
-      { key: "discountCode", label: "Mã giảm giá" }, { key: "name", label: "Tên chương trình" }, { key: "discountType", label: "Hình thức" },
-      { key: "value", label: "Giá trị" }, { key: "minTimeSubtotal", label: "Tiền giờ tối thiểu" }, { key: "appliesTo", label: "Áp dụng" },
+      { key: "discountCode", label: "Mã code", render: row => <strong style={{ color: row.isVoucher ? '#7c3aed' : '#0284c7', fontSize: '14px' }}>{row.discountCode}</strong> },
+      { key: "name", label: "Tên chương trình / Gói thưởng" },
+      { key: "isVoucher", label: "Phân loại", render: row => row.isVoucher ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div><Badge tone="purple">🎁 Gói Voucher đổi điểm</Badge></div>
+          <span style={{ fontSize: '12px', color: '#6d28d9', fontWeight: 600 }}>Yêu cầu: {row.pointsRequired?.toLocaleString() || 0} điểm</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div><Badge tone="blue">🎟️ Mã giảm giá thường</Badge></div>
+          <span style={{ fontSize: '12px', color: '#0369a1', fontWeight: 600 }}>Dùng trực tiếp (0 điểm)</span>
+        </div>
+      ) },
+      { key: "discountType", label: "Hình thức" },
+      { key: "value", label: "Giá trị", render: row => row.discountType === "PERCENTAGE" ? `${row.value}%` : `${row.value?.toLocaleString()} đ` },
+      { key: "minTimeSubtotal", label: "Tiền giờ tối thiểu", render: row => row.minTimeSubtotal ? `${row.minTimeSubtotal?.toLocaleString()} đ` : "-" },
+      { key: "appliesTo", label: "Áp dụng" },
       { key: "isActive", label: "Trạng thái", render: row => <div style={{ minWidth: "110px" }}><Badge tone={row.isActive ? "green" : "red"}>{row.isActive ? "Đang hoạt động" : "Ngừng hoạt động"}</Badge></div> }
     ]} actions={row => (
       <div style={{ display: "flex", gap: "8px", minWidth: "120px" }}>
@@ -89,15 +125,26 @@ export default function DiscountsPage() {
     )} />
     <Pagination pageNumber={query.pageNumber} totalPages={getTotalPages(data, query.pageSize)} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     {editingDiscount && (
-      <Modal title="Chỉnh sửa mã giảm giá" onClose={() => setEditingDiscount(null)}>
-        <SmartForm<Discount> title="" initial={editingDiscount}
+      <Modal title="Chỉnh sửa mã giảm giá / Gói Voucher" onClose={() => setEditingDiscount(null)}>
+        <SmartForm<Discount> title="" initial={{ ...editingDiscount, isVoucher: Boolean(editingDiscount.isVoucher), pointsRequired: editingDiscount.pointsRequired || 0 }}
           fields={[
-            { name: "discountCode", label: "Mã giảm giá", required: true }, { name: "name", label: "Tên chương trình", required: true },
+            { name: "discountCode", label: "Mã giảm giá / Voucher", required: true }, { name: "name", label: "Tên chương trình / Gói voucher", required: true },
+            { name: "isVoucher", label: "Loại khuyến mãi", required: true, options: [{ value: "false", label: "🎟️ Mã giảm giá thường" }, { value: "true", label: "🎁 Gói Voucher (đổi bằng điểm)" }] },
+            { name: "pointsRequired", label: "Số điểm cần đổi (nếu là Gói Voucher)", type: "number" },
             { name: "discountType", label: "Hình thức giảm", required: true, options: [{ value: "PERCENTAGE", label: "Theo phần trăm" }, { value: "FIXED_AMOUNT", label: "Số tiền cố định" }] },
             { name: "value", label: "Giá trị", type: "number", required: true }, { name: "maxAmount", label: "Mức giảm tối đa", type: "number" },
             { name: "minTimeSubtotal", label: "Tiền giờ tối thiểu", type: "number" }, { name: "startsAtUtc", label: "Bắt đầu (UTC)", type: "datetime-local", required: true },
             { name: "endsAtUtc", label: "Kết thúc (UTC)", type: "datetime-local" }
-          ]} onSubmit={async value => { await discountApi.update(editingDiscount.discountId, value); setEditingDiscount(null); reload(); }} />
+          ]} onSubmit={async value => {
+            const payload = {
+              ...value,
+              isVoucher: String(value.isVoucher) === "true",
+              pointsRequired: value.pointsRequired ? Number(value.pointsRequired) : 0
+            };
+            await discountApi.update(editingDiscount.discountId, payload);
+            setEditingDiscount(null);
+            reload();
+          }} />
       </Modal>
     )}
     {statusAction ? <ConfirmDialog title={statusAction.isActive ? "Tắt mã giảm giá" : "Bật mã giảm giá"} message={`${statusAction.isActive ? "Tắt" : "Bật"} mã giảm giá “${statusAction.discountCode}”?`} confirmLabel="Xác nhận" danger={statusAction.isActive} onCancel={() => setStatusAction(null)} onConfirm={async () => {

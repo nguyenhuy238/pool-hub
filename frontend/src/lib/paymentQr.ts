@@ -50,7 +50,5 @@ export function parseBankTransferConfig(method?: PaymentMethod | null): BankTran
 }
 
 export function buildVietQrUrl(config: BankTransferConfig, amount: number, transferContent: string) {
-  if (!config.bankCode || !config.accountNumber || !config.accountName) return "";
-  const roundedAmount = Math.max(0, Math.round(amount || 0));
-  return `https://img.vietqr.io/image/${config.bankCode}-${config.accountNumber}-compact2.png?amount=${roundedAmount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(config.accountName)}`;
+  return "";
 }

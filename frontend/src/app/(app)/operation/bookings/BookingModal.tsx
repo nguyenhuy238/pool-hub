@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { bookingApi, pricingApi } from "@/lib/api/endpoints";
-import { getVietnamDateInputValue, getVietnamDayOfWeek, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
+import { getVietnamDateInputValue, getVietnamDayOfWeek, utcTimestampMs, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso, validateSlotRange } from "@/lib/timeSlots";
 import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
@@ -83,8 +83,8 @@ export function BookingModal({
         items.forEach((b: any) => {
           if (b.status === 3) return; // Cancelled doesn't count
           
-          const bookingStart = new Date(b.startTimeUtc).getTime();
-          const bookingEnd = new Date(b.endTimeUtc).getTime();
+          const bookingStart = utcTimestampMs(b.startTimeUtc);
+          const bookingEnd = utcTimestampMs(b.endTimeUtc);
           for (let i = 0; i < timeSlots.length; i++) {
             const slotStart = new Date(slotToUtcIso(timeSlots[i])).getTime();
             const slotEnd = slotStart + 30 * 60 * 1000;
@@ -125,29 +125,36 @@ export function BookingModal({
   const handleSlotClick = (index: number) => {
     if (pastSlots.has(index) || (bookedSlots.has(index) && selectedSlotIndexes.length !== 1)) return;
     
-    if (selectedSlotIndexes.length === 0 || selectedSlotIndexes.length === 2) {
-      setSelectedSlotIndexes([index]);
-    } else if (selectedSlotIndexes.length === 1) {
+    if (selectedSlotIndexes.length === 1) {
       const start = selectedSlotIndexes[0];
-      const end = index;
-      
-      if (end <= start) {
-        toast("Giờ kết thúc phải sau giờ bắt đầu. Nếu muốn đặt qua đêm, hãy bật Đặt qua đêm.", "error");
-      } else {
-        // Check if there are booked slots in between
-        let hasBooked = false;
-        for (let i = start; i < end; i++) {
-          if (bookedSlots.has(i)) hasBooked = true;
-        }
-        
-        if (hasBooked) {
-          toast("Khoảng thời gian chọn bị vướng lịch đã đặt. Vui lòng chọn lại.", "error");
-          setSelectedSlotIndexes([index]);
-        } else {
-          setSelectedSlotIndexes([start, end]);
-        }
+      if (index === start) {
+        setSelectedSlotIndexes([]);
+        return;
       }
+      if (index < start) {
+        setSelectedSlotIndexes([index]);
+        return;
+      }
+      const end = index;
+      let hasBooked = false;
+      for (let i = start; i < end; i++) {
+        if (bookedSlots.has(i)) hasBooked = true;
+      }
+      if (hasBooked) {
+        toast("Khoảng thời gian chọn bị vướng lịch đã đặt. Vui lòng chọn lại.", "error");
+        setSelectedSlotIndexes([index]);
+      } else {
+        setSelectedSlotIndexes([start, end]);
+      }
+      return;
     }
+
+    if (selectedSlotIndexes.length === 2 && (index === selectedSlotIndexes[0] || index === selectedSlotIndexes[1])) {
+      setSelectedSlotIndexes([]);
+      return;
+    }
+
+    setSelectedSlotIndexes([index]);
   };
 
   const getSlotClass = (index: number) => {

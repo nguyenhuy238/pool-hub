@@ -12,14 +12,46 @@ public partial class CrudService
     {
         var q = db.Bookings.AsQueryable();
         var t = await q.CountAsync(ct);
-        var i = await q.Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize).Select(x => new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status }).ToListAsync(ct);
+        var i = await q
+            .OrderByDescending(x => x.BookingId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new BookingDto
+            {
+                BookingId = x.BookingId,
+                BookingCode = x.BookingCode,
+                CustomerId = x.CustomerId,
+                CustomerName = db.Customers.Where(c => c.CustomerId == x.CustomerId).Select(c => c.FullName).FirstOrDefault() ?? string.Empty,
+                PhoneNumber = db.Customers.Where(c => c.CustomerId == x.CustomerId).Select(c => c.PhoneNumber).FirstOrDefault() ?? string.Empty,
+                TableId = x.TableId,
+                TableTypeId = x.TableTypeId,
+                StartTimeUtc = x.StartTimeUtc,
+                EndTimeUtc = x.EndTimeUtc,
+                EstimatedAmount = x.EstimatedAmount,
+                Status = x.Status
+            })
+            .ToListAsync(ct);
         return Page(i, request.PageNumber, request.PageSize, t);
     }
 
     public async Task<BookingDto> GetBookingAsync(long id, CancellationToken ct)
     {
         var x = await db.Bookings.FindAsync([id], ct) ?? throw new NotFoundException("Booking not found.");
-        return new BookingDto { BookingId = x.BookingId, BookingCode = x.BookingCode, CustomerId = x.CustomerId, TableId = x.TableId, StartTimeUtc = x.StartTimeUtc, EndTimeUtc = x.EndTimeUtc, Status = x.Status };
+        var customer = await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.CustomerId == x.CustomerId, ct);
+        return new BookingDto
+        {
+            BookingId = x.BookingId,
+            BookingCode = x.BookingCode,
+            CustomerId = x.CustomerId,
+            CustomerName = customer?.FullName ?? string.Empty,
+            PhoneNumber = customer?.PhoneNumber ?? string.Empty,
+            TableId = x.TableId,
+            TableTypeId = x.TableTypeId,
+            StartTimeUtc = x.StartTimeUtc,
+            EndTimeUtc = x.EndTimeUtc,
+            EstimatedAmount = x.EstimatedAmount,
+            Status = x.Status
+        };
     }
 
     public async Task DeleteBookingAsync(long id, CancellationToken ct)

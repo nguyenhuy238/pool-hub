@@ -88,7 +88,9 @@ export const customerApi = {
   updateStatus: (id: number, status: boolean) => apiFetch(`/api/customers/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
   bookingHistory: (id: number) => apiFetch<{ items?: CustomerBookingHistory[] }>(`/api/customers/${id}/bookings`),
   sessionHistory: (id: number) => apiFetch<{ items?: CustomerSessionHistory[] }>(`/api/customers/${id}/sessions`),
-  invoiceHistory: (id: number) => apiFetch<{ items?: CustomerInvoiceHistory[] }>(`/api/customers/${id}/invoices`)
+  invoiceHistory: (id: number) => apiFetch<{ items?: CustomerInvoiceHistory[] }>(`/api/customers/${id}/invoices`),
+  exchangeVoucher: (id: number, templateId: number) => apiFetch(`/api/customers/${id}/exchange-voucher/${templateId}`, { method: "POST" }),
+  pointHistory: (id: number) => apiFetch<{ items?: any[] }>(`/api/customers/${id}/point-history`)
 };
 
 export const sessionApi = {
@@ -116,10 +118,11 @@ export const orderApi = {
 
 export const invoiceApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Invoice[] | { items?: Invoice[] }>(`/api/invoices${toQuery(params)}`),
-  detail: (id: number) => apiFetch<Invoice>(`/api/invoices/${id}`),
+  detail: (id: number) => apiFetch<Invoice>(`/api/invoices/${id}?_t=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" } }),
   paymentMethods: () => apiFetch<PaymentMethod[]>("/api/invoices/payment-methods"),
   generate: (sessionId: number) => apiFetch<Invoice>(`/api/invoices/generate/${sessionId}`, { method: "POST" }),
-  pay: (body: { invoiceId: number; paymentMethodId: number; amount: number }) => apiFetch<Invoice>("/api/invoices/payments", { method: "POST", body: JSON.stringify(body) }),
+  pay: (body: { invoiceId: number; paymentMethodId: number; amount: number; phoneNumber?: string; customerName?: string }) => apiFetch<Invoice>("/api/invoices/payments", { method: "POST", body: JSON.stringify(body) }),
+  updateCustomer: (id: number, body: { phoneNumber?: string; fullName?: string; customerId?: number }) => apiFetch<Invoice>(`/api/invoices/${id}/customer`, { method: "PUT", body: JSON.stringify(body) }),
   discount: (id: number, discountCode: string) => apiFetch(`/api/invoices/${id}/discounts`, { method: "POST", body: JSON.stringify({ discountCode }) }),
   removeDiscount: (id: number) => apiFetch(`/api/invoices/${id}/discounts`, { method: "DELETE" }),
   cancel: (id: number, reason: string) => apiFetch(`/api/invoices/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),

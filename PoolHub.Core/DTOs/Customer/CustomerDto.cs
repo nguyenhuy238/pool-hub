@@ -30,4 +30,7 @@ public class CustomerDto
 
     /// <summary>Tổng số lần đặt bàn.</summary>
     public int TotalBookings { get; set; }
+
+    public int LoyaltyPoints { get; set; }
+    public int TotalPointsEarned { get; set; }
 }

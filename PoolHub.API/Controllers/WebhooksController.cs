@@ -6,6 +6,7 @@ using PoolHub.Core.DTOs.Invoice;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared;
+using PoolHub.Shared.Constants;
 using System;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -42,11 +43,8 @@ public class BankWebhookRequest
 [ApiController]
 [Route("api/webhooks")]
 [AllowAnonymous]
-public class WebhooksController(PoolHubDbContext db, IInvoiceService invoiceService, IConfiguration configuration) : ControllerBase
+public class WebhooksController(PoolHubDbContext db, IInvoiceService invoiceService, IBookingService bookingService, IConfiguration configuration) : ControllerBase
 {
-    [HttpPost("bank-transfer")]
-    [HttpPost("sepay")]
-    [HttpPost("casso")]
     [HttpPost("vietqr")]
     [HttpPost("payos")]
     public async Task<ActionResult<ApiResponse<object>>> HandleBankWebhook([FromBody] BankWebhookRequest request, CancellationToken ct)
@@ -71,16 +69,96 @@ public class WebhooksController(PoolHubDbContext db, IInvoiceService invoiceServ
             return Ok(ApiResponse<object>.Ok(new { ignored = true }, "Outgoing transaction ignored."));
         }
 
-        // 3. Extract Invoice Code (e.g. HD15) or OrderCode from PayOS / VietQR
+        var desc = request.Data?.Description ?? request.Data?.Content ?? request.Description ?? request.Content ?? "";
+        var rawText = desc.ToUpperInvariant();
+
+        // 3. Check for Booking Deposit (OrderCode >= 100,000,000 or content contains BKxxx / DEPxxx)
+        long depositId = 0;
+        if (request.Data?.OrderCode >= 100000000 && request.Data?.OrderCode < 200000000)
+        {
+            depositId = request.Data.OrderCode.Value - 100000000;
+        }
+        else if (request.Data?.OrderCode >= 200000000)
+        {
+            var foundByNote = await (from b in db.Bookings
+                                     join d in db.BookingDeposits on b.BookingId equals d.BookingId
+                                     where b.Note != null && b.Note.Contains("PayOS_OrderCode:" + request.Data.OrderCode.Value)
+                                     select d).FirstOrDefaultAsync(ct);
+            if (foundByNote != null) depositId = foundByNote.BookingDepositId;
+        }
+
+        if (depositId == 0)
+        {
+            var depMatch = Regex.Match(rawText, @"DEP\s*(\d+)");
+            if (depMatch.Success && long.TryParse(depMatch.Groups[1].Value, out var parsedDepId))
+            {
+                depositId = parsedDepId;
+            }
+            else
+            {
+                var bkMatch = Regex.Match(rawText, @"BK\s*([A-Z0-9]+)");
+                if (bkMatch.Success)
+                {
+                    var bkCode = "BK" + bkMatch.Groups[1].Value;
+                    var foundDeposit = await (from d in db.BookingDeposits
+                                              join b in db.Bookings on d.BookingId equals b.BookingId
+                                              where b.BookingCode.Contains(bkCode) || bkCode.Contains(b.BookingCode)
+                                              select d).FirstOrDefaultAsync(ct);
+                    if (foundDeposit != null) depositId = foundDeposit.BookingDepositId;
+                }
+            }
+        }
+
+        if (depositId > 0)
+        {
+            var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingDepositId == depositId, ct);
+            if (deposit != null)
+            {
+                if (deposit.Status == PoolHub.Shared.Constants.BookingDepositStatuses.Paid)
+                {
+                    return Ok(ApiResponse<object>.Ok(new { handled = true }, $"Booking deposit #{depositId} is already paid."));
+                }
+
+                var incomingDepositAmount = request.Data?.Amount > 0 ? request.Data.Amount :
+                                           (request.Data?.TransferAmount > 0 ? request.Data.TransferAmount.Value :
+                                           (request.TransferAmount > 0 ? request.TransferAmount : (request.Amount ?? 0)));
+
+                if (incomingDepositAmount < deposit.RequiredAmount)
+                {
+                    return Ok(ApiResponse<object>.Ok(new { handled = false }, $"Transfer amount {incomingDepositAmount} is less than required deposit {deposit.RequiredAmount}."));
+                }
+
+                await bookingService.ConfirmDepositAsync(deposit.BookingId, new PoolHub.Core.DTOs.Booking.ConfirmDepositRequest
+                {
+                    PaidAmount = incomingDepositAmount,
+                    TransactionCode = request.ReferenceCode ?? request.Data?.Tid ?? $"PAYOS_{depositId}"
+                }, 1, ct);
+
+                return Ok(ApiResponse<object>.Ok(new { success = true, depositId, bookingId = deposit.BookingId, paidAmount = incomingDepositAmount }, $"Automated deposit payment of {incomingDepositAmount} applied to Booking #{deposit.BookingId}."));
+            }
+            else if (request.Data?.OrderCode < 100000000)
+            {
+                return Ok(ApiResponse<object>.Ok(new { handled = false }, $"Booking deposit #{depositId} does not exist."));
+            }
+        }
+
+        // 4. Extract Invoice Code (e.g. HD15) or OrderCode (< 100,000,000 or retry OrderCode >= 100,000,000) from PayOS / VietQR
         long invoiceId = 0;
-        if (request.Data?.OrderCode > 0)
+        if (request.Data?.OrderCode > 0 && request.Data.OrderCode < 100000000)
         {
             invoiceId = request.Data.OrderCode.Value;
         }
-        else
+        else if (request.Data?.OrderCode >= 100000000)
         {
-            var desc = request.Data?.Description ?? request.Data?.Content ?? request.Description ?? request.Content ?? "";
-            var rawText = desc.ToUpperInvariant();
+            var foundInv = await db.Invoices.FirstOrDefaultAsync(x => x.Note != null && x.Note.Contains($"PayOS_OrderCode:{request.Data.OrderCode.Value}"), ct);
+            if (foundInv != null)
+            {
+                invoiceId = foundInv.InvoiceId;
+            }
+        }
+
+        if (invoiceId <= 0)
+        {
             var match = Regex.Match(rawText, @"HD\s*(\d+)");
             if (match.Success)
             {
@@ -100,7 +178,7 @@ public class WebhooksController(PoolHubDbContext db, IInvoiceService invoiceServ
             return Ok(ApiResponse<object>.Ok(new { handled = false }, $"Invoice HD{invoiceId} does not exist."));
         }
 
-        if (invoice.Status == 3 || invoice.PaymentStatus == 2) // Cancelled or Paid
+        if (invoice.Status == 3 || invoice.PaymentStatus == InvoicePaymentStatuses.Paid || invoice.PaidAmount >= invoice.GrandTotalAmount) // Cancelled or Paid
         {
             return Ok(ApiResponse<object>.Ok(new { handled = true }, $"Invoice HD{invoiceId} is already paid or cancelled."));
         }

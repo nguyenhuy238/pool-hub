@@ -20,8 +20,14 @@ public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
         Ok(ApiResponse<object>.Ok(await invoiceService.GetInvoicesAsync(request, ct)));
 
     [HttpGet("{id:long}")]
-    public async Task<ActionResult<ApiResponse<InvoiceDetailDto>>> GetById(long id, CancellationToken ct) => 
-        Ok(ApiResponse<InvoiceDetailDto>.Ok(await invoiceService.GetInvoiceDetailAsync(id, ct)));
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<ActionResult<ApiResponse<InvoiceDetailDto>>> GetById(long id, CancellationToken ct)
+    {
+        Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        Response.Headers["Pragma"] = "no-cache";
+        Response.Headers["Expires"] = "0";
+        return Ok(ApiResponse<InvoiceDetailDto>.Ok(await invoiceService.GetInvoiceDetailAsync(id, ct)));
+    }
 
     [HttpGet("payment-methods")]
     public async Task<ActionResult<ApiResponse<List<PaymentMethodDto>>>> GetPaymentMethods(CancellationToken ct) =>
@@ -80,5 +86,12 @@ public class InvoicesController(IInvoiceService invoiceService) : ControllerBase
     {
         var result = await invoiceService.UpdateInvoiceProductsAsync(id, request, User.GetUserId(), ct);
         return Ok(ApiResponse<InvoiceDto>.Ok(result, "Products updated successfully."));
+    }
+
+    [HttpPut("{id:long}/customer")]
+    public async Task<ActionResult<ApiResponse<InvoiceDetailDto>>> UpdateCustomer(long id, [FromBody] UpdateInvoiceCustomerRequest request, CancellationToken ct)
+    {
+        var result = await invoiceService.UpdateInvoiceCustomerAsync(id, request, User.GetUserId(), ct);
+        return Ok(ApiResponse<InvoiceDetailDto>.Ok(result, "Customer updated successfully."));
     }
 }

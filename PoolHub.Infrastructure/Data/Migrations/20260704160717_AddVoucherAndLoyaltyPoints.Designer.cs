@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PoolHub.Infrastructure.Data;
 
 #nullable disable
 
-namespace PoolHub.Infrastructure.Migrations
+namespace PoolHub.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(PoolHubDbContext))]
-    partial class PoolHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260704160717_AddVoucherAndLoyaltyPoints")]
+    partial class AddVoucherAndLoyaltyPoints
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -489,6 +492,7 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("check_in_image_url");
 
                     b.Property<string>("Content")
+                        .IsRequired()
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("content");
@@ -517,14 +521,6 @@ namespace PoolHub.Infrastructure.Migrations
                     b.Property<bool>("IsFeatured")
                         .HasColumnType("bit")
                         .HasColumnName("is_featured");
-
-                    b.Property<bool>("IsAnonymous")
-                        .HasColumnType("bit")
-                        .HasColumnName("is_anonymous");
-
-                    b.Property<bool>("IsVerified")
-                        .HasColumnType("bit")
-                        .HasColumnName("is_verified");
 
                     b.Property<string>("Note")
                         .HasMaxLength(500)
@@ -566,20 +562,14 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.HasIndex("ApprovedByUserId");
 
-                    b.HasIndex("BookingId")
-                        .IsUnique()
-                        .HasFilter("[booking_id] IS NOT NULL AND [status] IN (1, 2)");
+                    b.HasIndex("BookingId");
 
-                    b.HasIndex("InvoiceId")
-                        .IsUnique()
-                        .HasFilter("[invoice_id] IS NOT NULL AND [status] IN (1, 2)");
+                    b.HasIndex("InvoiceId");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.HasIndex("SessionId")
-                        .IsUnique()
-                        .HasFilter("[session_id] IS NOT NULL AND [status] IN (1, 2)");
+                    b.HasIndex("SessionId");
 
                     b.HasIndex("CustomerId", "BookingId")
                         .IsUnique()

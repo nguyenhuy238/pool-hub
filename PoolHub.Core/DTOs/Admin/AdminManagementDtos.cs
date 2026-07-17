@@ -8,6 +8,9 @@ public class DiscountQueryRequest : PaginationRequest
     public bool? IsActive { get; set; }
     public string? DiscountType { get; set; }
     public string? AppliesTo { get; set; }
+    public bool? IsVoucher { get; set; }
+    public long? CustomerId { get; set; }
+    public bool? OnlyTemplates { get; set; }
 }
 
 public class DiscountDto
@@ -23,6 +26,12 @@ public class DiscountDto
     public DateTime StartsAtUtc { get; set; }
     public DateTime? EndsAtUtc { get; set; }
     public bool IsActive { get; set; }
+    public bool IsVoucher { get; set; }
+    public int? PointsRequired { get; set; }
+    public long? CustomerId { get; set; }
+    public string? CustomerName { get; set; }
+    public int MaxUsage { get; set; }
+    public int UsageCount { get; set; }
 }
 
 public class UpsertDiscountRequest
@@ -36,6 +45,10 @@ public class UpsertDiscountRequest
     public DateTime StartsAtUtc { get; set; }
     public DateTime? EndsAtUtc { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool IsVoucher { get; set; } = false;
+    public int? PointsRequired { get; set; }
+    public long? CustomerId { get; set; }
+    public int MaxUsage { get; set; } = 0;
 }
 
 public class UpdateActiveStatusRequest

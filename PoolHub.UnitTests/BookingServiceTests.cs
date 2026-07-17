@@ -249,7 +249,7 @@ public class BookingServiceTests
     {
         await using var db = CreateDb();
         await SeedBookingBasicsAsync(db, tableCount: 1);
-        var start = new DateTime(2026, 7, 4, 10, 0, 0, DateTimeKind.Utc);
+        var start = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTimeKind.Utc);
         var booking = NewBooking(1, BookingStatuses.Confirmed, start, start.AddHours(1));
         booking.TableId = 1;
         db.Bookings.Add(booking);
@@ -341,8 +341,8 @@ public class BookingServiceTests
         CustomerId = 1,
         TableId = tableId,
         TableTypeId = 1,
-        StartTimeUtc = new DateTime(2026, 7, 4, 10, 0, 0, DateTimeKind.Utc),
-        EndTimeUtc = new DateTime(2026, 7, 4, 11, 0, 0, DateTimeKind.Utc),
+        StartTimeUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTimeKind.Utc),
+        EndTimeUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(11), DateTimeKind.Utc),
         NumberOfGuests = 2
     };
 
