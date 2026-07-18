@@ -19,7 +19,7 @@ function formatDuration(ms: number) {
 }
 
 export function ActionDrawerColumn() {
-  const { selectedTable, isDrawerOpen, setIsDrawerOpen, setSelectedTable, triggerRefresh } = usePOS();
+  const { selectedTable, isDrawerOpen, setIsDrawerOpen, setSelectedTable, refreshTrigger, triggerRefresh } = usePOS();
   const [sessionData, setSessionData] = useState<Session | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -33,6 +33,7 @@ export function ActionDrawerColumn() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<number | "">("");
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
 
   const [isSessionEndedLocal, setIsSessionEndedLocal] = useState(false);
   const [generatedInvoiceId, setGeneratedInvoiceId] = useState<number | null>(null);
@@ -89,6 +90,24 @@ export function ActionDrawerColumn() {
       loadSessionDetails();
     }
   }, [isDrawerOpen, selectedTable]);
+
+  // Listen to SignalR refreshTrigger to automatically check invoice status
+  useEffect(() => {
+    if (checkoutModalOpen && generatedInvoiceId && !paymentSuccess) {
+      invoiceApi.detail(generatedInvoiceId).then(inv => {
+        setInvoiceData(inv);
+        if (inv.paymentStatus === 2) {
+          setPaymentSuccess(true);
+          setTimeout(() => {
+            setCheckoutModalOpen(false);
+            setPaymentSuccess(false);
+            triggerRefresh();
+            closeDrawer();
+          }, 2000);
+        }
+      }).catch(err => console.error("Failed to refresh invoice data", err));
+    }
+  }, [refreshTrigger, checkoutModalOpen, generatedInvoiceId, paymentSuccess]);
 
   if (!isDrawerOpen || !selectedTable) {
     return (
@@ -178,6 +197,7 @@ export function ActionDrawerColumn() {
       const methods = Array.isArray(methodsRes) ? methodsRes : ((methodsRes as any).items || []);
       
       setInvoiceData(inv);
+      const invRemainingAmount = inv?.remainingAmount ?? (inv?.grandTotalAmount || 0);
       setPaymentMethods(methods as PaymentMethod[]);
       if (methods && methods.length > 0) {
          setSelectedPaymentMethod(methods[0].paymentMethodId);
@@ -200,11 +220,15 @@ export function ActionDrawerColumn() {
     
     try {
       setProcessingPayment(true);
-      await invoiceApi.pay({
-        invoiceId: invoiceData.invoiceId,
-        paymentMethodId: Number(selectedPaymentMethod),
-        amount: invoiceData.grandTotalAmount || 0
-      });
+      const invRemainingAmount = invoiceData.remainingAmount ?? invoiceData.grandTotalAmount ?? 0;
+      if (invRemainingAmount > 0 && selectedPaymentMethod) {
+        await invoiceApi.pay({
+          invoiceId: invoiceData.invoiceId,
+          paymentMethodId: Number(selectedPaymentMethod),
+          amount: invRemainingAmount
+        });
+      }
+      // Nếu remaining = 0, invoice đã được auto-paid khi generate — chỉ cần đóng modal
       alert("Thanh toán thành công!");
       setCheckoutModalOpen(false);
       triggerRefresh();
@@ -223,11 +247,11 @@ export function ActionDrawerColumn() {
   }
 
   const timeAmount = sessionSummary?.timeSubtotalAmount || sessionSummary?.TimeSubtotalAmount || 0;
-  const fbAmount = sessionSummary?.productSubtotalAmount || sessionSummary?.ProductSubtotalAmount || sessionSummary?.orderSubtotalAmount || calculatedFbAmount; 
-  const deposit = sessionSummary?.depositAmount || sessionSummary?.DepositAmount || 0;
-  const finalTotal = (sessionSummary?.totalAmount || sessionSummary?.grandTotalAmount) 
-    ? (sessionSummary.totalAmount || sessionSummary.grandTotalAmount) 
-    : (timeAmount + fbAmount - deposit);
+  const fbAmount = sessionSummary?.productSubtotalAmount || sessionSummary?.ProductSubtotalAmount || sessionSummary?.orderSubtotalAmount || calculatedFbAmount;
+  const subtotal = timeAmount + fbAmount;
+  const depositApplied = sessionSummary?.depositAmount || sessionSummary?.DepositAmount || 0;
+  const finalTotal = Math.max(0, subtotal - depositApplied);
+  const refundAmount = depositApplied > subtotal ? depositApplied - subtotal : 0;
 
   const isEmpty = !selectedTable.activeSessionId;
 
@@ -328,17 +352,26 @@ export function ActionDrawerColumn() {
                     <span>{fbAmount.toLocaleString()}Đ</span>
                   </div>
                 )}
-                {deposit > 0 && (
-                  <div className={styles.billRow}>
-                    <span>Đã cọc (Deposit)</span>
-                    <span style={{color: '#ef4444'}}>-{deposit.toLocaleString()}Đ</span>
+                <div className={styles.billRow}>
+                  <span>Tạm tính:</span>
+                  <span>{subtotal.toLocaleString()}Đ</span>
+                </div>
+                {depositApplied > 0 && (
+                  <div className={styles.billRow} style={{ color: '#16a34a', fontWeight: 500 }}>
+                    <span>✓ Trừ cọc đã thanh toán</span>
+                    <span>-{depositApplied.toLocaleString()}Đ</span>
                   </div>
                 )}
                 <div className={styles.billLine}></div>
                 <div className={styles.billTotal}>
                   <span>CẦN THU</span>
-                  <span>{finalTotal.toLocaleString()}Đ</span>
+                  <span style={{ color: finalTotal === 0 ? '#22c55e' : 'inherit' }}>{finalTotal.toLocaleString()}Đ</span>
                 </div>
+                {refundAmount > 0 && (
+                  <div style={{ marginTop: '10px', padding: '8px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px', color: '#c2410c', fontWeight: 600, fontSize: '0.85rem' }}>
+                    ⚠️ Hoàn trả khách: {refundAmount.toLocaleString()}Đ
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -396,7 +429,26 @@ export function ActionDrawerColumn() {
         )}
       </div>
 
-      {checkoutModalOpen && invoiceData && (
+      {checkoutModalOpen && invoiceData && (() => {
+        const invRemainingAmount = invoiceData.remainingAmount ?? invoiceData.grandTotalAmount ?? 0;
+        
+        if (paymentSuccess) {
+          return (
+            <Modal title="" onClose={() => setCheckoutModalOpen(false)} size="medium">
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', gap: '16px' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#dcfce7', color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(34, 197, 94, 0.2)' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+                <h2 style={{ color: '#16a34a', fontSize: '1.5rem', margin: 0 }}>Thanh Toán Thành Công!</h2>
+                <p style={{ color: '#64748b', fontSize: '1rem', margin: 0, textAlign: 'center' }}>Hóa đơn đã được xác nhận và tự động đóng.</p>
+              </div>
+            </Modal>
+          );
+        }
+
+        return (
         <Modal title="Thanh Toán Hóa Đơn" onClose={() => setCheckoutModalOpen(false)} size="medium">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ textAlign: 'center', marginBottom: '8px' }}>
@@ -425,26 +477,49 @@ export function ActionDrawerColumn() {
                     </li>
                  ))}
                </ul>
+               
+               {/* Deposit breakdown */}
+               {(invoiceData.depositAppliedAmount ?? 0) > 0 && (
+                 <>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', fontSize: '0.9rem', color: '#64748b' }}>
+                     <span>Tạm tính:</span>
+                     <span>{(invoiceData.grandTotalAmount || 0).toLocaleString()}Đ</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 600, color: '#16a34a', marginTop: '4px' }}>
+                     <span>✓ Trừ cọc đã thanh toán:</span>
+                     <span>-{((invoiceData.depositAppliedAmount ?? 0) + (invoiceData.depositRefundAmount ?? 0)).toLocaleString()}Đ</span>
+                   </div>
+                 </>
+               )}
+               
                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '2px dashed #cbd5e1', fontSize: '1.2rem', fontWeight: 'bold' }}>
                   <span>TỔNG CẦN THU:</span>
-                  <span style={{ color: '#2563eb' }}>{(invoiceData.grandTotalAmount || 0).toLocaleString()}Đ</span>
+                  <span style={{ color: invRemainingAmount === 0 ? '#22c55e' : '#2563eb' }}>{(invRemainingAmount).toLocaleString()}Đ</span>
                </div>
+               
+               {(invoiceData.depositRefundAmount ?? 0) > 0 && (
+                 <div style={{ marginTop: '10px', padding: '8px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px', color: '#c2410c', fontWeight: 600 }}>
+                   ⚠️ Cần hoàn trả khách: {(invoiceData.depositRefundAmount ?? 0).toLocaleString()}Đ
+                 </div>
+               )}
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>Phương thức thanh toán:</label>
-              <select 
-                value={selectedPaymentMethod} 
-                onChange={e => setSelectedPaymentMethod(Number(e.target.value))}
-                style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', fontSize: '1rem', outline: 'none' }}
-              >
-                {paymentMethods.map(m => (
-                  <option key={m.paymentMethodId} value={m.paymentMethodId}>{m.name}</option>
-                ))}
-              </select>
-            </div>
+            {invRemainingAmount > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: 500 }}>Phương thức thanh toán:</label>
+                <select 
+                  value={selectedPaymentMethod} 
+                  onChange={e => setSelectedPaymentMethod(Number(e.target.value))}
+                  style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', fontSize: '1rem', outline: 'none' }}
+                >
+                  {paymentMethods.map(m => (
+                    <option key={m.paymentMethodId} value={m.paymentMethodId}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-            {(() => {
+            {invRemainingAmount > 0 && (() => {
               const method = paymentMethods.find(m => m.paymentMethodId === selectedPaymentMethod);
               const methodStr = (method?.code || '') + ' ' + (method?.name || '');
               const isBankTransfer = methodStr.toLowerCase().includes('bank') || methodStr.toLowerCase().includes('chuyển khoản');
@@ -457,6 +532,9 @@ export function ActionDrawerColumn() {
                       alt="QR Code" 
                       style={{ width: '220px', height: '220px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: 'white' }}
                     />
+                    <p style={{ fontSize: '0.85rem', color: '#16a34a', marginTop: '12px', fontWeight: 500, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+                      ⏳ Hệ thống sẽ tự động xác nhận khi thanh toán thành công...
+                    </p>
                   </div>
                 );
               }
@@ -465,13 +543,26 @@ export function ActionDrawerColumn() {
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
               <button onClick={() => setCheckoutModalOpen(false)} style={{ flex: 1, padding: '12px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Hủy Bỏ</button>
-              <button onClick={handleConfirmPayment} disabled={processingPayment} style={{ flex: 2, padding: '12px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
-                {processingPayment ? "Đang xử lý..." : "Xác Nhận Thu Tiền"}
-              </button>
+              
+              {(() => {
+                const method = paymentMethods.find(m => m.paymentMethodId === selectedPaymentMethod);
+                const methodStr = (method?.code || '') + ' ' + (method?.name || '');
+                const isBankTransfer = methodStr.toLowerCase().includes('bank') || methodStr.toLowerCase().includes('chuyển khoản');
+                
+                // Hide confirmation button if bank transfer is selected
+                if (isBankTransfer && invRemainingAmount > 0) return null;
+                
+                return (
+                  <button onClick={handleConfirmPayment} disabled={processingPayment} style={{ flex: 2, padding: '12px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
+                    {processingPayment ? "Đang xử lý..." : invRemainingAmount === 0 ? "Hoàn Tất Miễn Thu" : "Xác Nhận Thu Tiền"}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
     </div>
   );

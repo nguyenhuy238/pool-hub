@@ -40,6 +40,9 @@ function TableCard({ table }: { table: VenueTableLayoutItem }) {
   // Block table if empty and next booking is <= 30 mins
   const isReserved = !isInUse && minsToNextBooking !== null && minsToNextBooking <= 30;
   
+  // Can only receive table <= 15 mins before booking
+  const isReadyToReceive = isReserved && minsToNextBooking !== null && minsToNextBooking <= 15;
+  
   // Warning if playing but booking is <= 30 mins
   const isPlayingButReservedSoon = isInUse && minsToNextBooking !== null && minsToNextBooking <= 30 && minsToNextBooking >= -60;
 
@@ -98,8 +101,10 @@ function TableCard({ table }: { table: VenueTableLayoutItem }) {
             Hủy
           </button>
           <button 
+            disabled={!isReadyToReceive}
             onClick={async (e) => {
               e.stopPropagation();
+              if (!isReadyToReceive) return;
               if (confirm(`Nhận bàn (Booking ${table.nextBookingCode || table.nextBookingId}) cho bàn này?`)) {
                 try {
                   await bookingApi.startSession(table.nextBookingId!, table.tableId);
@@ -111,7 +116,18 @@ function TableCard({ table }: { table: VenueTableLayoutItem }) {
               }
             }}
             className="primary-btn" 
-            style={{ flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: '#eab308', color: 'white', border: 'none', fontSize: '0.85rem' }}
+            style={{ 
+              flex: 2, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: '0.5rem', 
+              background: isReadyToReceive ? '#eab308' : '#e2e8f0', 
+              color: isReadyToReceive ? 'white' : '#94a3b8', 
+              border: 'none', 
+              fontSize: '0.85rem',
+              cursor: isReadyToReceive ? 'pointer' : 'not-allowed'
+            }}
           >
             <Play size={14} fill="currentColor" /> Nhận bàn
           </button>

@@ -250,6 +250,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         }
         var subtotal = timeSubtotal + orderSubtotal;
         var discountAmount = existingInvoice?.DiscountAmount ?? 0;
+        
+        var depositAmount = 0m;
+        if (session.BookingId.HasValue)
+        {
+            depositAmount = await db.BookingDeposits.AsNoTracking()
+                .Where(x => x.BookingId == session.BookingId.Value && x.Status == PoolHub.Shared.Constants.BookingDepositStatuses.Paid)
+                .SumAsync(x => x.PaidAmount, ct);
+        }
 
         return new SessionSummaryResponse
         {
@@ -271,6 +279,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             InvoiceId = existingInvoice?.InvoiceId,
             InvoiceCode = existingInvoice?.InvoiceCode,
             InvoiceStatus = existingInvoice?.Status,
+            DepositAmount = depositAmount,
             CurrentTable = currentAssignment is null
                 ? null
                 : new SessionSummaryTableDto
