@@ -17,6 +17,7 @@ type NavItem = {
 
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Tổng quan", roles: DASHBOARD_ROLES },
+  { href: "/pos", label: "Màn hình POS", roles: OPERATION_ROLES },
   {
     label: "Sơ đồ & Cơ sở",
     roles: OPERATION_ROLES,

@@ -1,11 +1,14 @@
 .posContainer {
-  height: calc(100vh - 60px); /* Assuming there is a top nav */
+  height: calc(100vh - 124px); /* Adjust for AppShell topbar (76px) + padding (48px) */
   width: 100%;
   display: flex;
   background-color: var(--surface, #f8fafc);
   overflow: hidden;
   color: var(--ink, #0f172a);
   font-family: inherit;
+  border-radius: 12px;
+  border: 1px solid var(--line, #e2e8f0);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
 /* Booking Queue Column */
@@ -140,7 +143,7 @@
 }
 .tableGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1rem;
 }
 

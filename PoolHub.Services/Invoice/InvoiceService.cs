@@ -229,6 +229,11 @@ public class InvoiceService(
             invoice.Status = 2; // Completed
             becamePaid = true;
             await ProcessInvoicePaidRewardsAsync(invoice, ct);
+            
+            if (posNotificationService != null)
+            {
+                await posNotificationService.NotifyRefreshPosAsync(ct);
+            }
         }
 
         await db.SaveChangesAsync(ct);
@@ -670,8 +675,8 @@ public class InvoiceService(
             .ToListAsync(ct);
         var qrConfig = bankMethod
             .Select(BankTransferQrHelper.Parse)
-            .FirstOrDefault(x => x is not null && x.CanBuildDynamicQr)
-            ?? throw new BusinessRuleException("Active bank transfer payment method is not configured for VietQR.");
+            .FirstOrDefault(x => x is not null && x.CanBuildDynamicQr);
+            
         var amount = (long)(invoice.GrandTotalAmount - invoice.PaidAmount);
         if (amount <= 0) amount = (long)invoice.GrandTotalAmount;
         var addInfo = $"HD{invoiceId}";
@@ -681,7 +686,14 @@ public class InvoiceService(
         var checksumKey = config?["PayOSSettings:ChecksumKey"];
         var baseUrl = config?["EmailSettings:FrontendBaseUrl"] ?? "http://localhost:3000";
 
-        if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(checksumKey) && httpClientFactory != null)
+        var isPayOsConfigured = !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(checksumKey) && httpClientFactory != null;
+
+        if (qrConfig == null && !isPayOsConfigured)
+        {
+            throw new BusinessRuleException("Active bank transfer payment method is not configured for VietQR and PayOS is not configured.");
+        }
+
+        if (isPayOsConfigured)
         {
             try
             {
@@ -731,6 +743,11 @@ public class InvoiceService(
 
                 var res = await client.SendAsync(req, ct);
                 var resStr = await res.Content.ReadAsStringAsync(ct);
+
+                if (!res.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"[PayOS ERROR] StatusCode: {res.StatusCode}, Response: {resStr}");
+                }
 
                 if (res.IsSuccessStatusCode && !resStr.Contains("\"code\":\"233\""))
                 {
@@ -846,7 +863,10 @@ public class InvoiceService(
                             }
                         }
                     }
-                    catch {}
+                    catch (Exception checkEx)
+                    {
+                        Console.WriteLine($"[PayOS CHECK ERROR] {checkEx.Message}");
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(payosQrString))
@@ -854,7 +874,15 @@ public class InvoiceService(
                     return $"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={Uri.EscapeDataString(payosQrString)}";
                 }
             }
-            catch {}
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PayOS EXCEPTION] {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        if (qrConfig != null)
+        {
+            return $"https://img.vietqr.io/image/{qrConfig.BankCode}-{qrConfig.AccountNumber}-compact2.jpg?amount={amount}&addInfo={Uri.EscapeDataString(addInfo)}&accountName={Uri.EscapeDataString(qrConfig.AccountName)}";
         }
 
         throw new BusinessRuleException("Hệ thống hiện tại chỉ hỗ trợ thanh toán chuyển khoản qua cổng PayOS. Vui lòng kiểm tra lại cấu hình PayOS hoặc liên hệ quản trị viên.");
