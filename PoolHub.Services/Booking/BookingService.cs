@@ -408,10 +408,12 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
         var query = from table in db.VenueTables.AsNoTracking()
                     join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
-                    where table.IsActive && table.OperationalStatus == 1
+                    where table.IsActive
+                       && table.OperationalStatus != 4
+                       && table.OperationalStatus != 5
                        && !db.SessionTableAssignments.Any(a => a.TableId == table.TableId && a.EndedAtUtc == null)
                     select new { table, type };
-        if (request.TableId.HasValue) query = query.Where(x => x.table.TableId == request.TableId.Value);
+        if (requestedTableIds.Count > 0) query = query.Where(x => requestedTableIds.Contains(x.table.TableId));
         if (request.TableTypeId.HasValue) query = query.Where(x => x.table.TableTypeId == request.TableTypeId.Value);
 
         var rows = await query.OrderBy(x => x.table.TableCode).ToListAsync(ct);

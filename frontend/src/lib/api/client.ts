@@ -141,9 +141,15 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return normalize<T>(payload).data;
 }
 
-export function toQuery(params: Record<string, string | number | boolean | undefined | null>) {
+export function toQuery(params: Record<string, string | number | boolean | Array<string | number | boolean> | undefined | null>) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== null && item !== "") query.append(key, String(item));
+      });
+      return;
+    }
     if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
   });
   const value = query.toString();

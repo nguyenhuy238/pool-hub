@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,6 +6,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PoolHub.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(PoolHubDbContext))]
+    [Migration("20260717090000_AddCustomerReviewPrivacyAndUniqueTransaction")]
     public partial class AddCustomerReviewPrivacyAndUniqueTransaction : Migration
     {
         /// <inheritdoc />

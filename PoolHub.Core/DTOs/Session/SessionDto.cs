@@ -9,4 +9,5 @@ public class SessionDto
     public DateTime? EndedAtUtc { get; set; }
     public string TableName { get; set; } = string.Empty;
     public int DurationMinutes { get; set; }
+    public List<SessionTableAssignmentDto> Assignments { get; set; } = [];
 }

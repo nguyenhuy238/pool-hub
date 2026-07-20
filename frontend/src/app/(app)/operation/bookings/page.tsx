@@ -8,6 +8,7 @@ import { formatVietnamTime, utcTimestampMs, utcToVietnamDatetimeLocal, vietnamDa
 import { dateTime, label, bookingStatus, depositStatus, money } from "@/lib/status";
 import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { compactBookingTablesLabel, getBookingTables, normalizeTableIds } from "@/lib/bookingTables";
 import type { Booking } from "@/types";
 import { BookingModal } from "./BookingModal";
 
@@ -19,12 +20,13 @@ const BOOKING_NO_SHOW = 5;
 const BOOKING_PENDING_DEPOSIT = 6;
 const BOOKING_PENDING_APPROVAL = 7;
 const BOOKING_EXPIRED = 8;
+const BOOKING_IN_PROGRESS = 9;
 const DEPOSIT_PENDING_VERIFICATION = 9;
 const DEPOSIT_PENDING = 2;
 const DEPOSIT_PAID = 3;
 const DEPOSIT_APPLIED_TO_INVOICE = 4;
 const DEPOSIT_FORFEITED = 7;
-const EARLY_CHECK_IN_MINUTES = 15;
+const NO_SHOW_GRACE_MINUTES = 15;
 
 type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number };
 type TableTypeOption = { tableTypeId: number; name?: string };
@@ -71,19 +73,29 @@ function getStartSessionState(row: Record<string, unknown>, nowMs: number) {
     return { canStart: false, message: "Thời gian booking không hợp lệ." };
   }
 
-  const earliestStartMs = startMs - EARLY_CHECK_IN_MINUTES * 60 * 1000;
-  if (nowMs < earliestStartMs) {
-    return {
-      canStart: false,
-      message: `Có thể nhận bàn từ ${formatVietnamTime(new Date(earliestStartMs).toISOString())}.`
-    };
-  }
-
   if (nowMs >= endMs) {
     return { canStart: false, message: "Booking đã quá giờ kết thúc." };
   }
 
   return { canStart: true, message: "" };
+}
+
+function getNoShowState(row: Record<string, unknown>, nowMs: number) {
+  const startMs = utcTimestampMs(typeof row.startTimeUtc === "string" ? row.startTimeUtc : null);
+
+  if (!Number.isFinite(startMs)) {
+    return { canNoShow: false, message: "Thời gian booking không hợp lệ." };
+  }
+
+  const noShowMs = startMs + NO_SHOW_GRACE_MINUTES * 60 * 1000;
+  if (nowMs < noShowMs) {
+    return {
+      canNoShow: false,
+      message: `Có thể đánh dấu không đến từ ${formatVietnamTime(new Date(noShowMs).toISOString())}.`
+    };
+  }
+
+  return { canNoShow: true, message: "" };
 }
 
 export default function BookingsPage() {
@@ -143,6 +155,7 @@ export default function BookingsPage() {
               <option value="6">Chờ thanh toán cọc</option>
               <option value="7">Chờ quản lý duyệt</option>
               <option value="8">Hết hạn</option>
+              <option value="9">Đang sử dụng</option>
             </select>
           </div>
         }
@@ -181,7 +194,7 @@ export default function BookingsPage() {
       <DataTable
         rows={rows as unknown as Record<string, unknown>[]}
         columns={[
-          { key: "bookingCode", label: "Ma Booking" },
+          { key: "bookingCode", label: "Mã Booking" },
           { key: "customerName", label: "Khách hàng", render: (row) => (
             <div>
               <strong style={{ color: "var(--ink)" }}>{getBookingCustomerDisplay(row)}</strong>
@@ -190,9 +203,14 @@ export default function BookingsPage() {
             </div>
           ) },
           { key: "tableId", label: "Bàn / Loại bàn", render: (row) => {
-            if (row.tableId) {
-              const table = tables.find((item) => item.tableId === Number(row.tableId));
-              return table ? <strong>{table.tableName}</strong> : `Bàn #${row.tableId}`;
+            const bookingTables = getBookingTables(row as Partial<Booking>, tables);
+            if (bookingTables.length) {
+              return (
+                <div title={bookingTables.map((table) => table.tableName || table.tableCode || `Bàn #${table.tableId}`).join("\n")}>
+                  <strong>{compactBookingTablesLabel(row as Partial<Booking>, tables)}</strong>
+                  <div style={{ color: "var(--muted)", fontSize: 12 }}>{bookingTables.length} bàn</div>
+                </div>
+              );
             }
             if (row.tableTypeId) {
               const tableType = tableTypes.find((item) => item.tableTypeId === Number(row.tableTypeId));
@@ -204,7 +222,7 @@ export default function BookingsPage() {
           { key: "endTimeUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endTimeUtc)) },
           { key: "status", label: "Trạng thái", render: (row) => {
             const statusValue = Number(row.status);
-            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW || statusValue === BOOKING_EXPIRED ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
+            return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW || statusValue === BOOKING_EXPIRED ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED || statusValue === BOOKING_IN_PROGRESS ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
           } },
           { key: "deposit", label: "Cọc", render: (row) => {
             const deposit = row.deposit as { requiredAmount?: number; paidAmount?: number; appliedAmount?: number; refundedAmount?: number; forfeitedAmount?: number; status?: number } | undefined;
@@ -235,6 +253,7 @@ export default function BookingsPage() {
           const canConfirmDeposit = isPendingDeposit && !hasSession;
           const canRejectDeposit = isPendingDeposit && depositStatusValue === DEPOSIT_PENDING_VERIFICATION && !hasSession;
           const startSessionState = getStartSessionState(row, nowMs);
+          const noShowState = getNoShowState(row, nowMs);
           const canStartSession = isConfirmed && !hasSession;
           const canEdit = (isPending || isPendingDeposit || isPendingApproval || isConfirmed) && !hasSession;
           const canNoShow = isConfirmed && !hasSession;
@@ -297,8 +316,8 @@ export default function BookingsPage() {
                         toast(startSessionState.message || "Chưa thể nhận bàn.", "error");
                         return;
                       }
-                      if (!row.tableId) {
-                        toast("Booking chưa xếp bàn. Vui lòng ấn Chỉnh sửa để chọn bàn trước.", "error");
+                      if (!getBookingTables(row as Partial<Booking>, tables).length) {
+                        toast("Booking chưa xếp bàn. Vui lòng chỉnh sửa để chọn bàn trước.", "error");
                         return;
                       }
                       setStartingSession(row as unknown as Booking);
@@ -318,13 +337,28 @@ export default function BookingsPage() {
                 </button>
               )}
               {canNoShow && (
-                <button
-                  className="ghost-btn compact"
-                  style={{ whiteSpace: "nowrap", borderColor: "#fcd34d", color: "#b45309", background: "#fffbeb" }}
-                  onClick={() => setNoShowing(row as unknown as Booking)}
-                >
-                  Không đến
-                </button>
+                <span title={noShowState.message || undefined}>
+                  <button
+                    className="ghost-btn compact"
+                    disabled={!noShowState.canNoShow}
+                    style={{
+                      whiteSpace: "nowrap",
+                      borderColor: "#fcd34d",
+                      color: noShowState.canNoShow ? "#b45309" : "#94a3b8",
+                      background: noShowState.canNoShow ? "#fffbeb" : "#f8fafc",
+                      cursor: noShowState.canNoShow ? "pointer" : "not-allowed"
+                    }}
+                    onClick={() => {
+                      if (!noShowState.canNoShow) {
+                        toast(noShowState.message || "Chưa thể đánh dấu không đến.", "error");
+                        return;
+                      }
+                      setNoShowing(row as unknown as Booking);
+                    }}
+                  >
+                    Không đến
+                  </button>
+                </span>
               )}
               {canCancel && (
                 <button
@@ -356,7 +390,7 @@ export default function BookingsPage() {
       {startingSession ? (
         <ConfirmDialog
           title="Nhận bàn / Mở bàn"
-          message={`Xác nhận mở bàn bắt đầu phiên chơi cho booking ${startingSession.bookingCode || startingSession.bookingId}?`}
+          message={`Xác nhận mở phiên cho booking ${startingSession.bookingCode || startingSession.bookingId}: ${getBookingTables(startingSession, tables).map((table) => table.tableName || table.tableCode || `Bàn #${table.tableId}`).join(", ")}?`}
           confirmLabel="Mở bàn"
           onCancel={() => setStartingSession(null)}
           onConfirm={async () => {
@@ -367,7 +401,7 @@ export default function BookingsPage() {
               return;
             }
             await action(
-              bookingApi.startSession(Number(startingSession.bookingId), startingSession.tableId ? Number(startingSession.tableId) : undefined),
+              bookingApi.startSession(Number(startingSession.bookingId)),
               "Đã nhận bàn và mở phiên chơi thành công."
             );
             setStartingSession(null);
@@ -406,7 +440,7 @@ function EditBookingModal({
   onSaved: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [tableId, setTableId] = useState(String(booking.tableId || ""));
+  const [selectedTableIds, setSelectedTableIds] = useState<number[]>(() => normalizeTableIds(getBookingTables(booking, tables).map((table) => table.tableId)));
   const [tableTypeId, setTableTypeId] = useState(String(booking.tableTypeId || ""));
   const [startTime, setStartTime] = useState(utcToVietnamDatetimeLocal(booking.startTimeUtc));
   const [endTime, setEndTime] = useState(utcToVietnamDatetimeLocal(booking.endTimeUtc));
@@ -433,13 +467,18 @@ function EditBookingModal({
       toast("Số lượng khách phải lớn hơn 0.", "error");
       return;
     }
+    if (!selectedTableIds.length) {
+      toast("Vui lòng chọn ít nhất một bàn.", "error");
+      return;
+    }
 
     setSaving(true);
     try {
       await bookingApi.update(booking.bookingId, {
         startTimeUtc: vietnamDatetimeLocalToUtcIso(startTime),
         endTimeUtc: vietnamDatetimeLocalToUtcIso(endTime),
-        tableId: tableId ? Number(tableId) : undefined,
+        tableId: selectedTableIds[0] || undefined,
+        tableIds: selectedTableIds,
         tableTypeId: tableTypeId ? Number(tableTypeId) : undefined,
         numberOfGuests: Number(numberOfGuests),
         note
@@ -509,10 +548,24 @@ function EditBookingModal({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
           <BookingEditField label="Khách hàng"><input style={bookingInputStyle} value={booking.customerName || booking.phoneNumber || "Khách vãng lai"} readOnly /></BookingEditField>
           <BookingEditField label="Trạng thái"><input style={bookingInputStyle} value={label(bookingStatus, booking.status)} readOnly /></BookingEditField>
-          <BookingEditField label="Bàn"><select style={bookingInputStyle} value={tableId} onChange={(e) => setTableId(e.target.value)}>
-            <option value="">Chưa xếp bàn</option>
-            {tables.map((table) => <option key={table.tableId} value={table.tableId}>{table.tableName || table.tableCode || table.tableId}</option>)}
-          </select></BookingEditField>
+          <BookingEditField label="Bàn" full>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
+              {tables.map((table) => {
+                const tableId = Number(table.tableId);
+                const checked = selectedTableIds.includes(tableId);
+                return (
+                  <label key={tableId} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px", background: checked ? "#eff6ff" : "#ffffff" }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => setSelectedTableIds((current) => event.target.checked ? normalizeTableIds([...current, tableId]) : current.filter((id) => id !== tableId))}
+                    />
+                    <span>{table.tableName || table.tableCode || table.tableId}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </BookingEditField>
           <BookingEditField label="Loại bàn"><select style={bookingInputStyle} value={tableTypeId} onChange={(e) => setTableTypeId(e.target.value)}>
             <option value="">Không chọn</option>
             {tableTypes.map((type) => <option key={type.tableTypeId} value={type.tableTypeId}>{type.name || type.tableTypeId}</option>)}

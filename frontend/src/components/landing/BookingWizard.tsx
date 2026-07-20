@@ -8,6 +8,7 @@ import type { BookingPolicySettings } from "@/lib/api/landingSettingsApi";
 import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
+import { normalizeTableIds, tableDisplayName } from "@/lib/bookingTables";
 import type { VenueTableLayoutItem } from '@/types';
 import type { Booking } from "@/types";
 function getTableTypeColors(name: string) {
@@ -32,7 +33,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const [selectedFloorId, setSelectedFloorId] = useState<number | null>(null);
   
   // Form State
-  const [selectedTable, setSelectedTable] = useState<VenueTableLayoutItem | null>(null);
+  const [selectedTables, setSelectedTables] = useState<VenueTableLayoutItem[]>([]);
+  const selectedTable = selectedTables[0] || null;
   
   const [bookingDate, setBookingDate] = useState(getVietnamDateInputValue());
   const [overnightEnabled, setOvernightEnabled] = useState(false);
@@ -44,6 +46,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const [bookingLoadError, setBookingLoadError] = useState("");
   const [checkingRange, setCheckingRange] = useState(false);
   const [rangeConflict, setRangeConflict] = useState(false);
+  const [conflictedTableIds, setConflictedTableIds] = useState<number[]>([]);
   
   const [customerInfo, setCustomerInfo] = useState({
     customerName: '',
@@ -76,20 +79,23 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   }, [toast]);
 
   useEffect(() => {
-    if (selectedTable && bookingDate) {
+    if (selectedTables.length && bookingDate) {
       fetchExistingBookings();
     }
     // fetchExistingBookings intentionally follows the selected table/date lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTable, bookingDate, overnightEnabled]);
+  }, [selectedTables, bookingDate, overnightEnabled]);
 
   const fetchExistingBookings = async () => {
-    if (!selectedTable) return;
+    if (!selectedTables.length) return;
     setLoadingBookings(true);
     setBookingLoadError("");
     try {
-      const requests = [publicBookingApi.getPublicCalendar(selectedTable.tableId, bookingDate)];
-      if (overnightEnabled) requests.push(publicBookingApi.getPublicCalendar(selectedTable.tableId, addDaysToVietnamDateInput(bookingDate, 1)));
+      const requests = selectedTables.flatMap((table) => {
+        const dayRequests = [publicBookingApi.getPublicCalendar(table.tableId, bookingDate)];
+        if (overnightEnabled) dayRequests.push(publicBookingApi.getPublicCalendar(table.tableId, addDaysToVietnamDateInput(bookingDate, 1)));
+        return dayRequests;
+      });
       const dataArray: PublicBookingSlot[] = (await Promise.all(requests)).flat();
       
       const booked = new Set<number>();
@@ -134,8 +140,8 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   }, [bookingDate, timeSlots]);
 
   const handleNextStep1 = () => {
-    if (!selectedTable) {
-      toast("Vui lòng chọn bàn.", "error");
+    if (!selectedTables.length) {
+      toast("Vui lòng chọn ít nhất một bàn.", "error");
       return;
     }
     setStep(2);
@@ -188,9 +194,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
       const { startTime, durationHours } = getCalculatedTimeAndDuration();
       const startSlot = timeSlots[selectedSlotIndexes[0]];
       const endSlot = timeSlots[selectedSlotIndexes[1]];
-      const available = await publicBookingApi.availability(selectedTable!.tableId, slotToUtcIso(startSlot), slotToUtcIso(endSlot));
-      if (!available.some((table) => Number(table.tableId) === selectedTable!.tableId)) {
-        toast("Bàn đã có booking hoặc phiên chơi trong khung giờ này.", "error");
+      const selectedTableIds = normalizeTableIds(selectedTables.map((table) => table.tableId));
+      const available = await publicBookingApi.availabilityMany(selectedTableIds, slotToUtcIso(startSlot), slotToUtcIso(endSlot));
+      const availableIds = new Set(available.map((table) => Number(table.tableId)));
+      const conflicted = selectedTableIds.filter((tableId) => !availableIds.has(tableId));
+      if (conflicted.length) {
+        setConflictedTableIds(conflicted);
+        toast(`Có ${conflicted.length} bàn không còn trống trong khung giờ này.`, "error");
         return;
       }
       const booking = await publicBookingApi.create({
@@ -200,8 +210,9 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
         bookingDate,
         startTime,
         durationHours: Number(durationHours),
-        tableTypeId: Number(selectedTable!.tableTypeId),
-        tableId: selectedTable!.tableId,
+        tableTypeId: Number(selectedTables[0].tableTypeId),
+        tableId: selectedTableIds[0],
+        tableIds: selectedTableIds,
         numberOfGuests: Number(customerInfo.numberOfGuests),
         note: customerInfo.note.trim() || undefined
       });
@@ -279,6 +290,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     if (!availability) return null;
     const floors = availability.layout.floors || [];
     const selectedFloor = floors.find(f => f.floorId === selectedFloorId);
+    const selectedIds = new Set(selectedTables.map((table) => table.tableId));
+    const toggleTable = (table: VenueTableLayoutItem) => {
+      setSelectedTables((current) => current.some((item) => item.tableId === table.tableId)
+        ? current.filter((item) => item.tableId !== table.tableId)
+        : [...current, table]);
+      setSelectedSlotIndexes([]);
+    };
 
     return (
       <div className="bw-step bw-step-1">
@@ -305,11 +323,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
                   {zone.tables.map(table => (
                     <button 
                       key={table.tableId}
-                      className={`bw-table-card available ${selectedTable?.tableId === table.tableId ? 'selected' : ''}`}
-                      onClick={() => setSelectedTable(table)}
+                      className={`bw-table-card available ${selectedIds.has(table.tableId) ? 'selected' : ''}`}
+                      aria-pressed={selectedIds.has(table.tableId)}
+                      onClick={() => toggleTable(table)}
                     >
                       <span className="bw-table-name">{table.tableName}</span>
                       <span className="bw-table-type" style={getTableTypeColors(table.tableTypeName)}>{table.tableTypeName}</span>
+                      <span style={{ fontSize: 12, color: "#64748b" }}>{table.capacity} người</span>
                     </button>
                   ))}
                 </div>
@@ -317,9 +337,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
             ))}
           </div>
         )}
+        <div className="inline-note" style={{ marginTop: 12 }}>
+          Đã chọn {selectedTables.length} bàn
+          {selectedTables.length ? `: ${selectedTables.map((table) => tableDisplayName(table)).join(", ")}` : "."}
+        </div>
         
         <div className="bw-actions">
-          <button className="primary-btn" onClick={handleNextStep1} disabled={!selectedTable}>Tiếp tục</button>
+          <button className="primary-btn" onClick={handleNextStep1} disabled={!selectedTables.length}>Tiếp tục</button>
         </div>
       </div>
     );
@@ -414,13 +438,13 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   };
 
   const estimatedPrice = React.useMemo(() => {
-    if (selectedSlotIndexes.length !== 2 || !selectedTable) return 0;
+    if (selectedSlotIndexes.length !== 2 || !selectedTables.length) return 0;
     const s = selectedSlotIndexes[0];
     const e = selectedSlotIndexes[1];
     let total = 0;
-    for (let i = s; i < e; i++) total += getSlotPrice(i);
+    for (let i = s; i < e; i++) total += getSlotPrice(i) * selectedTables.length;
     return total;
-  }, [selectedSlotIndexes, selectedTable, pricing, bookingDate, timeSlots]);
+  }, [selectedSlotIndexes, selectedTables.length, pricing, bookingDate, timeSlots]);
 
   const getCalculatedTimeAndDuration = () => {
     if (selectedSlotIndexes.length !== 2) return { startTime: "00:00", durationHours: 0 };
@@ -434,18 +458,32 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
   const selectedDurationMinutes = calculateDurationMinutes(selectedStartSlot, selectedEndSlot);
 
   useEffect(() => {
-    if (!selectedTable || !selectedStartSlot || !selectedEndSlot) {
+    if (!selectedTables.length || !selectedStartSlot || !selectedEndSlot) {
       setRangeConflict(false);
+      setConflictedTableIds([]);
       return;
     }
     let cancelled = false;
     setCheckingRange(true);
-    publicBookingApi.availability(selectedTable.tableId, slotToUtcIso(selectedStartSlot), slotToUtcIso(selectedEndSlot))
-      .then((available) => { if (!cancelled) setRangeConflict(!available.some((table) => Number(table.tableId) === selectedTable.tableId)); })
-      .catch(() => { if (!cancelled) setRangeConflict(true); })
+      const selectedTableIds = normalizeTableIds(selectedTables.map((table) => table.tableId));
+    publicBookingApi.availabilityMany(selectedTableIds, slotToUtcIso(selectedStartSlot), slotToUtcIso(selectedEndSlot))
+      .then((available) => {
+        if (!cancelled) {
+          const availableIds = new Set(available.map((table) => Number(table.tableId)));
+          const conflicted = selectedTableIds.filter((tableId) => !availableIds.has(tableId));
+          setConflictedTableIds(conflicted);
+          setRangeConflict(conflicted.length > 0);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConflictedTableIds(selectedTableIds);
+          setRangeConflict(true);
+        }
+      })
       .finally(() => { if (!cancelled) setCheckingRange(false); });
     return () => { cancelled = true; };
-  }, [selectedEndSlot, selectedStartSlot, selectedTable]);
+  }, [selectedEndSlot, selectedStartSlot, selectedTables]);
   const nightRules = (pricing?.rules || []).filter((rule) => {
     if (selectedTable && rule.tableTypeId !== selectedTable.tableTypeId) return false;
     const planName = pricing?.plans.find((plan) => plan.pricingPlanId === rule.pricingPlanId)?.name.toLowerCase() || "";
@@ -459,7 +497,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     return (
       <div className="bw-step bw-step-2">
         <h3>2. Chọn Thời gian & Xem giá</h3>
-        <p className="bw-subtitle">Bàn đã chọn: <strong>{selectedTable?.tableName}</strong> ({selectedTable?.tableTypeName})</p>
+        <p className="bw-subtitle">Bàn đã chọn: <strong>{selectedTables.length} bàn</strong> - {selectedTables.map((table) => tableDisplayName(table)).join(", ")}</p>
         
         <div className="bw-form-grid" style={{ marginBottom: '16px' }}>
           <label><span>Ngày đặt *</span>
@@ -527,7 +565,17 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           <p className="bw-price-note">* Giá ước tính dựa trên bảng giá. Giá thực tế tính theo thời gian sử dụng khi kết thúc.</p>
         </div>
         {checkingRange ? <div className="inline-note">Đang kiểm tra lịch trống...</div> : null}
-        {rangeConflict ? <div className="inline-alert error">Bàn đã có booking hoặc phiên chơi trong khung giờ này.</div> : null}
+        {rangeConflict ? (
+          <div className="inline-alert error">
+            Bàn đã có booking hoặc phiên chơi trong khung giờ này
+            {conflictedTableIds.length
+              ? `: ${selectedTables
+                .filter((table) => conflictedTableIds.includes(table.tableId))
+                .map((table) => tableDisplayName(table))
+                .join(", ")}.`
+              : "."}
+          </div>
+        ) : null}
 
         <div className="bw-actions">
           <button className="outline-btn" onClick={() => setStep(1)}>Quay lại</button>
@@ -578,7 +626,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           <div className="bw-summary-row"><span>Số người:</span> <strong>{customerInfo.numberOfGuests} người</strong></div>
           <div className="bw-summary-row"><span>Ngày giờ:</span> <strong>{startTime} ngày {bookingDate}</strong></div>
           <div className="bw-summary-row"><span>Thời lượng:</span> <strong>{durationHours} giờ</strong></div>
-          <div className="bw-summary-row"><span>Khu vực/Bàn:</span> <strong>{selectedTable?.tableName} ({selectedTable?.tableTypeName})</strong></div>
+          <div className="bw-summary-row"><span>Khu vực/Bàn:</span> <strong>{selectedTables.map((table) => `${tableDisplayName(table)} (${table.tableTypeName})`).join(", ")}</strong></div>
           {customerInfo.note && <div className="bw-summary-row"><span>Ghi chú:</span> <strong>{customerInfo.note}</strong></div>}
           <div className="bw-summary-row"><span>Tạm tính:</span> <strong className="highlight-price">{estimatedPrice.toLocaleString('vi-VN')} đ</strong></div>
           <div className="bw-summary-row"><span>Tiền cọc dự kiến:</span> <strong>{Math.max(Math.ceil((estimatedPrice * 0.3) / 1000) * 1000, 50000).toLocaleString('vi-VN')} đ</strong></div>
@@ -740,10 +788,16 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           </div>
         )}
 
+        {selectedTables.length ? (
+          <div className="bw-summary" style={{ marginTop: 16 }}>
+            <div className="bw-summary-row"><span>Danh sách bàn:</span> <strong>{selectedTables.map((table) => tableDisplayName(table)).join(", ")}</strong></div>
+          </div>
+        ) : null}
+
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           <button className="outline-btn" onClick={() => {
             setStep(1);
-            setSelectedTable(null);
+            setSelectedTables([]);
             setCreatedBooking(null);
             setCustomerInfo({ customerName: '', phoneNumber: '', email: '', numberOfGuests: 4, note: '' });
           }}>

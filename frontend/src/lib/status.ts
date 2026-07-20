@@ -1,3 +1,5 @@
+import { formatVietnamDateTime } from "@/lib/dateTime";
+
 export const bookingStatus: Record<number, string> = {
   1: "Chờ xác nhận",
   2: "Đã xác nhận",
@@ -6,7 +8,8 @@ export const bookingStatus: Record<number, string> = {
   5: "Không đến",
   6: "Chờ thanh toán cọc",
   7: "Chờ quản lý duyệt",
-  8: "Hết hạn"
+  8: "Hết hạn",
+  9: "Đang sử dụng"
 };
 
 export const depositStatus: Record<number, string> = {
@@ -60,4 +63,3 @@ export function money(value?: number) {
 export function dateTime(value?: string) {
   return formatVietnamDateTime(value);
 }
-import { formatVietnamDateTime } from "@/lib/dateTime";

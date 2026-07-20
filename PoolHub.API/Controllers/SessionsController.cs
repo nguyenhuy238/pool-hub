@@ -55,6 +55,16 @@ public class SessionsController(ISessionService sessionService) : ControllerBase
             await sessionService.CloseWithSummaryAsync(id, User.GetUserId(), request, ct),
             "Session closed"));
 
+    [HttpPost("{id:long}/release-tables")]
+    [Authorize(Roles = RoleConstants.Operation)]
+    public async Task<ActionResult<ApiResponse<ReleaseSessionTablesResponse>>> ReleaseTables(
+        long id,
+        [FromBody] ReleaseSessionTablesRequest request,
+        CancellationToken ct) =>
+        Ok(ApiResponse<ReleaseSessionTablesResponse>.Ok(
+            await sessionService.ReleaseTablesAsync(id, request, User.GetUserId(), ct),
+            "Tables released"));
+
     [HttpPost("{id:long}/cancel")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
     public async Task<ActionResult<ApiResponse<SessionDto>>> Cancel(

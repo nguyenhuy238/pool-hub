@@ -16,6 +16,7 @@ import type {
   ProductCategory,
   RecentAuditLog,
   RevenuePoint,
+  ReleaseSessionTablesResponse,
   Session,
   TableType,
   VenueLayoutResponse,
@@ -62,6 +63,8 @@ export const bookingApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Booking[] | { items?: Booking[] }>(`/api/bookings${toQuery(params)}`),
   availability: (tableId: number, startTimeUtc: string, endTimeUtc: string) =>
     apiFetch<VenueTable[]>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`),
+  availabilityMany: (tableIds: number[], startTimeUtc: string, endTimeUtc: string) =>
+    apiFetch<VenueTable[]>(`/api/bookings/availability${toQuery({ tableIds, startTimeUtc, endTimeUtc })}`),
   calendar: (from: string, to: string, params: Record<string, string | number | undefined> = {}) => 
     apiFetch<BookingCalendarItem[] | { items?: BookingCalendarItem[] }>(`/api/bookings/calendar${toQuery({ from, to, ...params })}`),
   create: (body: Partial<Booking>) => apiFetch<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(body), skipAuth: true }),
@@ -100,9 +103,11 @@ export const sessionApi = {
   summary: (id: number) => apiFetch<any>(`/api/sessions/${id}/summary`),
   start: (body: { tableId: number; bookingId?: number; customerId?: number }) => apiFetch<Session>("/api/sessions/start", { method: "POST", body: JSON.stringify(body) }),
   end: (id: number) => apiFetch<any>(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ endedAtUtc: null, generateInvoice: true }) }),
-  switchTable: (id: number, newTableId: number) => apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify({ newTableId }) }),
-  transfer: (id: number, body: { toTableId: number; reason?: string; note?: string; markOldTableMaintenance?: boolean }) =>
+  switchTable: (id: number, sourceAssignmentId: number, newTableId: number) => apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify({ sourceAssignmentId, newTableId }) }),
+  transfer: (id: number, body: { sourceAssignmentId: number; toTableId: number; reason?: string; note?: string; markOldTableMaintenance?: boolean; transferAtUtc?: string }) =>
     apiFetch(`/api/sessions/${id}/transfer`, { method: "POST", body: JSON.stringify(body) }),
+  releaseTables: (id: number, body: { assignmentIds: number[]; endedAtUtc?: string | null; note?: string }) =>
+    apiFetch<ReleaseSessionTablesResponse>(`/api/sessions/${id}/release-tables`, { method: "POST", body: JSON.stringify(body) }),
   reopen: (id: number, body: { reason: string; reopenLastTable?: boolean }) =>
     apiFetch<Session>(`/api/sessions/${id}/reopen`, { method: "POST", body: JSON.stringify(body) })
 };
