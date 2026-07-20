@@ -143,8 +143,12 @@ export type Booking = {
   customerName?: string;
   phoneNumber?: string;
   email?: string;
-  tableId?: number;
+  tableId?: number | null;
   tableIds?: number[];
+  tables?: BookingTableInfo[];
+  tableCode?: string;
+  tableName?: string;
+  tableTypeName?: string;
   tableTypeId?: number;
   startTimeUtc: string;
   endTimeUtc: string;
@@ -163,6 +167,19 @@ export type Booking = {
   depositPaymentInstruction?: DepositPaymentInstruction;
   statusText?: string;
   depositStatusText?: string;
+};
+
+export type BookingTableInfo = {
+  tableId: number;
+  tableCode?: string;
+  tableName?: string;
+  tableTypeId?: number;
+  tableTypeName?: string;
+  zoneId?: number;
+  zoneName?: string;
+  floorId?: number;
+  floorName?: string;
+  capacity?: number;
 };
 
 export type BookingDeposit = {
@@ -198,6 +215,8 @@ export type BookingCalendarItem = {
   customerName?: string;
   customerPhone?: string;
   tableId?: number;
+  tableIds?: number[];
+  tables?: BookingTableInfo[];
   tableCode?: string;
   tableName?: string;
   tableTypeId?: number;
@@ -224,11 +243,15 @@ export type Session = {
   tableName?: string;
   customerName?: string;
   currentTable?: {
+    assignmentId?: number;
     tableId: number;
     tableCode?: string;
     tableName?: string;
     zoneId?: number;
     floorId?: number;
+    startedAtUtc?: string;
+    hourlyRateSnapshot?: number;
+    estimatedAmount?: number;
   };
   durationMinutes?: number;
   note?: string;
@@ -237,6 +260,7 @@ export type Session = {
 
 export type SessionTableAssignment = {
   sessionTableAssignmentId?: number;
+  assignmentId?: number;
   tableId: number;
   tableName?: string;
   tableCode?: string;
@@ -251,6 +275,33 @@ export type SessionTableAssignment = {
   billingBlockMinutes?: number;
   pricingPlanName?: string;
   amount?: number;
+};
+
+export type ReleasedSessionTable = {
+  assignmentId: number;
+  tableId: number;
+  tableCode?: string;
+  tableName?: string;
+  startedAtUtc: string;
+  endedAtUtc: string;
+  durationMinutes: number;
+  hourlyRateSnapshot: number;
+  amount: number;
+};
+
+export type ReleaseSessionTablesResponse = {
+  sessionId: number;
+  sessionCode?: string;
+  sessionStatus: number;
+  releasedAssignments: ReleasedSessionTable[];
+  remainingActiveAssignments: Array<Session["currentTable"]>;
+  remainingActiveTableCount: number;
+  wasSessionAutoClosed: boolean;
+  sessionEndedAtUtc?: string;
+  timeSubtotalAmount: number;
+  invoiceId?: number;
+  invoiceCode?: string;
+  message?: string;
 };
 
 export type Product = {

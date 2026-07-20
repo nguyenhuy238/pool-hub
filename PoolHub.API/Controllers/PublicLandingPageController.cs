@@ -33,6 +33,11 @@ public class PublicLandingPageController(ILandingPageSettingsService service, IV
     public async Task<ActionResult<ApiResponse<VenueLayoutResponse>>> GetVenueLayout(CancellationToken ct)
         => Ok(ApiResponse<VenueLayoutResponse>.Ok(await venueService.GetLayoutAsync(ct)));
 
+    [HttpGet("api/public/table-types")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<IEnumerable<TableTypeDto>>>> GetTableTypes(CancellationToken ct)
+        => Ok(ApiResponse<IEnumerable<TableTypeDto>>.Ok(await venueService.GetTableTypesAsync(ct)));
+
     [HttpGet("api/admin/landing-page-settings")]
     [HttpGet("api/admin/landing-settings")]
     [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.LandingManage)]

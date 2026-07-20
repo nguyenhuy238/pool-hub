@@ -12,6 +12,9 @@ public class SessionTableAssignmentConfiguration : IEntityTypeConfiguration<Sess
         builder.HasKey(x => x.SessionTableAssignmentId);
         builder.Property(x => x.HourlyRateSnapshot).HasPrecision(19, 4);
         builder.Property(x => x.Amount).HasPrecision(19, 4);
+        builder.HasIndex(x => x.TableId)
+            .IsUnique()
+            .HasFilter("[ended_at_utc] IS NULL");
         builder.HasOne<Session>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<VenueTable>().WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<PricingPlanRule>().WithMany().HasForeignKey(x => x.PricingPlanRuleId).OnDelete(DeleteBehavior.Restrict);

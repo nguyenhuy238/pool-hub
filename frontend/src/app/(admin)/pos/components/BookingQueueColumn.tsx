@@ -69,7 +69,7 @@ function BookingItem({ booking }: { booking: Booking }) {
           onClick={async () => {
             if (confirm(`Nhận bàn cho khách: ${booking.customerName || 'Khách'}?`)) {
               try {
-                await bookingApi.startSession(booking.bookingId, booking.tableId);
+                await bookingApi.startSession(booking.bookingId);
                 triggerRefresh();
               } catch (err) {
                 console.error("Lỗi khi nhận bàn", err);

@@ -15,6 +15,7 @@ public interface ISessionService
     Task<SessionDto> StartFromBookingAsync(long bookingId, long? tableId, long userId, CancellationToken ct);
     Task<SessionDto> CloseAsync(long sessionId, long? closedByUserId, CancellationToken ct);
     Task<CloseSessionResponse> CloseWithSummaryAsync(long sessionId, long? closedByUserId, CloseSessionRequest request, CancellationToken ct);
+    Task<ReleaseSessionTablesResponse> ReleaseTablesAsync(long sessionId, ReleaseSessionTablesRequest request, long performedByUserId, CancellationToken ct);
     Task<SessionDto> CancelAsync(long sessionId, long? cancelledByUserId, CancelSessionRequest request, CancellationToken ct);
     Task<TransferTableResponse> TransferTableAsync(long sessionId, TransferTableRequest request, long? assignedByUserId, CancellationToken ct);
     Task<SessionDetailDto> ReopenAsync(long sessionId, ReopenSessionRequest request, long? reopenedByUserId, CancellationToken ct);

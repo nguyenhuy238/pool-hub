@@ -10,6 +10,7 @@ public static class BookingStatuses
     public const int PendingDeposit = 6;
     public const int PendingApproval = 7;
     public const int Expired = 8;
+    public const int InProgress = 9;
 }
 
 public static class TableOperationalStatuses

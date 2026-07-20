@@ -11,6 +11,7 @@ export type PublicBookingRequest = {
   durationHours: number;
   tableTypeId: number;
   tableId?: number;
+  tableIds?: number[];
   numberOfGuests: number;
   note?: string;
 };
@@ -23,7 +24,8 @@ function toBookingPayload(request: PublicBookingRequest) {
     customerName: request.customerName,
     phoneNumber: request.phoneNumber,
     email: request.email,
-    tableId: request.tableId,
+    tableId: request.tableId ?? request.tableIds?.[0],
+    tableIds: request.tableIds?.length ? request.tableIds : request.tableId ? [request.tableId] : undefined,
     tableTypeId: request.tableTypeId,
     startTimeUtc: start.toISOString(),
     endTimeUtc: end.toISOString(),
@@ -49,6 +51,8 @@ export interface BookingAvailabilityItem {
 export const publicBookingApi = {
   availability: (tableId: number, startTimeUtc: string, endTimeUtc: string) =>
     apiFetch<BookingAvailabilityItem[]>(`/api/bookings/availability${toQuery({ tableId, startTimeUtc, endTimeUtc })}`, { skipAuth: true }),
+  availabilityMany: (tableIds: number[], startTimeUtc: string, endTimeUtc: string) =>
+    apiFetch<BookingAvailabilityItem[]>(`/api/bookings/availability${toQuery({ tableIds, startTimeUtc, endTimeUtc })}`, { skipAuth: true }),
   create: (request: PublicBookingRequest) => apiFetch<Booking>("/api/bookings/public", {
     method: "POST",
     body: JSON.stringify(toBookingPayload(request)),

@@ -5,6 +5,7 @@ import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { formatVietnamTime, getVietnamDateInputValue, getVietnamHourOfDay, vietnamDateRangeToUtcIso } from "@/lib/dateTime";
 import { PageHeader, StateBlock, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { getBookingTables } from "@/lib/bookingTables";
 import type { BookingCalendarItem } from "@/types";
 import "./calendar.css";
 
@@ -61,16 +62,20 @@ export default function BookingCalendarPage() {
     });
 
     items.forEach(booking => {
-      const tId = booking.tableId || 0;
-      if (!groups.has(tId)) {
-        groups.set(tId, {
-          tableId: tId,
-          tableCode: booking.tableCode || "Unknown",
-          tableName: booking.tableName || "Không xác định",
-          bookings: []
-        });
-      }
-      groups.get(tId)!.bookings.push(booking);
+      const bookingTables = getBookingTables(booking, venueTables);
+      const targets = bookingTables.length ? bookingTables : [{ tableId: booking.tableId || 0, tableCode: booking.tableCode, tableName: booking.tableName }];
+      targets.forEach((table) => {
+        const tId = table.tableId || 0;
+        if (!groups.has(tId)) {
+          groups.set(tId, {
+            tableId: tId,
+            tableCode: table.tableCode || "Unknown",
+            tableName: table.tableName || "Không xác định",
+            bookings: []
+          });
+        }
+        groups.get(tId)!.bookings.push(booking);
+      });
     });
     
     return Array.from(groups.values()).sort((a, b) => a.tableCode.localeCompare(b.tableCode));
@@ -145,9 +150,9 @@ export default function BookingCalendarPage() {
           <label>Trạng thái</label>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">Tất cả trạng thái</option>
-            <option value="1">Pending</option>
-            <option value="2">Confirmed</option>
-            <option value="3">Cancelled</option>
+            <option value="1">Chờ xác nhận</option>
+            <option value="2">Đã xác nhận</option>
+            <option value="3">Đã hủy</option>
           </select>
         </div>
       </div>
@@ -193,7 +198,7 @@ export default function BookingCalendarPage() {
                         key={booking.bookingId} 
                         className={`booking-block status-${booking.status}`}
                         style={getPositionStyle(booking.startTimeUtc, booking.endTimeUtc)}
-                        title={`Đặt bàn: ${booking.bookingCode}\nKhách: ${booking.customerName}\nGiờ: ${formatTime(booking.startTimeUtc)} - ${formatTime(booking.endTimeUtc)}`}
+                        title={`Booking: ${booking.bookingCode}\nBàn: ${getBookingTables(booking, venueTables).map((table) => table.tableName || table.tableCode || table.tableId).join(", ")}\nKhách: ${booking.customerName}\nGiờ: ${formatTime(booking.startTimeUtc)} - ${formatTime(booking.endTimeUtc)}`}
                         onClick={() => setSelectedBooking(booking)}
                       >
                         <span className="booking-time">{formatTime(booking.startTimeUtc)} - {formatTime(booking.endTimeUtc)}</span>
@@ -217,19 +222,19 @@ export default function BookingCalendarPage() {
             <div className="modal-body">
               <p><strong>Khách hàng:</strong> {selectedBooking.customerName || 'Khách vãng lai'}</p>
               <p><strong>Điện thoại:</strong> {selectedBooking.customerPhone || '-'}</p>
-              <p><strong>Bàn:</strong> {selectedBooking.tableName} (Mã: {selectedBooking.tableCode})</p>
+              <p><strong>Bàn:</strong> {getBookingTables(selectedBooking, venueTables).map((table) => table.tableName || table.tableCode || `Bàn #${table.tableId}`).join(", ") || `${selectedBooking.tableName} (Mã: ${selectedBooking.tableCode})`}</p>
               <p><strong>Thời gian:</strong> {formatTime(selectedBooking.startTimeUtc)} - {formatTime(selectedBooking.endTimeUtc)}</p>
               <p><strong>Trạng thái:</strong> {
-                selectedBooking.status === 1 ? 'Chờ xác nhận (Pending)' :
-                selectedBooking.status === 2 ? 'Đã xác nhận (Confirmed)' : 'Đã hủy (Cancelled)'
+                selectedBooking.status === 1 ? 'Chờ xác nhận' :
+                selectedBooking.status === 2 ? 'Đã xác nhận' : 'Đã hủy'
               }</p>
             </div>
             <div className="modal-actions">
               {selectedBooking.status === 1 && (
-                <button className="btn-confirm" disabled={actionLoading} onClick={() => handleAction('confirm')}>Xác nhận (Confirm)</button>
+                <button className="btn-confirm" disabled={actionLoading} onClick={() => handleAction('confirm')}>Xác nhận</button>
               )}
               {(selectedBooking.status === 1 || selectedBooking.status === 2) && (
-                <button className="btn-cancel" disabled={actionLoading} onClick={() => handleAction('cancel')}>Hủy đơn (Cancel)</button>
+                <button className="btn-cancel" disabled={actionLoading} onClick={() => handleAction('cancel')}>Hủy đơn</button>
               )}
               <button className="btn-close" onClick={() => setSelectedBooking(null)}>Đóng</button>
             </div>

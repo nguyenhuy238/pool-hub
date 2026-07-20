@@ -20,6 +20,8 @@ export default function SessionDetailPage() {
   const sessionId = Number(params?.id);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [closing, setClosing] = useState(false);
+  const [releaseSaving, setReleaseSaving] = useState(false);
+  const [selectedReleaseAssignmentIds, setSelectedReleaseAssignmentIds] = useState<number[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
@@ -95,6 +97,7 @@ export default function SessionDetailPage() {
     const assignments = session?.assignments || [];
     return assignments.find((assignment) => !assignment.endedAtUtc) || assignments[assignments.length - 1];
   }, [session?.assignments]);
+  const activeAssignments = useMemo(() => (session?.assignments || []).filter((assignment) => !assignment.endedAtUtc), [session?.assignments]);
   const isOpen = Number(session?.status) === SESSION_OPEN;
   const isClosed = Number(session?.status) === SESSION_CLOSED;
   const canReopen = isClosed && Number(summary?.invoiceStatus ?? 0) !== 2;
@@ -151,6 +154,28 @@ export default function SessionDetailPage() {
     }
   }
 
+  async function releaseSelectedTables() {
+    if (!selectedReleaseAssignmentIds.length) {
+      toast("Chọn ít nhất một bàn cần nhả.", "error");
+      return;
+    }
+
+    setReleaseSaving(true);
+    try {
+      const result = await sessionApi.releaseTables(sessionId, { assignmentIds: selectedReleaseAssignmentIds });
+      setSelectedReleaseAssignmentIds([]);
+      toast(result?.wasSessionAutoClosed ? "Đã nhả bàn cuối và tạo hóa đơn." : "Đã nhả bàn đã chọn.", "success");
+      await reload();
+      if (result?.invoiceId) {
+        router.push(`/operation/invoices?invoiceId=${result.invoiceId}`);
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Không thể nhả bàn.", "error");
+    } finally {
+      setReleaseSaving(false);
+    }
+  }
+
   const totalDuration = summary?.currentDurationMinutes ?? summary?.totalDurationMinutes ?? session?.durationMinutes ?? 0;
   const timeAmount = summary?.timeSubtotalAmount ?? 0;
   const productAmount = summary?.productSubtotalAmount ?? summary?.orderSubtotalAmount ?? 0;
@@ -203,6 +228,40 @@ export default function SessionDetailPage() {
                 <Info label="Tổng tiền" value={money(Number(grandTotal))} strong />
               </div>
             </div>
+
+            {isOpen ? (
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <h3>Ban dang choi</h3>
+                    <p>Chon mot hoac nhieu ban de nha khoi phien. Ban cuoi se tu dong dong phien va tao hoa don.</p>
+                  </div>
+                  <button className="secondary-btn" type="button" disabled={releaseSaving || selectedReleaseAssignmentIds.length === 0} onClick={releaseSelectedTables}>
+                    {releaseSaving ? "Dang xu ly..." : "Nha ban da chon"}
+                  </button>
+                </div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {activeAssignments.map((assignment) => {
+                    const assignmentId = Number(assignment.sessionTableAssignmentId || assignment.assignmentId || 0);
+                    return (
+                      <label key={assignmentId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedReleaseAssignmentIds.includes(assignmentId)}
+                            onChange={(event) => setSelectedReleaseAssignmentIds((current) =>
+                              event.target.checked ? [...current, assignmentId] : current.filter((id) => id !== assignmentId))}
+                          />
+                          <strong>{assignment.tableName || assignment.tableCode || `Ban #${assignment.tableId}`}</strong>
+                        </span>
+                        <span style={{ color: "var(--muted)", fontSize: 13 }}>Bat dau {dateTime(assignment.startedAtUtc)}</span>
+                      </label>
+                    );
+                  })}
+                  {!activeAssignments.length ? <div className="inline-note">Khong con ban active trong phien.</div> : null}
+                </div>
+              </div>
+            ) : null}
 
             <div className="section-grid">
               <div className="card">
@@ -325,6 +384,7 @@ export default function SessionDetailPage() {
       </Modal> : null}
       {transferOpen && session ? <TransferTableModal
         sessionId={sessionId}
+        sourceAssignmentId={Number(currentAssignment?.sessionTableAssignmentId || currentAssignment?.assignmentId || 0)}
         currentTableId={Number(summary?.currentTable?.tableId || currentAssignment?.tableId || 0)}
         currentTableName={String(summary?.currentTable?.tableName || currentAssignment?.tableName || currentAssignment?.tableCode || "-")}
         tables={tables}
@@ -370,6 +430,7 @@ function RealtimeStatusText({ status }: { status: OperationRealtimeStatus }) {
 
 function TransferTableModal({
   sessionId,
+  sourceAssignmentId,
   currentTableId,
   currentTableName,
   tables,
@@ -379,6 +440,7 @@ function TransferTableModal({
   onTransferred
 }: {
   sessionId: number;
+  sourceAssignmentId: number;
   currentTableId: number;
   currentTableName: string;
   tables: VenueTable[];
@@ -414,6 +476,10 @@ function TransferTableModal({
 
   async function transfer() {
     const targetId = Number(toTableId);
+    if (!sourceAssignmentId) {
+      toast("Không tìm thấy assignment nguồn để chuyển bàn.", "error");
+      return;
+    }
     if (!targetId) {
       toast("Chọn bàn cần chuyển đến.", "error");
       return;
@@ -421,7 +487,7 @@ function TransferTableModal({
 
     setSaving(true);
     try {
-      await sessionApi.transfer(sessionId, { toTableId: targetId, reason, note, markOldTableMaintenance });
+      await sessionApi.transfer(sessionId, { sourceAssignmentId, toTableId: targetId, reason, note, markOldTableMaintenance });
       await onTransferred();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể chuyển bàn.", "error");

@@ -91,12 +91,15 @@ public class InvoiceService(
 
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
         
-        // If session is still active, close it automatically so everything is calculated
         if (session.Status == 1)
         {
-            var sessionService = new PoolHub.Services.Session.SessionService(db, posNotificationService ?? new NoOpPosNotificationService(), config, _clock);
-            await sessionService.CloseAsync(sessionId, issuedByUserId, ct);
-            await db.SaveChangesAsync(ct);
+            throw new ConflictException("Cannot generate invoice while the session is still active. Release all active tables first.");
+        }
+
+        var hasActiveAssignments = await db.SessionTableAssignments.AnyAsync(x => x.SessionId == sessionId && x.EndedAtUtc == null, ct);
+        if (hasActiveAssignments)
+        {
+            throw new ConflictException("Cannot generate invoice while the session still has active table assignments.");
         }
 
         // Sum amounts

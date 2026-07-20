@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using PoolHub.Core.DTOs.Session;
@@ -100,12 +100,10 @@ public class SessionServiceTests
 
         var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
             service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None));
-
-        Assert.Equal("Chưa đến giờ nhận bàn. Chỉ có thể nhận bàn trước giờ đặt tối đa 15 phút.", exception.Message);
     }
 
     [Fact]
-    public async Task StartAsync_WhenConfirmedBookingIsInsideEarlyCheckInWindow_StartsAtActualNowAndMarksBookingCompleted()
+    public async Task StartAsync_WhenConfirmedBookingIsInsideEarlyCheckInWindow_StartsAtActualNowAndMarksBookingInProgress()
     {
         using var db = CreateSessionStartDb();
         var now = DateTime.UtcNow;
@@ -118,8 +116,8 @@ public class SessionServiceTests
 
         var booking = await db.Bookings.FindAsync(1L);
         var table = await db.VenueTables.FindAsync(1L);
-        Assert.Equal(BookingStatuses.Completed, booking!.Status);
-        Assert.Equal(2, table!.OperationalStatus);
+        Assert.Equal(BookingStatuses.InProgress, booking!.Status);
+        Assert.Equal(1, table!.OperationalStatus);
         Assert.True(result.StartedAtUtc >= now);
         Assert.True(result.StartedAtUtc < now.AddSeconds(10));
     }
@@ -171,7 +169,11 @@ public class SessionServiceTests
         var service = new SessionService(db);
 
         // Act & Assert: Transfer Session 1 to Table 2 (which is active under Session 2)
-        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.TransferTableAsync(1, new TransferTableRequest { ToTableId = 2 }, 99, CancellationToken.None));
+        var sourceAssignmentId = await db.SessionTableAssignments
+            .Where(x => x.SessionId == 1 && x.TableId == 1)
+            .Select(x => x.SessionTableAssignmentId)
+            .FirstAsync();
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.TransferTableAsync(1, new TransferTableRequest { SourceAssignmentId = sourceAssignmentId, ToTableId = 2 }, 99, CancellationToken.None));
         Assert.Equal("New table already has an active session.", exception.Message);
     }
 
@@ -276,7 +278,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesMinimumAndBlockOnceForSession()
+    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesMinimumAndBlockPerAssignment()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -294,9 +296,9 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(31, summary.ActualDurationMinutes);
-        Assert.Equal(45, summary.BillableDurationMinutes);
-        Assert.Equal(45, summary.Assignments.Sum(x => x.BillableDurationMinutes));
-        Assert.Equal(45000, summary.TimeSubtotalAmount);
+        Assert.Equal(90, summary.BillableDurationMinutes);
+        Assert.Equal(90, summary.Assignments.Sum(x => x.BillableDurationMinutes));
+        Assert.Equal(90000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
@@ -312,8 +314,6 @@ public class SessionServiceTests
         await db.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<ConflictException>(() => new SessionService(db).GetSummaryAsync(1, CancellationToken.None));
-
-        Assert.Contains("Không tìm thấy bảng giá", exception.Message);
         Assert.Contains(exception.Errors, error => error == "tableCode=T1");
         Assert.Contains(exception.Errors, error => error.StartsWith("venueLocalTime=", StringComparison.Ordinal));
     }

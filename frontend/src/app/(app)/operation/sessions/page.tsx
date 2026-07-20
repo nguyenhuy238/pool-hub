@@ -130,7 +130,7 @@ export default function SessionsPage() {
   async function startSelected() {
     if (!starting) return;
     try {
-      const session = await bookingApi.startSession(starting.bookingId, starting.tableId);
+      const session = await bookingApi.startSession(starting.bookingId);
       toast("Bat dau phien thanh cong.", "success");
       setStarting(null);
       router.push(`/operation/sessions/${session.sessionId}`);

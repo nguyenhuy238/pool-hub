@@ -195,3 +195,116 @@
   height: 14px;
   border-radius: 3px;
 }
+
+.multi-table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.multi-table-card {
+  min-height: 112px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+}
+
+.multi-table-card:hover:not(:disabled) {
+  border-color: #123b63;
+}
+
+.multi-table-card.selected {
+  border-color: #123b63;
+  background: rgba(18, 59, 99, 0.08);
+  box-shadow: inset 0 0 0 1px #123b63;
+}
+
+.multi-table-card.conflict {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.multi-table-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.multi-table-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.multi-table-card-top span {
+  font-size: 11px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.multi-table-card.selected .multi-table-card-top span {
+  background: #123b63;
+  color: #ffffff;
+}
+
+.multi-table-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.multi-table-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.multi-table-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.multi-table-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.multi-table-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(18, 59, 99, 0.25);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(18, 59, 99, 0.08);
+  color: #123b63;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.multi-table-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.multi-table-empty {
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}

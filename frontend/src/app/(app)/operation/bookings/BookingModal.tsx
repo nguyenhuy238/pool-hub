@@ -6,6 +6,8 @@ import { getVietnamDateInputValue, getVietnamDayOfWeek, utcTimestampMs, vietnamD
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso, validateSlotRange } from "@/lib/timeSlots";
 import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
+import { MultiTableSelector, SelectedTablesSummary } from "@/components/booking/MultiTableSelector";
+import { normalizeTableIds } from "@/lib/bookingTables";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
 import "./booking-modal.css";
 
@@ -25,7 +27,7 @@ export function BookingModal({
   const [email, setEmail] = useState("");
   const [numberOfGuests, setNumberOfGuests] = useState("2");
   const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
-  const [selectedTableId, setSelectedTableId] = useState("");
+  const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
   const [overnightEnabled, setOvernightEnabled] = useState(false);
   const timeSlots = useMemo(() => generateBookingSlots({ startDate: selectedDate, overnightEnabled }), [overnightEnabled, selectedDate]);
   
@@ -62,7 +64,7 @@ export function BookingModal({
 
   // Fetch Bookings and calculate past slots
   useEffect(() => {
-    if (!selectedDate || !selectedTableId) {
+    if (!selectedDate || !selectedTableIds.length) {
       setBookedSlots(new Set());
       setSelectedSlotIndexes([]);
       return;
@@ -74,8 +76,8 @@ export function BookingModal({
         const { startUtc, endUtc: sameDayEndUtc } = vietnamDateRangeToUtcIso(selectedDate);
         const endUtc = overnightEnabled ? slotToUtcIso(timeSlots[timeSlots.length - 1]) : sameDayEndUtc;
         
-        const res = await bookingApi.calendar(startUtc, endUtc, { tableId: selectedTableId });
-        const items = Array.isArray(res) ? res : (res as any).items || [];
+        const responses = await Promise.all(selectedTableIds.map((tableId) => bookingApi.calendar(startUtc, endUtc, { tableId })));
+        const items = responses.flatMap((res) => Array.isArray(res) ? res : (res as any).items || []);
         
         const booked = new Set<number>();
         
@@ -104,7 +106,7 @@ export function BookingModal({
     }
     
     loadAvailability();
-  }, [overnightEnabled, selectedDate, selectedTableId, timeSlots, toast]);
+  }, [overnightEnabled, selectedDate, selectedTableIds, timeSlots, toast]);
 
   // Calculate past slots
   useEffect(() => {
@@ -171,7 +173,8 @@ export function BookingModal({
     return "";
   };
 
-  const selectedTable = useMemo(() => tables.find(t => t.tableId === Number(selectedTableId)), [tables, selectedTableId]);
+  const selectedTables = useMemo(() => selectedTableIds.map((id) => tables.find(t => t.tableId === id)).filter(Boolean) as VenueTable[], [tables, selectedTableIds]);
+  const selectedTable = selectedTables[0];
   const selectedStartSlot = timeSlots[selectedSlotIndexes[0]];
   const selectedEndSlot = timeSlots[selectedSlotIndexes[1]];
   const durationMinutes = calculateDurationMinutes(selectedStartSlot, selectedEndSlot);
@@ -185,18 +188,28 @@ export function BookingModal({
   }), [plans, rules, selectedTable]);
 
   useEffect(() => {
-    if (!selectedTableId || !selectedStartSlot || !selectedEndSlot) {
+    if (!selectedTableIds.length || !selectedStartSlot || !selectedEndSlot) {
       setRangeConflict(false);
       return;
     }
     let cancelled = false;
     setCheckingRange(true);
-    bookingApi.availability(Number(selectedTableId), slotToUtcIso(selectedStartSlot), slotToUtcIso(selectedEndSlot))
-      .then((available) => { if (!cancelled) setRangeConflict(!available.some((table) => Number(table.tableId) === Number(selectedTableId))); })
+    bookingApi.availabilityMany(selectedTableIds, slotToUtcIso(selectedStartSlot), slotToUtcIso(selectedEndSlot))
+      .then((available) => {
+        if (!cancelled) {
+          const availableIds = new Set(available.map((table) => Number(table.tableId)));
+          setRangeConflict(selectedTableIds.some((tableId) => !availableIds.has(tableId)));
+        }
+      })
       .catch(() => { if (!cancelled) setRangeConflict(true); })
       .finally(() => { if (!cancelled) setCheckingRange(false); });
     return () => { cancelled = true; };
-  }, [selectedEndSlot, selectedStartSlot, selectedTableId]);
+  }, [selectedEndSlot, selectedStartSlot, selectedTableIds]);
+
+  const toggleTable = useCallback((tableId: number) => {
+    setSelectedTableIds((current) => current.includes(tableId) ? current.filter((id) => id !== tableId) : normalizeTableIds([...current, tableId]));
+    setSelectedSlotIndexes([]);
+  }, []);
 
   // Get price for a specific 30-minute slot
   const getSlotPrice = useCallback((index: number) => {
@@ -231,26 +244,27 @@ export function BookingModal({
 
   // Calculate estimated price by summing all selected slots
   const estimatedPrice = useMemo(() => {
-    if (selectedSlotIndexes.length !== 2 || !selectedTable) return 0;
+    if (selectedSlotIndexes.length !== 2 || !selectedTables.length) return 0;
     
     const s = selectedSlotIndexes[0];
     const e = selectedSlotIndexes[1];
     
     let total = 0;
     for (let i = s; i < e; i++) {
-      total += getSlotPrice(i);
+      total += getSlotPrice(i) * selectedTables.length;
     }
     
     return total;
-  }, [selectedSlotIndexes, selectedTable, getSlotPrice]);
+  }, [selectedSlotIndexes, selectedTables.length, getSlotPrice]);
 
   const handleSubmit = async () => {
     if (!customerName || !phoneNumber) {
       toast("Vui lòng nhập tên và số điện thoại khách hàng.", "error");
       return;
     }
-    if (!selectedTableId) {
-      toast("Vui lòng chọn bàn.", "error");
+    const normalizedTableIds = normalizeTableIds(selectedTableIds);
+    if (!normalizedTableIds.length) {
+      toast("Vui lòng chọn ít nhất một bàn.", "error");
       return;
     }
     const startSlot = timeSlots[selectedSlotIndexes[0]];
@@ -265,9 +279,11 @@ export function BookingModal({
     try {
       const startTimeUtc = slotToUtcIso(startSlot);
       const endTimeUtc = slotToUtcIso(endSlot);
-      const available = await bookingApi.availability(Number(selectedTableId), startTimeUtc, endTimeUtc);
-      if (!available.some((table) => Number(table.tableId) === Number(selectedTableId))) {
-        toast("Bàn đã có booking hoặc phiên chơi trong khung giờ này.", "error");
+      const available = await bookingApi.availabilityMany(normalizedTableIds, startTimeUtc, endTimeUtc);
+      const availableIds = new Set(available.map((table) => Number(table.tableId)));
+      const conflicted = normalizedTableIds.filter((tableId) => !availableIds.has(tableId));
+      if (conflicted.length) {
+        toast(`Có ${conflicted.length} bàn không còn trống trong khung giờ này.`, "error");
         return;
       }
 
@@ -277,7 +293,8 @@ export function BookingModal({
         phoneNumber,
         email: email || undefined,
         numberOfGuests: Number(numberOfGuests) || 2,
-        tableId: Number(selectedTableId),
+        tableId: normalizedTableIds[0],
+        tableIds: normalizedTableIds,
         tableTypeId: selectedTable?.tableTypeId,
         startTimeUtc,
         endTimeUtc
@@ -326,13 +343,15 @@ export function BookingModal({
             </label>
             <OvernightToggle checked={overnightEnabled} onChange={(checked) => { setOvernightEnabled(checked); setSelectedSlotIndexes((current) => current.length ? [current[0]] : []); }} />
             <label>
-              <span>Chọn Bàn cụ thể *</span>
-              <select value={selectedTableId} onChange={e => setSelectedTableId(e.target.value)}>
-                <option value="">-- Chọn bàn --</option>
-                {tables.map(t => <option key={t.tableId} value={t.tableId}>{t.tableName} ({t.tableCode})</option>)}
-              </select>
-              <span style={{fontSize: '12px', color: 'var(--muted)'}}>Phải chọn bàn để xem lịch trống.</span>
+              <span>Chọn bàn *</span>
+              <span style={{fontSize: '12px', color: 'var(--muted)'}}>Có thể chọn một hoặc nhiều bàn.</span>
             </label>
+            <SelectedTablesSummary
+              tables={tables}
+              selectedTableIds={selectedTableIds}
+              onRemove={(tableId) => setSelectedTableIds((current) => current.filter((id) => id !== tableId))}
+              onClear={() => setSelectedTableIds([])}
+            />
           </div>
           
           <div className="booking-modal-col-right">
@@ -345,10 +364,14 @@ export function BookingModal({
             
             {loading ? (
               <div style={{padding: '40px', textAlign: 'center', color: 'var(--muted)'}}>Đang tải lịch trống...</div>
-            ) : !selectedTableId ? (
-              <div style={{padding: '40px', textAlign: 'center', color: 'var(--muted)'}}>Vui lòng chọn Bàn ở cột trái để xem lịch.</div>
+            ) : !selectedTableIds.length ? (
+              <>
+                <MultiTableSelector tables={tables} selectedTableIds={selectedTableIds} onToggle={toggleTable} />
+                <div style={{padding: '24px', textAlign: 'center', color: 'var(--muted)'}}>Vui lòng chọn bàn để xem lịch.</div>
+              </>
             ) : (
               <>
+                <MultiTableSelector tables={tables} selectedTableIds={selectedTableIds} onToggle={toggleTable} />
                 <p style={{fontSize: '14px', margin: 0, color: 'var(--ink)'}}>Nhấp vào 1 ô để chọn giờ bắt đầu, nhấp ô tiếp theo để chọn giờ kết thúc.</p>
                 <div className="time-slots-grid">
                   {timeSlots.map((slot, index) => {
