@@ -8,7 +8,7 @@ import { formatElapsedDuration } from "@/lib/sessionDuration";
 import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
 import { Badge, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import type { BookingCalendarItem, Order, Product, Session, VenueTable } from "@/types";
+import type { BookingCalendarItem, Order, Product, Session, SessionTableAssignment, VenueTable } from "@/types";
 
 const SESSION_OPEN = 1;
 const SESSION_CLOSED = 2;
@@ -29,7 +29,7 @@ export default function SessionDetailPage() {
   const [, setDurationTick] = useState(0);
 
   const { data, loading, error, reload } = useLoad(async () => {
-    if (!Number.isFinite(sessionId) || sessionId <= 0) throw new Error("Session không hợp lệ.");
+    if (!Number.isFinite(sessionId) || sessionId <= 0) throw new Error("Phiên không hợp lệ.");
     const now = new Date();
     const bookingWindowEnd = new Date(now.getTime() + 15 * 60 * 1000);
     const [session, summary, orders, products, tables, activeSessions, upcomingBookings] = await Promise.all([
@@ -115,7 +115,7 @@ export default function SessionDetailPage() {
 
   async function ensureOrder() {
     if (currentOrder) return currentOrder.orderId;
-    if (!isOpen) throw new Error("Session đã đóng hoặc hủy, không thể thêm order.");
+    if (!isOpen) throw new Error("Phiên đã đóng hoặc hủy, không thể thêm đơn hàng.");
     const order = await orderApi.create(sessionId);
     setSelectedOrderId(order.orderId);
     await reload();
@@ -132,7 +132,7 @@ export default function SessionDetailPage() {
       } else {
         await orderApi.addItem(orderId, { productId: product.productId, quantity: 1 });
       }
-      toast("Đã thêm sản phẩm vào order.", "success");
+      toast("Đã thêm sản phẩm vào đơn hàng.", "success");
       await reload();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể thêm sản phẩm.", "error");
@@ -156,7 +156,7 @@ export default function SessionDetailPage() {
 
   async function releaseSelectedTables() {
     if (!selectedReleaseAssignmentIds.length) {
-      toast("Chọn ít nhất một bàn cần nhả.", "error");
+      toast("Chọn ít nhất một bàn cần kết thúc.", "error");
       return;
     }
 
@@ -164,13 +164,13 @@ export default function SessionDetailPage() {
     try {
       const result = await sessionApi.releaseTables(sessionId, { assignmentIds: selectedReleaseAssignmentIds });
       setSelectedReleaseAssignmentIds([]);
-      toast(result?.wasSessionAutoClosed ? "Đã nhả bàn cuối và tạo hóa đơn." : "Đã nhả bàn đã chọn.", "success");
+      toast(result?.wasSessionAutoClosed ? "Đã kết thúc bàn cuối và tạo hóa đơn." : "Đã kết thúc bàn đã chọn.", "success");
       await reload();
       if (result?.invoiceId) {
         router.push(`/operation/invoices?invoiceId=${result.invoiceId}`);
       }
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Không thể nhả bàn.", "error");
+      toast(err instanceof Error ? err.message : "Không thể kết thúc bàn.", "error");
     } finally {
       setReleaseSaving(false);
     }
@@ -186,7 +186,7 @@ export default function SessionDetailPage() {
     <>
       <PageHeader
         title={session?.sessionCode || `Phiên #${sessionId}`}
-        description="Workspace vận hành phiên chơi, order, tạm tính và kết thúc hóa đơn."
+        description="Không gian vận hành phiên chơi, đơn hàng, tạm tính và kết thúc hóa đơn."
         action={<button className="ghost-btn" type="button" onClick={() => router.push("/operation/sessions")}>Danh sách phiên</button>}
       />
       <section style={{ padding: "0 24px 24px" }}>
@@ -206,7 +206,7 @@ export default function SessionDetailPage() {
                 <Badge tone={isOpen ? "green" : "neutral"}>{label(sessionStatus, Number(session.status))}</Badge>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-                <Info label="Mã session" value={session.sessionCode || `#${session.sessionId}`} />
+                <Info label="Mã phiên" value={session.sessionCode || `#${session.sessionId}`} />
                 <Info label="Bàn hiện tại" value={currentAssignment?.tableName || currentAssignment?.tableCode || "-"} />
                 <Info label="Khách hàng" value={session.customerId ? `#${session.customerId}` : "Khách vãng lai"} />
                 <Info label="Thời lượng thực tế" value={`Đã chơi: ${formatElapsedDuration(session.startedAtUtc, isOpen ? undefined : session.endedAtUtc)}`} />
@@ -217,13 +217,13 @@ export default function SessionDetailPage() {
               <div className="panel-head">
                 <div>
                   <h3>Tạm tính</h3>
-                  <p>Backend tính tiền giờ theo bảng giá, minimum và block hiện hành.</p>
+                  <p>Hệ thống tính tiền giờ theo bảng giá, thời gian tối thiểu và khung làm tròn hiện hành.</p>
                 </div>
                 <button className="ghost-btn" type="button" onClick={async () => { await reload(); setSummaryOpen(true); }}>Xem chi tiết tạm tính</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
                 <Info label="Tiền giờ" value={money(Number(timeAmount))} />
-                <Info label="Tiền order" value={money(Number(productAmount))} />
+                <Info label="Tiền đơn hàng" value={money(Number(productAmount))} />
                 <Info label="Giảm giá" value={`-${money(Number(discountAmount))}`} />
                 <Info label="Tổng tiền" value={money(Number(grandTotal))} strong />
               </div>
@@ -233,11 +233,11 @@ export default function SessionDetailPage() {
               <div className="panel">
                 <div className="panel-head">
                   <div>
-                    <h3>Ban dang choi</h3>
-                    <p>Chon mot hoac nhieu ban de nha khoi phien. Ban cuoi se tu dong dong phien va tao hoa don.</p>
+                    <h3>Bàn đang chơi</h3>
+                    <p>Chọn một hoặc nhiều bàn để kết thúc trong phiên. Bàn cuối sẽ tự động đóng phiên và tạo hóa đơn.</p>
                   </div>
                   <button className="secondary-btn" type="button" disabled={releaseSaving || selectedReleaseAssignmentIds.length === 0} onClick={releaseSelectedTables}>
-                    {releaseSaving ? "Dang xu ly..." : "Nha ban da chon"}
+                    {releaseSaving ? "Đang xử lý..." : "Kết thúc bàn đã chọn"}
                   </button>
                 </div>
                 <div style={{ display: "grid", gap: 10 }}>
@@ -248,25 +248,26 @@ export default function SessionDetailPage() {
                         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <input
                             type="checkbox"
+                            style={{ width: 22, height: 22, cursor: "pointer", accentColor: "#0f766e" }}
                             checked={selectedReleaseAssignmentIds.includes(assignmentId)}
                             onChange={(event) => setSelectedReleaseAssignmentIds((current) =>
                               event.target.checked ? [...current, assignmentId] : current.filter((id) => id !== assignmentId))}
                           />
-                          <strong>{assignment.tableName || assignment.tableCode || `Ban #${assignment.tableId}`}</strong>
+                          <strong>{assignment.tableName || assignment.tableCode || `Bàn #${assignment.tableId}`}</strong>
                         </span>
-                        <span style={{ color: "var(--muted)", fontSize: 13 }}>Bat dau {dateTime(assignment.startedAtUtc)}</span>
+                        <span style={{ color: "var(--muted)", fontSize: 13 }}>Bắt đầu {dateTime(assignment.startedAtUtc)}</span>
                       </label>
                     );
                   })}
-                  {!activeAssignments.length ? <div className="inline-note">Khong con ban active trong phien.</div> : null}
+                  {!activeAssignments.length ? <div className="inline-note">Không còn bàn đang hoạt động trong phiên.</div> : null}
                 </div>
               </div>
             ) : null}
 
             <div className="section-grid">
               <div className="card">
-                <h2>Thêm order</h2>
-                {!isOpen ? <div className="inline-alert error">Session đã đóng hoặc hủy, không thể thêm order.</div> : null}
+                <h2>Thêm đơn hàng</h2>
+                {!isOpen ? <div className="inline-alert error">Phiên đã đóng hoặc hủy, không thể thêm đơn hàng.</div> : null}
                 <div className="floor-grid">
                   {products.map((product) => (
                     <button className="card" key={product.productId} type="button" disabled={!isOpen} onClick={() => addProduct(product)}>
@@ -278,7 +279,7 @@ export default function SessionDetailPage() {
               </div>
 
               <div className="card">
-                <h2>Order của phiên</h2>
+                <h2>Đơn hàng của phiên</h2>
                 <DataTable
                   rows={orders as unknown as Record<string, unknown>[]}
                   columns={[
@@ -305,13 +306,13 @@ export default function SessionDetailPage() {
                       </tbody>
                     </table>
                   </div>
-                ) : <p>Chưa có sản phẩm trong order.</p>}
+                ) : <p>Chưa có sản phẩm trong đơn hàng.</p>}
               </div>
             </div>
 
             <div className="panel">
               <div className="modal-actions">
-                <button className="primary-btn" type="button" disabled={!isOpen} onClick={() => router.push(`/operation/orders?sessionId=${sessionId}&returnTo=${encodeURIComponent(`/operation/sessions/${sessionId}`)}`)}>Thêm order nâng cao</button>
+                <button className="primary-btn" type="button" disabled={!isOpen} onClick={() => router.push(`/operation/orders?sessionId=${sessionId}&returnTo=${encodeURIComponent(`/operation/sessions/${sessionId}`)}`)}>Thêm đơn hàng nâng cao</button>
                 <button className="secondary-btn" type="button" disabled={!isOpen} onClick={() => setTransferOpen(true)}>Chuyển bàn</button>
                 {canReopen ? <button className="secondary-btn" type="button" onClick={() => setReopenOpen(true)}>Khôi phục phiên</button> : null}
                 <button className="ghost-btn" type="button" onClick={async () => { await reload(); setSummaryOpen(true); }}>Tạm tính</button>
@@ -328,7 +329,7 @@ export default function SessionDetailPage() {
             <Info label="Tổng tính tiền" value={`${summary.billableDurationMinutes ?? summary.timeCharge?.billableDurationMinutes ?? totalDuration} phút`} />
             <Info label="Tiền giờ" value={money(Number(timeAmount))} strong />
           </div>
-          <div className="inline-note">{summary.timeCharge?.note || "Minimum/block áp dụng một lần cho toàn phiên, không áp lại sau mỗi lần chuyển bàn."}</div>
+          <div className="inline-note">{summary.timeCharge?.note || "Thời gian tối thiểu/khung làm tròn áp dụng một lần cho toàn phiên, không áp lại sau mỗi lần chuyển bàn."}</div>
           {(summary.timeCharge?.lines || summary.assignments || []).map((assignment: any) => (
             <div key={assignment.sessionTableAssignmentId} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -343,13 +344,13 @@ export default function SessionDetailPage() {
           ))}
 
           <div>
-            <h3 style={{ margin: "4px 0 10px" }}>Order trong phiên</h3>
+            <h3 style={{ margin: "4px 0 10px" }}>Đơn hàng trong phiên</h3>
             {(summary.orders || []).length ? (
               <div style={{ display: "grid", gap: 12 }}>
                 {(summary.orders || []).map((order: any) => (
                   <div key={order.orderId} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <strong>{order.orderCode || `Order #${order.orderId}`}</strong>
+                      <strong>{order.orderCode || `Đơn hàng #${order.orderId}`}</strong>
                       <span>{money(Number(order.subtotalAmount || 0))}</span>
                     </div>
                     <p style={{ margin: "4px 0 10px", color: "var(--muted)" }}>Trạng thái #{order.status}</p>
@@ -371,12 +372,12 @@ export default function SessionDetailPage() {
                   </div>
                 ))}
               </div>
-            ) : <div className="inline-note">Chưa có order sản phẩm/dịch vụ.</div>}
+            ) : <div className="inline-note">Chưa có đơn hàng sản phẩm/dịch vụ.</div>}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             <Info label="Tiền giờ" value={money(Number(timeAmount))} />
-            <Info label="Tiền order" value={money(Number(productAmount))} />
+            <Info label="Tiền đơn hàng" value={money(Number(productAmount))} />
             <Info label="Giảm giá" value={`-${money(Number(discountAmount))}`} />
             <Info label="Tổng tạm tính" value={money(Number(grandTotal))} strong />
           </div>
@@ -384,9 +385,7 @@ export default function SessionDetailPage() {
       </Modal> : null}
       {transferOpen && session ? <TransferTableModal
         sessionId={sessionId}
-        sourceAssignmentId={Number(currentAssignment?.sessionTableAssignmentId || currentAssignment?.assignmentId || 0)}
-        currentTableId={Number(summary?.currentTable?.tableId || currentAssignment?.tableId || 0)}
-        currentTableName={String(summary?.currentTable?.tableName || currentAssignment?.tableName || currentAssignment?.tableCode || "-")}
+        activeAssignments={activeAssignments}
         tables={tables}
         activeSessions={activeSessions}
         upcomingBookings={upcomingBookings}
@@ -430,9 +429,7 @@ function RealtimeStatusText({ status }: { status: OperationRealtimeStatus }) {
 
 function TransferTableModal({
   sessionId,
-  sourceAssignmentId,
-  currentTableId,
-  currentTableName,
+  activeAssignments,
   tables,
   activeSessions,
   upcomingBookings,
@@ -440,9 +437,7 @@ function TransferTableModal({
   onTransferred
 }: {
   sessionId: number;
-  sourceAssignmentId: number;
-  currentTableId: number;
-  currentTableName: string;
+  activeAssignments: SessionTableAssignment[];
   tables: VenueTable[];
   activeSessions: Session[];
   upcomingBookings: BookingCalendarItem[];
@@ -450,44 +445,78 @@ function TransferTableModal({
   onTransferred: () => Promise<void>;
 }) {
   const toast = useToast();
-  const [toTableId, setToTableId] = useState("");
+  const [selectedTransfers, setSelectedTransfers] = useState<Record<number, string>>({});
   const [reason, setReason] = useState("CustomerRequest");
   const [note, setNote] = useState("");
   const [markOldTableMaintenance, setMarkOldTableMaintenance] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const activeTableIds = new Set(activeSessions
-    .map((session) => Number((session as any).currentTable?.tableId || session.tableId || 0))
-    .filter((tableId) => tableId > 0 && tableId !== currentTableId));
+  const currentSessionActiveTableIds = new Set(activeAssignments
+    .map((assignment) => Number(assignment.tableId))
+    .filter((tableId) => tableId > 0));
+  const activeTableIds = new Set([
+    ...activeSessions.flatMap((session) => [
+      ...((session.activeAssignments || []).map((assignment) => Number(assignment.tableId))),
+      Number((session as any).currentTable?.tableId || session.tableId || 0)
+    ]),
+    ...currentSessionActiveTableIds
+  ].filter((tableId) => tableId > 0));
   const bookingByTableId = new Map(upcomingBookings
     .filter((booking) => booking.tableId)
     .map((booking) => [Number(booking.tableId), booking]));
+  const selectedTargetIds = new Set(Object.values(selectedTransfers).map(Number).filter((tableId) => tableId > 0));
 
-  function disabledReason(table: VenueTable) {
-    if (table.tableId === currentTableId) return "Bàn hiện tại";
+  function getAssignmentId(assignment: SessionTableAssignment) {
+    return Number(assignment.sessionTableAssignmentId || assignment.assignmentId || 0);
+  }
+
+  function toggleTransfer(assignment: SessionTableAssignment, checked: boolean) {
+    const assignmentId = getAssignmentId(assignment);
+    setSelectedTransfers((current) => {
+      const next = { ...current };
+      if (checked) {
+        next[assignmentId] = next[assignmentId] || "";
+      } else {
+        delete next[assignmentId];
+      }
+      return next;
+    });
+  }
+
+  function setTransferTarget(assignmentId: number, tableId: string) {
+    setSelectedTransfers((current) => ({ ...current, [assignmentId]: tableId }));
+  }
+
+  function disabledReason(table: VenueTable, currentTargetId: number) {
     if (table.isActive === false) return "Bàn ngưng hoạt động";
     if (Number(table.operationalStatus) === 4) return "Bảo trì";
     if (Number(table.operationalStatus) !== 1) return "Không khả dụng";
+    if (currentSessionActiveTableIds.has(Number(table.tableId))) return "Bàn đang trong phiên này";
     if (activeTableIds.has(Number(table.tableId))) return "Đang có khách";
+    if (selectedTargetIds.has(Number(table.tableId)) && Number(table.tableId) !== currentTargetId) return "Đã chọn cho bàn khác";
     const booking = bookingByTableId.get(Number(table.tableId));
     if (booking) return `Booking ${booking.bookingCode || booking.bookingId} lúc ${dateTime(booking.startTimeUtc)}`;
     return "";
   }
 
   async function transfer() {
-    const targetId = Number(toTableId);
-    if (!sourceAssignmentId) {
-      toast("Không tìm thấy assignment nguồn để chuyển bàn.", "error");
+    const transfers = Object.entries(selectedTransfers)
+      .map(([sourceAssignmentId, toTableId]) => ({ sourceAssignmentId: Number(sourceAssignmentId), toTableId: Number(toTableId) }))
+      .filter((item) => item.sourceAssignmentId > 0);
+    if (!transfers.length) {
+      toast("Chọn ít nhất một bàn cần chuyển.", "error");
       return;
     }
-    if (!targetId) {
-      toast("Chọn bàn cần chuyển đến.", "error");
+    if (transfers.some((item) => item.toTableId <= 0)) {
+      toast("Chọn bàn chuyển đến cho từng bàn cần chuyển.", "error");
       return;
     }
 
     setSaving(true);
     try {
-      await sessionApi.transfer(sessionId, { sourceAssignmentId, toTableId: targetId, reason, note, markOldTableMaintenance });
+      for (const item of transfers) {
+        await sessionApi.transfer(sessionId, { ...item, reason, note, markOldTableMaintenance });
+      }
       await onTransferred();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Không thể chuyển bàn.", "error");
@@ -497,23 +526,38 @@ function TransferTableModal({
   }
 
   return (
-    <Modal title="Chuyển bàn" onClose={onClose} size="medium">
+    <Modal title="Chuyển bàn" onClose={onClose} size="large">
       <div style={{ display: "grid", gap: 14 }}>
-        <Info label="Bàn hiện tại" value={currentTableName} />
-        <label>
-          <span>Bàn chuyển đến</span>
-          <select value={toTableId} onChange={(event) => setToTableId(event.target.value)}>
-            <option value="">Chọn bàn trống</option>
-            {tables.map((table) => {
-              const reasonText = disabledReason(table);
-              return (
-                <option key={table.tableId} value={table.tableId} disabled={Boolean(reasonText)}>
-                  {table.tableName || table.tableCode} {reasonText ? `- ${reasonText}` : ""}
-                </option>
-              );
-            })}
-          </select>
-        </label>
+        <div className="inline-note">Chọn một hoặc nhiều bàn trong phiên, sau đó chọn bàn trống tương ứng để chuyển đến.</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {activeAssignments.map((assignment) => {
+            const assignmentId = getAssignmentId(assignment);
+            const selected = Object.prototype.hasOwnProperty.call(selectedTransfers, assignmentId);
+            const currentTargetId = Number(selectedTransfers[assignmentId] || 0);
+            return (
+              <div key={assignmentId} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12, display: "grid", gap: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700 }}>
+                  <input type="checkbox" style={{ width: 24, height: 24, cursor: "pointer", accentColor: "#0f766e" }} checked={selected} onChange={(event) => toggleTransfer(assignment, event.target.checked)} />
+                  <span>{assignment.tableName || assignment.tableCode || `Bàn #${assignment.tableId}`}</span>
+                </label>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span>Bàn chuyển đến</span>
+                  <select value={selectedTransfers[assignmentId] || ""} disabled={!selected} onChange={(event) => setTransferTarget(assignmentId, event.target.value)}>
+                    <option value="">Chọn bàn trống</option>
+                    {tables.map((table) => {
+                      const reasonText = disabledReason(table, currentTargetId);
+                      return (
+                        <option key={table.tableId} value={table.tableId} disabled={Boolean(reasonText)}>
+                          {table.tableName || table.tableCode} {reasonText ? `- ${reasonText}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              </div>
+            );
+          })}
+        </div>
         <label>
           <span>Lý do</span>
           <select value={reason} onChange={(event) => setReason(event.target.value)}>
@@ -528,7 +572,7 @@ function TransferTableModal({
           <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder="Ghi chú thêm nếu có" />
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input type="checkbox" checked={markOldTableMaintenance} onChange={(event) => setMarkOldTableMaintenance(event.target.checked)} />
+          <input type="checkbox" style={{ width: 22, height: 22, cursor: "pointer", accentColor: "#0f766e" }} checked={markOldTableMaintenance} onChange={(event) => setMarkOldTableMaintenance(event.target.checked)} />
           <span>Đánh dấu bàn cũ cần bảo trì</span>
         </label>
         <div className="modal-actions">

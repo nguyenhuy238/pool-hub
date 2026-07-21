@@ -85,49 +85,55 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
     public async Task<List<ActiveSessionResponse>> GetActiveSessionsAsync(long? floorId, long? zoneId, long? tableId, CancellationToken ct)
     {
-        var query = from session in db.Sessions.AsNoTracking()
-                    join assignment in db.SessionTableAssignments.AsNoTracking() on session.SessionId equals assignment.SessionId
-                    join table in db.VenueTables.AsNoTracking() on assignment.TableId equals table.TableId
-                    join zone in db.Zones.AsNoTracking() on table.ZoneId equals zone.ZoneId
-                    where session.Status == 1 && assignment.EndedAtUtc == null
-                    select new { Session = session, Assignment = assignment, Table = table, Zone = zone };
+        var sessionQuery = db.Sessions.AsNoTracking().Where(session => session.Status == 1);
 
         if (floorId.HasValue)
         {
-            query = query.Where(x => x.Zone.FloorId == floorId.Value);
+            sessionQuery = sessionQuery.Where(session =>
+                (from assignment in db.SessionTableAssignments.AsNoTracking()
+                 join table in db.VenueTables.AsNoTracking() on assignment.TableId equals table.TableId
+                 join zone in db.Zones.AsNoTracking() on table.ZoneId equals zone.ZoneId
+                 where assignment.SessionId == session.SessionId &&
+                       assignment.EndedAtUtc == null &&
+                       zone.FloorId == floorId.Value
+                 select assignment.SessionTableAssignmentId).Any());
         }
 
         if (zoneId.HasValue)
         {
-            query = query.Where(x => x.Table.ZoneId == zoneId.Value);
+            sessionQuery = sessionQuery.Where(session =>
+                (from assignment in db.SessionTableAssignments.AsNoTracking()
+                 join table in db.VenueTables.AsNoTracking() on assignment.TableId equals table.TableId
+                 where assignment.SessionId == session.SessionId &&
+                       assignment.EndedAtUtc == null &&
+                       table.ZoneId == zoneId.Value
+                 select assignment.SessionTableAssignmentId).Any());
         }
 
         if (tableId.HasValue)
         {
-            query = query.Where(x => x.Table.TableId == tableId.Value);
+            sessionQuery = sessionQuery.Where(session =>
+                db.SessionTableAssignments.AsNoTracking().Any(assignment =>
+                    assignment.SessionId == session.SessionId &&
+                    assignment.EndedAtUtc == null &&
+                    assignment.TableId == tableId.Value));
         }
 
-        var activeRows = await query
-            .OrderByDescending(x => x.Session.StartedAtUtc)
-            .Select(x => new ActiveSessionResponse
+        sessionQuery = sessionQuery.Where(session =>
+            db.SessionTableAssignments.AsNoTracking().Any(assignment =>
+                assignment.SessionId == session.SessionId &&
+                assignment.EndedAtUtc == null));
+
+        var activeRows = await sessionQuery
+            .OrderByDescending(session => session.StartedAtUtc)
+            .Select(session => new ActiveSessionResponse
             {
-                SessionId = x.Session.SessionId,
-                SessionCode = x.Session.SessionCode,
-                Status = x.Session.Status,
-                StartedAtUtc = x.Session.StartedAtUtc,
-                CustomerId = x.Session.CustomerId,
-                BookingId = x.Session.BookingId,
-                CurrentTable = new ActiveSessionTableDto
-                {
-                    AssignmentId = x.Assignment.SessionTableAssignmentId,
-                    TableId = x.Table.TableId,
-                    TableCode = x.Table.TableCode,
-                    TableName = x.Table.TableName,
-                    ZoneId = x.Table.ZoneId,
-                    FloorId = x.Zone.FloorId,
-                    StartedAtUtc = x.Assignment.StartedAtUtc,
-                    HourlyRateSnapshot = x.Assignment.HourlyRateSnapshot
-                }
+                SessionId = session.SessionId,
+                SessionCode = session.SessionCode,
+                Status = session.Status,
+                StartedAtUtc = session.StartedAtUtc,
+                CustomerId = session.CustomerId,
+                BookingId = session.BookingId
             })
             .ToListAsync(ct);
 
@@ -138,15 +144,26 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             .Select(x => x.CustomerId!.Value)
             .Distinct()
             .ToList();
-        var assignments = await db.SessionTableAssignments.AsNoTracking()
-            .Where(x => sessionIds.Contains(x.SessionId))
-            .Select(x => new
-            {
-                x.SessionId,
-                x.StartedAtUtc,
-                x.EndedAtUtc,
-                x.DurationMinutes
-            })
+        var assignments = await (from assignment in db.SessionTableAssignments.AsNoTracking()
+                                 join table in db.VenueTables.AsNoTracking() on assignment.TableId equals table.TableId
+                                 join zone in db.Zones.AsNoTracking() on table.ZoneId equals zone.ZoneId
+                                 where sessionIds.Contains(assignment.SessionId)
+                                 orderby assignment.StartedAtUtc
+                                 select new
+                                 {
+                                     assignment.SessionId,
+                                     assignment.SessionTableAssignmentId,
+                                     assignment.TableId,
+                                     table.TableCode,
+                                     table.TableName,
+                                     table.ZoneId,
+                                     zone.FloorId,
+                                     assignment.StartedAtUtc,
+                                     assignment.EndedAtUtc,
+                                     assignment.DurationMinutes,
+                                     assignment.HourlyRateSnapshot,
+                                     assignment.Amount
+                                 })
             .ToListAsync(ct);
 
         var durationBySession = assignments
@@ -158,6 +175,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             .Where(x => customerIds.Contains(x.CustomerId))
             .Select(x => new { x.CustomerId, x.FullName })
             .ToDictionaryAsync(x => x.CustomerId, x => x.FullName, ct);
+        var orderSubtotalBySession = await db.Orders.AsNoTracking()
+            .Where(x => sessionIds.Contains(x.SessionId))
+            .GroupBy(x => x.SessionId)
+            .Select(x => new { SessionId = x.Key, Subtotal = x.Sum(order => order.SubtotalAmount) })
+            .ToDictionaryAsync(x => x.SessionId, x => x.Subtotal, ct);
 
         foreach (var row in activeRows)
         {
@@ -165,6 +187,47 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             row.CustomerName = row.CustomerId.HasValue && customerNames.TryGetValue(row.CustomerId.Value, out var customerName)
                 ? customerName
                 : "KhĂ¡ch vĂ£ng lai";
+            var sessionAssignments = assignments.Where(x => x.SessionId == row.SessionId).ToList();
+            row.ActiveAssignments = sessionAssignments
+                .Where(x => x.EndedAtUtc == null)
+                .Select(x =>
+                {
+                    var actualMinutes = GetDurationMinutes(x.StartedAtUtc, now);
+                    return new ActiveSessionTableDto
+                    {
+                        AssignmentId = x.SessionTableAssignmentId,
+                        TableId = x.TableId,
+                        TableCode = x.TableCode,
+                        TableName = x.TableName,
+                        ZoneId = x.ZoneId,
+                        FloorId = x.FloorId,
+                        StartedAtUtc = x.StartedAtUtc,
+                        HourlyRateSnapshot = x.HourlyRateSnapshot,
+                        EstimatedAmount = Math.Max(0, x.HourlyRateSnapshot * actualMinutes / 60m)
+                    };
+                })
+                .ToList();
+            row.ReleasedAssignments = sessionAssignments
+                .Where(x => x.EndedAtUtc.HasValue)
+                .Select(x => new ReleasedSessionTableDto
+                {
+                    AssignmentId = x.SessionTableAssignmentId,
+                    TableId = x.TableId,
+                    TableCode = x.TableCode,
+                    TableName = x.TableName,
+                    StartedAtUtc = x.StartedAtUtc,
+                    EndedAtUtc = x.EndedAtUtc!.Value,
+                    DurationMinutes = GetDurationMinutes(x.StartedAtUtc, x.EndedAtUtc.Value, x.DurationMinutes),
+                    HourlyRateSnapshot = x.HourlyRateSnapshot,
+                    Amount = x.Amount ?? 0m
+                })
+                .ToList();
+            row.ActiveTableCount = row.ActiveAssignments.Count;
+            row.ReleasedTableCount = row.ReleasedAssignments.Count;
+            row.CurrentTable = row.ActiveAssignments.OrderBy(x => x.StartedAtUtc).LastOrDefault();
+            row.EstimatedTimeSubtotal = row.ReleasedAssignments.Sum(x => x.Amount) + row.ActiveAssignments.Sum(x => x.EstimatedAmount);
+            row.OrderSubtotal = orderSubtotalBySession.GetValueOrDefault(row.SessionId);
+            row.EstimatedGrandTotal = row.EstimatedTimeSubtotal + row.OrderSubtotal;
         }
 
         return activeRows;
@@ -1438,11 +1501,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             var actualMinutes = GetDurationMinutes(row.Assignment.StartedAtUtc, endedAtUtc, persist ? null : row.Assignment.DurationMinutes);
             var pricing = await GetAssignmentPricingAsync(row.Assignment, row.Table, ct);
             var isBillable = IsAssignmentBillable(row.Assignment, actualMinutes);
-            var billableMinutes = isBillable ? ApplyBillingRules(actualMinutes, pricing.MinimumMinutes, pricing.BillingBlockMinutes) : 0;
             var hourlyRate = row.Assignment.HourlyRateSnapshot > 0 ? row.Assignment.HourlyRateSnapshot : pricing.HourlyRate;
-            var amount = row.Assignment.EndedAtUtc.HasValue && row.Assignment.Amount.HasValue
-                ? row.Assignment.Amount.Value
-                : Math.Round(((decimal)billableMinutes / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
             var note = isBillable ? row.Assignment.Note : "Free due to table issue/staff correction grace.";
 
             lines.Add(new SessionSummaryAssignmentDto
@@ -1456,17 +1515,45 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 EndedAtUtc = row.Assignment.EndedAtUtc,
                 DurationMinutes = actualMinutes,
                 ActualDurationMinutes = actualMinutes,
-                BillableDurationMinutes = billableMinutes,
+                BillableDurationMinutes = 0,
                 HourlyRateSnapshot = hourlyRate,
                 HourlyRate = hourlyRate,
                 MinimumMinutes = pricing.MinimumMinutes,
                 BillingBlockMinutes = pricing.BillingBlockMinutes,
                 PricingPlanName = pricing.PricingPlanName,
-                Amount = amount,
+                Amount = 0,
                 IsCurrent = isCurrent,
                 IsBillable = isBillable,
                 Note = note
             });
+        }
+
+        var chains = BuildContinuousAssignmentChains(lines);
+        foreach (var chain in chains)
+        {
+            var billableLines = chain.Where(x => x.IsBillable).ToList();
+            if (billableLines.Count == 0)
+            {
+                continue;
+            }
+
+            var chainRuleLine = billableLines[0];
+            var actualBillableMinutes = billableLines.Sum(x => x.ActualDurationMinutes);
+            var chainBillableMinutes = ApplyBillingRules(actualBillableMinutes, chainRuleLine.MinimumMinutes, chainRuleLine.BillingBlockMinutes);
+            var assignedBillableMinutes = 0;
+
+            for (var i = 0; i < billableLines.Count; i++)
+            {
+                var line = billableLines[i];
+                var isLast = i == billableLines.Count - 1;
+                var lineBillableMinutes = isLast
+                    ? Math.Max(0, chainBillableMinutes - assignedBillableMinutes)
+                    : line.ActualDurationMinutes;
+
+                line.BillableDurationMinutes = lineBillableMinutes;
+                line.Amount = Math.Round(((decimal)lineBillableMinutes / 60m) * line.HourlyRate, 2, MidpointRounding.AwayFromZero);
+                assignedBillableMinutes += lineBillableMinutes;
+            }
         }
 
         foreach (var line in lines)
@@ -1497,9 +1584,36 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             MinimumMinutes = ruleLine?.MinimumMinutes ?? 0,
             BillingBlockMinutes = ruleLine?.BillingBlockMinutes ?? 0,
             SubtotalAmount = lines.Sum(x => x.Amount),
-            Note = "Minimum/block applies separately to each table assignment.",
+            Note = "Minimum/block applies once per continuous table slot. Transfers do not create a new minimum charge.",
             Lines = lines
         };
+    }
+
+    private static List<List<SessionSummaryAssignmentDto>> BuildContinuousAssignmentChains(List<SessionSummaryAssignmentDto> lines)
+    {
+        const double transferToleranceSeconds = 2;
+        var chains = new List<List<SessionSummaryAssignmentDto>>();
+
+        foreach (var line in lines.OrderBy(x => x.StartedAtUtc).ThenBy(x => x.SessionTableAssignmentId))
+        {
+            var chain = chains.FirstOrDefault(items =>
+            {
+                var last = items.Last();
+                return last.EndedAtUtc.HasValue &&
+                       Math.Abs((line.StartedAtUtc - last.EndedAtUtc.Value).TotalSeconds) <= transferToleranceSeconds;
+            });
+
+            if (chain is null)
+            {
+                chains.Add([line]);
+            }
+            else
+            {
+                chain.Add(line);
+            }
+        }
+
+        return chains;
     }
     private async Task<List<SessionSummaryOrderDto>> GetSessionSummaryOrdersAsync(long sessionId, CancellationToken ct)
     {
