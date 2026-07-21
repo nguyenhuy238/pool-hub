@@ -7,8 +7,8 @@ public class PricingPlanRuleDto
     public long PricingPlanRuleId { get; set; }
     public long PricingPlanId { get; set; }
     public long TableTypeId { get; set; }
-    [Range(0, 6)]
-    public int DayOfWeek { get; set; }
+    [Range(1, 4)]
+    public int DayType { get; set; }
     public TimeSpan StartTime { get; set; }
     public TimeSpan EndTime { get; set; }
     [Range(typeof(decimal), "0.0001", "999999999999999")]

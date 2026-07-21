@@ -40,6 +40,7 @@ export function resolveDashboardConfig(context: DashboardContext): DashboardConf
       actions: [
         { label: "Quản lý người dùng", href: "/admin/users" },
         { label: "Bảng giá", href: "/management/pricing-plans" },
+        { label: "Ngày đặc biệt", href: "/management/pricing-special-dates" },
         { label: "Phân tích", href: "/admin/analytics", primary: true },
         { label: "Nhật ký hệ thống", href: "/admin/audit-logs" },
         { label: "Cấu hình", href: "/admin/settings" }

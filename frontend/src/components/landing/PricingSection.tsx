@@ -5,32 +5,31 @@ import { landingSettingsApi, type PricingRuleSummary, type TableTypePricingSumma
 
 function formatDays(days: number[]) {
   if (!days || days.length === 0) return "Mọi ngày";
-  if (days.length === 7) return "Cả Tuần";
   
-  const isAllWeekdays = [1, 2, 3, 4, 5].every(d => days.includes(d)) && days.length === 5;
-  const isAllWeekend = days.includes(0) && days.includes(6) && days.length === 2;
+  if (days.includes(1) && days.includes(2) && days.includes(3) && days.includes(4)) return "Mọi ngày";
   
-  if (isAllWeekdays) return "Thứ 2 - Thứ 6";
-  if (isAllWeekend) return "T7 - CN";
+  const parts = [];
+  if (days.includes(1)) parts.push("Ngày thường");
+  if (days.includes(2)) parts.push("Cuối tuần");
+  if (days.includes(3)) parts.push("Ngày lễ");
+  if (days.includes(4)) parts.push("Ngày đặc biệt");
   
-  // Sort days: 1 (Mon) to 7 (Sun=0)
-  const sorted = [...days].sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b));
-  return sorted.map(d => d === 0 ? "CN" : `T${d + 1}`).join(", ");
+  return parts.join(", ");
 }
 
 function groupRules(rules: PricingRuleSummary[]) {
   const groups = new Map<string, { days: number[], rate: number, start: string, end: string }>();
   
   for (const r of rules) {
-    // If dayOfWeek is completely missing, we treat it as everyday (though usually it's set 0-6)
-    const d = r.dayOfWeek !== undefined ? r.dayOfWeek : -1;
+    // If dayType is completely missing, we treat it as everyday (though usually it's set 1-4)
+    const d = r.dayType !== undefined ? r.dayType : -1;
     const start = r.startTime ? r.startTime.slice(0, 5) : "";
     const end = r.endTime ? r.endTime.slice(0, 5) : "";
     const rate = r.hourlyRate || 0;
     
     const key = `${rate}-${start}-${end}`;
     if (!groups.has(key)) {
-      groups.set(key, { days: d !== -1 ? [d] : [0,1,2,3,4,5,6], rate, start, end });
+      groups.set(key, { days: d !== -1 ? [d] : [1,2,3,4], rate, start, end });
     } else {
       const existing = groups.get(key)!;
       if (d !== -1 && !existing.days.includes(d)) {

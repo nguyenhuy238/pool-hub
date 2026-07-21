@@ -8,9 +8,18 @@ namespace PoolHub.Services.Common;
 
 public partial class CrudService
 {
-    public async Task<PagedResult<PricingPlanDto>> GetPricingPlansAsync(PaginationRequest r, CancellationToken ct)
+    public async Task<PagedResult<PricingPlanDto>> GetPricingPlansAsync(PricingPlanPaginationRequest r, CancellationToken ct)
     {
         var q = db.PricingPlans.AsQueryable();
+        if (!string.IsNullOrEmpty(r.Search)) q = q.Where(x => x.Name.Contains(r.Search));
+        if (r.IsActive.HasValue) q = q.Where(x => x.IsActive == r.IsActive.Value);
+
+        q = r.SortBy?.ToLower() switch
+        {
+            "name" => r.SortDir?.ToLower() == "desc" ? q.OrderByDescending(x => x.Name) : q.OrderBy(x => x.Name),
+            _ => r.SortDir?.ToLower() == "asc" ? q.OrderBy(x => x.PricingPlanId) : q.OrderByDescending(x => x.PricingPlanId)
+        };
+
         var t = await q.CountAsync(ct);
         var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new PricingPlanDto { PricingPlanId = x.PricingPlanId, Name = x.Name, IsDefault = x.IsDefault, IsActive = x.IsActive }).ToListAsync(ct);
         return Page(i, r.PageNumber, r.PageSize, t);
@@ -59,24 +68,35 @@ public partial class CrudService
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PaginationRequest r, CancellationToken ct)
+    public async Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PricingRulePaginationRequest r, CancellationToken ct)
     {
-        var q = db.PricingPlanRules.AsQueryable();
+        var q = db.PricingPlanRules.Where(x => x.IsActive);
+        if (r.PricingPlanId.HasValue) q = q.Where(x => x.PricingPlanId == r.PricingPlanId.Value);
+        if (r.TableTypeId.HasValue) q = q.Where(x => x.TableTypeId == r.TableTypeId.Value);
+        if (r.DayType.HasValue) q = q.Where(x => x.DayType == r.DayType.Value);
+
+        q = r.SortBy?.ToLower() switch
+        {
+            "hourlyrate" => r.SortDir?.ToLower() == "desc" ? q.OrderByDescending(x => x.HourlyRate) : q.OrderBy(x => x.HourlyRate),
+            "starttime" => r.SortDir?.ToLower() == "desc" ? q.OrderByDescending(x => x.StartTime) : q.OrderBy(x => x.StartTime),
+            _ => r.SortDir?.ToLower() == "asc" ? q.OrderBy(x => x.PricingPlanRuleId) : q.OrderByDescending(x => x.PricingPlanRuleId)
+        };
+
         var t = await q.CountAsync(ct);
-        var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayOfWeek = x.DayOfWeek, StartTime = x.StartTime, EndTime = x.EndTime, MinimumMinutes = x.MinimumMinutes, BillingBlockMinutes = x.BillingBlockMinutes, HourlyRate = x.HourlyRate }).ToListAsync(ct);
+        var i = await q.Skip((r.PageNumber - 1) * r.PageSize).Take(r.PageSize).Select(x => new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayType = x.DayType, StartTime = x.StartTime, EndTime = x.EndTime, MinimumMinutes = x.MinimumMinutes, BillingBlockMinutes = x.BillingBlockMinutes, HourlyRate = x.HourlyRate }).ToListAsync(ct);
         return Page(i, r.PageNumber, r.PageSize, t);
     }
 
     public async Task<PricingPlanRuleDto> GetPricingPlanRuleAsync(long id, CancellationToken ct)
     {
-        var x = await db.PricingPlanRules.FindAsync([id], ct) ?? throw new NotFoundException("PricingPlanRule not found.");
-        return new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayOfWeek = x.DayOfWeek, StartTime = x.StartTime, EndTime = x.EndTime, MinimumMinutes = x.MinimumMinutes, BillingBlockMinutes = x.BillingBlockMinutes, HourlyRate = x.HourlyRate };
+        var x = await db.PricingPlanRules.FirstOrDefaultAsync(x => x.PricingPlanRuleId == id && x.IsActive, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
+        return new PricingPlanRuleDto { PricingPlanRuleId = x.PricingPlanRuleId, PricingPlanId = x.PricingPlanId, TableTypeId = x.TableTypeId, DayType = x.DayType, StartTime = x.StartTime, EndTime = x.EndTime, MinimumMinutes = x.MinimumMinutes, BillingBlockMinutes = x.BillingBlockMinutes, HourlyRate = x.HourlyRate };
     }
 
     public async Task<PricingPlanRuleDto> CreatePricingPlanRuleAsync(long planId, PricingPlanRuleDto d, CancellationToken ct)
     {
         await ValidatePricingRuleAsync(planId, null, d, ct);
-        var x = new PoolHub.Core.Entities.PricingPlanRule { PricingPlanId = planId, TableTypeId = d.TableTypeId, DayOfWeek = d.DayOfWeek, StartTime = d.StartTime, EndTime = d.EndTime, MinimumMinutes = d.MinimumMinutes, BillingBlockMinutes = d.BillingBlockMinutes, HourlyRate = d.HourlyRate };
+        var x = new PoolHub.Core.Entities.PricingPlanRule { PricingPlanId = planId, TableTypeId = d.TableTypeId, DayType = d.DayType, StartTime = d.StartTime, EndTime = d.EndTime, MinimumMinutes = d.MinimumMinutes, BillingBlockMinutes = d.BillingBlockMinutes, HourlyRate = d.HourlyRate };
         db.PricingPlanRules.Add(x);
         await db.SaveChangesAsync(ct);
         return await GetPricingPlanRuleAsync(x.PricingPlanRuleId, ct);
@@ -84,10 +104,10 @@ public partial class CrudService
 
     public async Task<PricingPlanRuleDto> UpdatePricingPlanRuleAsync(long planId, long ruleId, PricingPlanRuleDto d, CancellationToken ct)
     {
-        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
+        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId && r.IsActive, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
         await ValidatePricingRuleAsync(planId, ruleId, d, ct);
         x.TableTypeId = d.TableTypeId;
-        x.DayOfWeek = d.DayOfWeek;
+        x.DayType = d.DayType;
         x.StartTime = d.StartTime;
         x.EndTime = d.EndTime;
         x.MinimumMinutes = d.MinimumMinutes;
@@ -99,7 +119,7 @@ public partial class CrudService
 
     public async Task DeletePricingPlanRuleAsync(long planId, long ruleId, CancellationToken ct)
     {
-        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
+        var x = await db.PricingPlanRules.FirstOrDefaultAsync(r => r.PricingPlanId == planId && r.PricingPlanRuleId == ruleId && r.IsActive, ct) ?? throw new NotFoundException("PricingPlanRule not found.");
         x.IsActive = false;
         x.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -132,7 +152,7 @@ public partial class CrudService
             x.PricingPlanId == planId &&
             x.PricingPlanRuleId != ruleId &&
             x.TableTypeId == rule.TableTypeId &&
-            x.DayOfWeek == rule.DayOfWeek &&
+            x.DayType == rule.DayType &&
             x.IsActive &&
             x.StartTime < rule.EndTime &&
             x.EndTime > rule.StartTime, ct);

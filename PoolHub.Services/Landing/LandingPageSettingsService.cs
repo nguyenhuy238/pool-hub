@@ -91,7 +91,7 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
             .AsNoTracking()
             .Where(x => x.IsActive && activePlanIds.Contains(x.PricingPlanId) && activeTableTypeIds.Contains(x.TableTypeId))
             .OrderBy(x => x.TableTypeId)
-            .ThenBy(x => x.DayOfWeek)
+            .ThenBy(x => x.DayType)
             .ThenBy(x => x.StartTime)
             .ToListAsync(ct);
 
@@ -101,7 +101,7 @@ public class LandingPageSettingsService(PoolHubDbContext db, IClock? clock = nul
                 PricingPlanRuleId = x.PricingPlanRuleId,
                 PricingPlanId = x.PricingPlanId,
                 TableTypeId = x.TableTypeId,
-                DayOfWeek = x.DayOfWeek,
+                DayType = x.DayType,
                 StartTime = x.StartTime.ToString(@"hh\:mm\:ss"),
                 EndTime = x.EndTime.ToString(@"hh\:mm\:ss"),
                 HourlyRate = x.HourlyRate,

@@ -32,8 +32,23 @@ public interface ICrudService
     Task<VenueTableDto> UpdateVenueTableAsync(long id, VenueTableDto dto, CancellationToken ct);
     Task DeleteVenueTableAsync(long id, CancellationToken ct);
 
-    Task<PagedResult<PricingPlanDto>> GetPricingPlansAsync(PaginationRequest request, CancellationToken ct);
-    Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<PricingPlanDto>> GetPricingPlansAsync(PricingPlanPaginationRequest request, CancellationToken ct);
+    Task<PricingPlanDto> GetPricingPlanAsync(long id, CancellationToken ct);
+    Task<PricingPlanDto> CreatePricingPlanAsync(PricingPlanDto dto, CancellationToken ct);
+    Task<PricingPlanDto> UpdatePricingPlanAsync(long id, PricingPlanDto dto, CancellationToken ct);
+    Task DeletePricingPlanAsync(long id, CancellationToken ct);
+
+    Task<PagedResult<PricingPlanRuleDto>> GetPricingPlanRulesAsync(PricingRulePaginationRequest request, CancellationToken ct);
+    Task<PricingPlanRuleDto> GetPricingPlanRuleAsync(long id, CancellationToken ct);
+    Task<PricingPlanRuleDto> CreatePricingPlanRuleAsync(long planId, PricingPlanRuleDto dto, CancellationToken ct);
+    Task<PricingPlanRuleDto> UpdatePricingPlanRuleAsync(long planId, long ruleId, PricingPlanRuleDto dto, CancellationToken ct);
+    Task DeletePricingPlanRuleAsync(long planId, long ruleId, CancellationToken ct);
+
+    Task<PagedResult<PricingSpecialDateDto>> GetPricingSpecialDatesAsync(PaginationRequest request, CancellationToken ct);
+    Task<PricingSpecialDateDto> GetPricingSpecialDateAsync(long id, CancellationToken ct);
+    Task<PricingSpecialDateDto> CreatePricingSpecialDateAsync(PricingSpecialDateDto dto, CancellationToken ct);
+    Task<PricingSpecialDateDto> UpdatePricingSpecialDateAsync(long id, PricingSpecialDateDto dto, CancellationToken ct);
+    Task DeletePricingSpecialDateAsync(long id, CancellationToken ct);
 
     Task<PagedResult<ProductCategoryDto>> GetProductCategoriesAsync(PaginationRequest request, CancellationToken ct);
     Task<ProductCategoryDto> CreateProductCategoryAsync(ProductCategoryDto dto, CancellationToken ct);
