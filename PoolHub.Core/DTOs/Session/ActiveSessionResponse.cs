@@ -11,6 +11,13 @@ public class ActiveSessionResponse
     public string CustomerName { get; set; } = string.Empty;
     public long? BookingId { get; set; }
     public ActiveSessionTableDto? CurrentTable { get; set; }
+    public List<ActiveSessionTableDto> ActiveAssignments { get; set; } = [];
+    public List<ReleasedSessionTableDto> ReleasedAssignments { get; set; } = [];
+    public int ActiveTableCount { get; set; }
+    public int ReleasedTableCount { get; set; }
+    public decimal EstimatedTimeSubtotal { get; set; }
+    public decimal OrderSubtotal { get; set; }
+    public decimal EstimatedGrandTotal { get; set; }
 }
 
 public class ActiveSessionTableDto

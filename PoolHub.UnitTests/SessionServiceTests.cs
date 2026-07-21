@@ -214,6 +214,12 @@ public class SessionServiceTests
 
         Assert.Single(result);
         Assert.True(result[0].DurationMinutes >= 35);
+        Assert.Single(result[0].ActiveAssignments);
+        Assert.Single(result[0].ReleasedAssignments);
+        Assert.Equal(1, result[0].ActiveTableCount);
+        Assert.Equal(1, result[0].ReleasedTableCount);
+        Assert.Equal(2, result[0].ActiveAssignments[0].TableId);
+        Assert.Equal(1, result[0].ReleasedAssignments[0].TableId);
     }
 
     [Fact]
@@ -278,7 +284,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesMinimumAndBlockPerAssignment()
+    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesMinimumAndBlockPerContinuousTableSlot()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -296,9 +302,9 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(31, summary.ActualDurationMinutes);
-        Assert.Equal(90, summary.BillableDurationMinutes);
-        Assert.Equal(90, summary.Assignments.Sum(x => x.BillableDurationMinutes));
-        Assert.Equal(90000, summary.TimeSubtotalAmount);
+        Assert.Equal(45, summary.BillableDurationMinutes);
+        Assert.Equal(45, summary.Assignments.Sum(x => x.BillableDurationMinutes));
+        Assert.Equal(45000, summary.TimeSubtotalAmount);
     }
 
     [Fact]

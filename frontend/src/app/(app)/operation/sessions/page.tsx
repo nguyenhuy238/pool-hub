@@ -9,6 +9,7 @@ import { getCurrentVietnamHourOfDay, getVietnamDateInputValue, utcTimestampMs, v
 import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slotToUtcIso } from "@/lib/timeSlots";
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
 import { formatElapsedDuration } from "@/lib/sessionDuration";
+import { getSessionActiveAssignments, getSessionReleasedAssignments, normalizeActiveSessions } from "@/lib/activeSessions";
 import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
@@ -112,10 +113,12 @@ export default function SessionsPage() {
     );
   }, [data]);
 
-  const activeSessions = useList<Session>(data?.sessions).filter((session) => Number(session.status) === SESSION_OPEN);
+  const activeSessions = normalizeActiveSessions(useList<Session>(data?.sessions)).filter((session) => Number(session.status) === SESSION_OPEN);
   const tables = useList<VenueTable>(data?.tables);
   const customers = useList<CustomerDto>(data?.customers).filter((customer) => customer.status);
-  const activeTableIds = new Set(activeSessions.map((session) => Number((session as any).currentTable?.tableId || session.tableId)));
+  const activeTableIds = new Set(activeSessions.flatMap((session) =>
+    getSessionActiveAssignments(session).map((assignment) => Number(assignment.tableId))
+  ));
   const availableTables = tables.filter((table) =>
     table.isActive !== false &&
     Number(table.operationalStatus) === 1 &&
@@ -131,13 +134,13 @@ export default function SessionsPage() {
     if (!starting) return;
     try {
       const session = await bookingApi.startSession(starting.bookingId);
-      toast("Bat dau phien thanh cong.", "success");
+      toast("Bắt đầu phiên thành công.", "success");
       setStarting(null);
       router.push(`/operation/sessions/${session.sessionId}`);
     } catch (err: any) {
       const message = err?.status === 409
-        ? "Booking da co phien hoac ban dang duoc su dung."
-        : err?.message || "Khong the bat dau phien.";
+        ? "Booking đã có phiên hoặc bàn đang được sử dụng."
+        : err?.message || "Không thể bắt đầu phiên.";
       toast(message, "error");
     }
   }
@@ -145,27 +148,40 @@ export default function SessionsPage() {
   async function markNoShow() {
     if (!noShowing) return;
     try {
-      await bookingApi.noShow(noShowing.bookingId, "Khach khong den vao gio da dat");
-      toast("Da danh dau khach khong den.", "success");
+      await bookingApi.noShow(noShowing.bookingId, "Khách không đến vào giờ đã đặt");
+      toast("Đã đánh dấu khách không đến.", "success");
       setNoShowing(null);
       reload();
     } catch (err: any) {
-      toast(err?.message || "Khong the danh dau khach khong den.", "error");
+      toast(err?.message || "Không thể đánh dấu khách không đến.", "error");
     }
   }
 
   async function endSelected() {
     if (!ending) return;
+    const activeAssignmentIds = getSessionActiveAssignments(ending)
+      .map((assignment) => Number(assignment.assignmentId))
+      .filter((assignmentId) => assignmentId > 0);
+    if (activeAssignmentIds.length === 0) {
+      toast("Không còn bàn đang hoạt động để kết thúc.", "error");
+      return;
+    }
+
     setClosingSession(true);
     try {
-      const result = await sessionApi.end(ending.sessionId);
-      const invoiceId = result?.invoiceId ?? result?.InvoiceId;
-      toast("Kết thúc phiên và tạo hóa đơn thành công.", "success");
+      const result = await sessionApi.releaseTables(ending.sessionId, {
+        assignmentIds: activeAssignmentIds,
+        note: "Kết thúc tất cả bàn đang hoạt động"
+      });
+      const invoiceId = result?.invoiceId;
+      toast("Kết thúc tất cả bàn và tạo hóa đơn thành công.", "success");
       setEnding(null);
       setEndingSummary(null);
       reload();
       if (invoiceId) {
         router.push(`/operation/invoices?invoiceId=${invoiceId}`);
+      } else if (result?.wasSessionAutoClosed) {
+        toast("Phiên đã đóng nhưng chưa nhận được mã hóa đơn.", "error");
       } else {
         router.push("/operation/invoices");
       }
@@ -192,31 +208,31 @@ export default function SessionsPage() {
 
   return (
     <>
-      <PageHeader title="Quan ly phien choi" description="Bat dau phien tu booking da xac nhan va theo doi cac phien dang hoat dong." />
+      <PageHeader title="Quản lý phiên chơi" description="Bắt đầu phiên từ booking đã xác nhận và theo dõi các phiên đang hoạt động." />
 
       <section style={{ padding: "0 24px 24px" }}>
         <div className="panel">
           <div className="panel-head">
             <div>
-              <h3>Booking den gio</h3>
-              <p>Cac booking da xac nhan va dang trong khung gio choi.</p>
+              <h3>Booking đến giờ</h3>
+              <p>Các booking đã xác nhận và đang trong khung giờ chơi.</p>
             </div>
           </div>
           <StateBlock loading={loading} error={error} empty={!loading && dueBookings.length === 0} />
           <DataTable
             rows={dueBookings as unknown as Record<string, unknown>[]}
             columns={[
-              { key: "bookingCode", label: "Ma booking" },
-              { key: "customerName", label: "Khach hang", render: (row) => String(row.customerName || row.phoneNumber || row.customerId || "-") },
-              { key: "tableId", label: "Ban / loai ban", render: (row) => row.tableId ? `Ban #${row.tableId}` : `Loai #${row.tableTypeId || "-"}` },
-              { key: "startTimeUtc", label: "Bat dau", render: (row) => dateTime(String(row.startTimeUtc)) },
-              { key: "endTimeUtc", label: "Ket thuc", render: (row) => dateTime(String(row.endTimeUtc)) },
-              { key: "status", label: "Trang thai", render: (row) => <Badge tone="green">{label(bookingStatus, Number(row.status))}</Badge> }
+              { key: "bookingCode", label: "Mã booking" },
+              { key: "customerName", label: "Khách hàng", render: (row) => String(row.customerName || row.phoneNumber || row.customerId || "-") },
+              { key: "tableId", label: "Bàn / loại bàn", render: (row) => row.tableId ? `Bàn #${row.tableId}` : `Loại #${row.tableTypeId || "-"}` },
+              { key: "startTimeUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startTimeUtc)) },
+              { key: "endTimeUtc", label: "Kết thúc", render: (row) => dateTime(String(row.endTimeUtc)) },
+              { key: "status", label: "Trạng thái", render: (row) => <Badge tone="green">{label(bookingStatus, Number(row.status))}</Badge> }
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="primary-btn" onClick={() => setStarting(row as unknown as Booking)}>Bat dau phien</button>
-                <button className="danger-btn" onClick={() => setNoShowing(row as unknown as Booking)}>Khach khong den</button>
+                <button className="primary-btn" onClick={() => setStarting(row as unknown as Booking)}>Bắt đầu phiên</button>
+                <button className="danger-btn" onClick={() => setNoShowing(row as unknown as Booking)}>Khách không đến</button>
               </div>
             )}
           />
@@ -227,10 +243,10 @@ export default function SessionsPage() {
         <div className="panel">
           <div className="panel-head">
             <div>
-              <h3>Phien dang hoat dong</h3>
-              <p>Cac phien dang mo, lay tu route chuan /api/sessions/active.</p>
+              <h3>Phiên đang hoạt động</h3>
+              <p>Các phiên đang mở, lấy từ API chuẩn /api/sessions/active.</p>
               <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
-                Đã chơi hiển thị realtime. Tiền giờ được backend tính theo bảng giá và quy tắc làm tròn.
+                Thời lượng chơi hiển thị realtime. Tiền giờ được hệ thống tính theo bảng giá và quy tắc làm tròn.
               </p>
               <RealtimeStatusText status={realtimeStatus} />
             </div>
@@ -240,15 +256,13 @@ export default function SessionsPage() {
           <DataTable
             rows={activeSessions as unknown as Record<string, unknown>[]}
             columns={[
-              { key: "sessionCode", label: "Ma session" },
-              { key: "customerId", label: "Khach hang", render: (row) => String(row.customerName || customerName(row.customerId)) },
-              { key: "currentTable", label: "Ban hien tai", render: (row) => {
-                const table = row.currentTable as any;
-                return table ? `${table.tableName || table.tableCode || table.tableId}` : String(row.tableName || row.tableId || "-");
-              } },
-              { key: "startedAtUtc", label: "Bat dau", render: (row) => dateTime(String(row.startedAtUtc)) },
-              { key: "duration", label: "Thoi luong", render: (row) => `Đã chơi: ${formatElapsedDuration(String(row.startedAtUtc), Number(row.status) === SESSION_OPEN ? undefined : String(row.endedAtUtc || ""))}` },
-              { key: "status", label: "Trang thai", render: (row) => <Badge tone="green">{label(sessionStatus, Number(row.status))}</Badge> }
+              { key: "sessionCode", label: "Mã phiên" },
+              { key: "customerId", label: "Khách hàng", render: (row) => String(row.customerName || customerName(row.customerId)) },
+              { key: "activeAssignments", label: "Bàn đang hoạt động", render: (row) => <ActiveTablesCell session={row as unknown as Session} /> },
+              { key: "releasedTableCount", label: "Bàn đã trả", render: (row) => <ReleasedTablesCell session={row as unknown as Session} /> },
+              { key: "startedAtUtc", label: "Bắt đầu", render: (row) => dateTime(String(row.startedAtUtc)) },
+              { key: "duration", label: "Thời lượng", render: (row) => `Đã chơi: ${formatElapsedDuration(String(row.startedAtUtc), Number(row.status) === SESSION_OPEN ? undefined : String(row.endedAtUtc || ""))}` },
+              { key: "status", label: "Trạng thái", render: (row) => <Badge tone="green">{label(sessionStatus, Number(row.status))}</Badge> }
             ]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -258,14 +272,14 @@ export default function SessionsPage() {
                     setPreviewingSessionId(Number(row.sessionId));
                     setSummary(await sessionApi.summary(Number(row.sessionId)));
                   } catch (err: any) {
-                    toast(err?.message || "Khong tai duoc tam tinh.", "error");
+                    toast(err?.message || "Không tải được tạm tính.", "error");
                   } finally {
                     setPreviewingSessionId(null);
                   }
-                }} disabled={previewingSessionId === Number(row.sessionId)}>Tam tinh</button>
+                }} disabled={previewingSessionId === Number(row.sessionId)}>Tạm tính</button>
                 {Number(row.status) === SESSION_OPEN && (
                   <button className="danger-btn" onClick={() => openEndConfirm(row as unknown as Session)} disabled={previewingSessionId === Number(row.sessionId)}>
-                    {previewingSessionId === Number(row.sessionId) ? "Dang tai..." : "Ket thuc"}
+                    {previewingSessionId === Number(row.sessionId) ? "Đang tải..." : "Kết thúc tất cả"}
                   </button>
                 )}
               </div>
@@ -274,8 +288,8 @@ export default function SessionsPage() {
         </div>
       </section>
 
-      {starting ? <ConfirmDialog title="Bat dau phien" message={`Bat dau phien cho booking ${starting.bookingCode || starting.bookingId}?`} confirmLabel="Bat dau" onCancel={() => setStarting(null)} onConfirm={startSelected} /> : null}
-      {noShowing ? <ConfirmDialog title="Khach khong den" message={`Danh dau booking ${noShowing.bookingCode || noShowing.bookingId} la khach khong den?`} confirmLabel="Khach khong den" danger onCancel={() => setNoShowing(null)} onConfirm={markNoShow} /> : null}
+      {starting ? <ConfirmDialog title="Bắt đầu phiên" message={`Bắt đầu phiên cho booking ${starting.bookingCode || starting.bookingId}?`} confirmLabel="Bắt đầu" onCancel={() => setStarting(null)} onConfirm={startSelected} /> : null}
+      {noShowing ? <ConfirmDialog title="Khách không đến" message={`Đánh dấu booking ${noShowing.bookingCode || noShowing.bookingId} là khách không đến?`} confirmLabel="Khách không đến" danger onCancel={() => setNoShowing(null)} onConfirm={markNoShow} /> : null}
       {ending ? <EndSessionModal session={ending} summary={endingSummary} busy={closingSession} onCancel={() => { if (!closingSession) { setEnding(null); setEndingSummary(null); } }} onAddOrder={() => router.push(`/operation/orders?sessionId=${ending.sessionId}&returnTo=${encodeURIComponent("/operation/sessions")}`)} onConfirm={endSelected} /> : null}
       {walkInOpen ? <WalkInSessionModal tables={availableTables} customers={customers} onClose={() => setWalkInOpen(false)} onStarted={async (session) => { setWalkInOpen(false); router.push(`/operation/sessions/${session.sessionId}`); }} /> : null}
       {summary ? <SummaryModal summary={summary} onClose={() => setSummary(null)} /> : null}
@@ -494,6 +508,37 @@ function RealtimeStatusText({ status }: { status: OperationRealtimeStatus }) {
   return <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>{text}</p>;
 }
 
+function ActiveTablesCell({ session }: { session: Session }) {
+  const assignments = getSessionActiveAssignments(session);
+  if (!assignments.length) {
+    return <span title="Phiên đang mở nhưng không có bàn đang hoạt động" style={{ color: "#b45309", fontWeight: 700 }}>Không còn bàn hoạt động</span>;
+  }
+
+  const names = assignments.map((assignment) => assignment.tableName || assignment.tableCode || `Bàn #${assignment.tableId}`);
+  const visible = names.slice(0, 2);
+  const hiddenCount = Math.max(0, names.length - visible.length);
+
+  return (
+    <span title={names.join("\n")} style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", maxWidth: 260 }}>
+      {visible.map((name) => <Badge key={name} tone="green">{name}</Badge>)}
+      {hiddenCount > 0 ? <Badge>+{hiddenCount}</Badge> : null}
+    </span>
+  );
+}
+
+function ReleasedTablesCell({ session }: { session: Session }) {
+  const assignments = getSessionReleasedAssignments(session);
+  const count = session.releasedTableCount ?? assignments.length;
+  if (count === 0) return <span>0</span>;
+
+  const detail = assignments.map((assignment) => {
+    const name = assignment.tableName || assignment.tableCode || `Bàn #${assignment.tableId}`;
+    return `${name} - ${dateTime(assignment.startedAtUtc)} đến ${dateTime(assignment.endedAtUtc)} - ${money(Number(assignment.amount || 0))}`;
+  });
+
+  return <span title={detail.join("\n")}>{count} bàn</span>;
+}
+
 function getStartSessionErrorMessage(error: unknown, tableLabel: string) {
   if (error instanceof ApiError && error.status === 409) {
     const details = error.errors.filter((item) => item && item !== error.message).join("; ");
@@ -520,7 +565,7 @@ function EndSessionModal({ session, summary, busy, onCancel, onAddOrder, onConfi
   const total = data?.grandTotalAmount ?? Math.max(0, Number(timeAmount) + Number(orderAmount) - Number(discountAmount));
 
   return (
-    <Modal title="Kết thúc phiên chơi" onClose={onCancel} size="small">
+    <Modal title="Kết thúc toàn bộ phiên chơi" onClose={onCancel} size="small">
       <div style={{ display: "grid", gap: 12 }}>
         <p className="modal-message" style={{ margin: 0 }}>
           Bạn có chắc muốn kết thúc phiên {session.sessionCode || session.sessionId}?
@@ -530,15 +575,15 @@ function EndSessionModal({ session, summary, busy, onCancel, onAddOrder, onConfi
             <SummaryRow label="Thời lượng" value={`${duration} phút`} />
             <PricingDetails assignments={data?.assignments || data?.Assignments || []} />
             <SummaryRow label="Tiền giờ" value={money(Number(timeAmount))} />
-            <SummaryRow label="Tiền order" value={money(Number(orderAmount))} />
+            <SummaryRow label="Tiền đơn hàng" value={money(Number(orderAmount))} />
             <SummaryRow label="Giảm giá" value={`-${money(Number(discountAmount))}`} />
             <SummaryRow label="Tổng tiền" value={money(Number(total))} />
           </div>
         )}
         <div className="modal-actions">
-          <button className="ghost-btn" type="button" onClick={onAddOrder} disabled={busy || Number(session.status) !== SESSION_OPEN}>Quay lại thêm order</button>
+          <button className="ghost-btn" type="button" onClick={onAddOrder} disabled={busy || Number(session.status) !== SESSION_OPEN}>Quay lại thêm đơn hàng</button>
           <button className="danger-btn" type="button" onClick={onConfirm} disabled={busy || !summary}>
-            {busy ? "Đang xử lý..." : "Kết thúc & tạo hóa đơn"}
+            {busy ? "Đang xử lý..." : "Kết thúc tất cả & tạo hóa đơn"}
           </button>
         </div>
       </div>
@@ -620,8 +665,8 @@ function SummaryModal({ summary, onClose }: { summary: any; onClose: () => void 
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 20 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#0f172a" }}>Tam tinh / Ket qua dong phien</h3>
-            <p style={{ margin: "6px 0 0", color: "#475569", fontSize: 14 }}>{data?.sessionCode || data?.SessionCode || `Session #${data?.sessionId || data?.SessionId || ""}`}</p>
+            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#0f172a" }}>Tạm tính / Kết quả đóng phiên</h3>
+            <p style={{ margin: "6px 0 0", color: "#475569", fontSize: 14 }}>{data?.sessionCode || data?.SessionCode || `Phiên #${data?.sessionId || data?.SessionId || ""}`}</p>
           </div>
           <button
             onClick={onClose}
@@ -635,19 +680,19 @@ function SummaryModal({ summary, onClose }: { summary: any; onClose: () => void 
               cursor: "pointer"
             }}
           >
-            Dong
+            Đóng
           </button>
         </div>
         <div style={{ display: "grid", gap: 12 }}>
-          <SummaryRow label="Ma phien" value={data?.sessionCode || data?.SessionCode || data?.sessionId || data?.SessionId || "-"} />
-          <SummaryRow label="Thoi luong" value={`${duration ?? "-"} phut`} />
+          <SummaryRow label="Mã phiên" value={data?.sessionCode || data?.SessionCode || data?.sessionId || data?.SessionId || "-"} />
+          <SummaryRow label="Thời lượng" value={`${duration ?? "-"} phút`} />
           <PricingDetails assignments={data?.assignments || data?.Assignments || []} />
-          <SummaryRow label="Tien gio" value={money(Number(timeAmount))} />
-          <SummaryRow label="Tien san pham/order" value={money(Number(orderAmount))} />
+          <SummaryRow label="Tiền giờ" value={money(Number(timeAmount))} />
+          <SummaryRow label="Tiền sản phẩm/đơn hàng" value={money(Number(orderAmount))} />
           <SummaryRow label="Giam gia" value={`-${money(Number(discountAmount))}`} />
-          <SummaryRow label="Hoa don" value={data?.invoiceCode || data?.InvoiceCode || (data?.invoiceGenerated ? "Da tao" : "Chua tao")} />
+          <SummaryRow label="Hóa đơn" value={data?.invoiceCode || data?.InvoiceCode || (data?.invoiceGenerated ? "Đã tạo" : "Chưa tạo")} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid #e2e8f0", marginTop: 4, paddingTop: 16 }}>
-            <span style={{ color: "#0f172a", fontWeight: 700 }}>Tong tien</span>
+            <span style={{ color: "#0f172a", fontWeight: 700 }}>Tổng tiền</span>
             <strong style={{ color: "#047857", fontSize: 22, fontWeight: 800 }}>{money(Number(total))}</strong>
           </div>
         </div>

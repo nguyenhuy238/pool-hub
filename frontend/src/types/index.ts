@@ -253,9 +253,29 @@ export type Session = {
     hourlyRateSnapshot?: number;
     estimatedAmount?: number;
   };
+  activeAssignments?: SessionActiveTable[];
+  releasedAssignments?: ReleasedSessionTable[];
+  activeTableCount?: number;
+  releasedTableCount?: number;
+  estimatedTimeSubtotal?: number;
+  orderSubtotal?: number;
+  estimatedGrandTotal?: number;
   durationMinutes?: number;
   note?: string;
   assignments?: SessionTableAssignment[];
+};
+
+export type SessionActiveTable = {
+  assignmentId: number;
+  tableId: number;
+  tableCode?: string;
+  tableName?: string;
+  tableTypeName?: string;
+  zoneId?: number;
+  floorId?: number;
+  startedAtUtc?: string;
+  hourlyRateSnapshot?: number;
+  estimatedAmount?: number;
 };
 
 export type SessionTableAssignment = {
