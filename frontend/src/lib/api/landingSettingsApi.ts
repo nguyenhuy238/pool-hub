@@ -160,7 +160,7 @@ export type PricingRuleSummary = {
   pricingPlanRuleId: number;
   pricingPlanId: number;
   tableTypeId: number;
-  dayOfWeek: number;
+  dayType: number;
   startTime: string;
   endTime: string;
   hourlyRate: number;

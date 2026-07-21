@@ -7,19 +7,17 @@ import { ConfirmDialog, DataTable, Modal, PageHeader, SmartForm, StateBlock, use
 import { useToast } from "@/components/toast";
 import type { PricingPlan, PricingPlanRule, TableType } from "@/types";
 
-const DAYS_OF_WEEK = [
-  { value: 0, label: "Chủ nhật" },
-  { value: 1, label: "Thứ hai" },
-  { value: 2, label: "Thứ ba" },
-  { value: 3, label: "Thứ tư" },
-  { value: 4, label: "Thứ năm" },
-  { value: 5, label: "Thứ sáu" },
-  { value: 6, label: "Thứ bảy" },
+const DAY_TYPES = [
+  { value: 1, label: "Ngày thường (T2 - T6)" },
+  { value: 2, label: "Cuối tuần (T7 - CN)" },
+  { value: 3, label: "Ngày lễ" },
+  { value: 4, label: "Ngày đặc biệt" }
 ];
 
 export default function PricingPlansPage() {
   const toast = useToast();
-  const [ruleParams, setRuleParams] = useState({ search: "", pageNumber: 1, pageSize: 10 });
+  const [planParams, setPlanParams] = useState<Record<string, string | number | boolean>>({ search: "", pageNumber: 1, pageSize: 10, isActive: true });
+  const [ruleParams, setRuleParams] = useState<Record<string, string | number | boolean>>({ search: "", pageNumber: 1, pageSize: 10, pricingPlanId: "", tableTypeId: "", dayType: "", sortBy: "", sortDir: "" });
   const [editingPlan, setEditingPlan] = useState<PricingPlan | null>(null);
   const [deletingPlan, setDeletingPlan] = useState<PricingPlan | null>(null);
   const [detailPlan, setDetailPlan] = useState<PricingPlan | null>(null);
@@ -27,11 +25,11 @@ export default function PricingPlansPage() {
   const [deletingRule, setDeletingRule] = useState<PricingPlanRule | null>(null);
   const { data, loading, error, reload } = useLoad(
     async () => ({
-      plans: await pricingApi.plans(),
+      plans: await pricingApi.plans(planParams),
       rules: await pricingApi.rules(ruleParams),
       tableTypes: await venueApi.tableTypes(),
     }),
-    [ruleParams]
+    [ruleParams, planParams]
   );
 
   const plans = useList<PricingPlan>(data?.plans);
@@ -82,31 +80,26 @@ export default function PricingPlansPage() {
         }}
       />
 
-      <SmartForm<PricingPlanRule>
-        title="Tạo quy tắc tính giá"
-        initial={{ minimumMinutes: 30, billingBlockMinutes: 15 } as any}
-        fields={[
-          { name: "pricingPlanId", label: "Bảng giá", options: planOptions, required: true },
-          { name: "tableTypeId", label: "Loại bàn", options: tableTypeOptions, required: true },
-          { name: "dayOfWeek", label: "Thứ", options: DAYS_OF_WEEK.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
-          { name: "startTime", label: "Giờ bắt đầu (HH:mm:ss)", type: "time", required: true },
-          { name: "endTime", label: "Giờ kết thúc (HH:mm:ss)", type: "time", required: true },
-          { name: "hourlyRate", label: "Giá/giờ", type: "number", required: true },
-          { name: "minimumMinutes", label: "Phút tối thiểu", type: "number", required: true },
-          { name: "billingBlockMinutes", label: "Block tính tiền (phút)", type: "number", required: true }
-        ]}
-        onSubmit={async (value) => {
-          if (Number(value.hourlyRate) < 0) throw new Error("Giá không được âm.");
-          if (Number(value.minimumMinutes) < 0) throw new Error("Phút tối thiểu không hợp lệ.");
-          if (Number(value.billingBlockMinutes) <= 0) throw new Error("Block tính tiền phải lớn hơn 0.");
-          if (value.startTime && value.endTime && value.startTime >= value.endTime) throw new Error("Giờ kết thúc phải lớn hơn giờ bắt đầu.");
-
-          await pricingApi.createRule(Number(value.pricingPlanId), value);
-          reload();
-        }}
-      />
 
       <StateBlock loading={loading} error={error} empty={!loading && !plans.length} />
+
+      <ListControls 
+        search={String(planParams.search)} pageNumber={Number(planParams.pageNumber)} pageSize={Number(planParams.pageSize)} 
+        onChange={p => setPlanParams({ ...planParams, ...p })}
+        extra={
+          <label>
+            <span>Trạng thái</span>
+            <select value={planParams.isActive === true ? "true" : planParams.isActive === false ? "false" : ""} onChange={e => {
+              const val = e.target.value === "true" ? true : e.target.value === "false" ? false : "";
+              setPlanParams({ ...planParams, isActive: val, pageNumber: 1 });
+            }}>
+              <option value="">Tất cả</option>
+              <option value="true">Đang hoạt động</option>
+              <option value="false">Ngừng hoạt động</option>
+            </select>
+          </label>
+        }
+      />
 
       <DataTable
         rows={plans.map(p => ({ ...p, id: p.pricingPlanId })) as unknown as Record<string, unknown>[]}
@@ -126,14 +119,70 @@ export default function PricingPlansPage() {
         }}
       />
 
+      <Pagination 
+        pageNumber={Number(planParams.pageNumber)} 
+        totalPages={getTotalPages(data?.plans, Number(planParams.pageSize))}
+        onChange={(page) => setPlanParams(prev => ({ ...prev, pageNumber: page }))} 
+      />
+
       <br />
       <h2>Quy tắc tính giá</h2>
+
+      <SmartForm<PricingPlanRule>
+        title="Tạo quy tắc tính giá"
+        initial={{ minimumMinutes: 30, billingBlockMinutes: 15 } as any}
+        fields={[
+          { name: "pricingPlanId", label: "Bảng giá", options: planOptions, required: true },
+          { name: "tableTypeId", label: "Loại bàn", options: tableTypeOptions, required: true },
+          { name: "dayType", label: "Loại ngày", options: DAY_TYPES.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
+          { name: "startTime", label: "Giờ bắt đầu (HH:mm:ss)", type: "time", required: true },
+          { name: "endTime", label: "Giờ kết thúc (HH:mm:ss)", type: "time", required: true },
+          { name: "hourlyRate", label: "Giá/giờ", type: "number", required: true },
+          { name: "minimumMinutes", label: "Phút tối thiểu", type: "number", required: true },
+          { name: "billingBlockMinutes", label: "Block tính tiền (phút)", type: "number", required: true }
+        ]}
+        onSubmit={async (value) => {
+          if (Number(value.hourlyRate) < 0) throw new Error("Giá không được âm.");
+          if (Number(value.minimumMinutes) < 0) throw new Error("Phút tối thiểu không hợp lệ.");
+          if (Number(value.billingBlockMinutes) <= 0) throw new Error("Block tính tiền phải lớn hơn 0.");
+          if (value.startTime && value.endTime && value.startTime >= value.endTime) throw new Error("Giờ kết thúc phải lớn hơn giờ bắt đầu.");
+
+          await pricingApi.createRule(Number(value.pricingPlanId), value);
+          reload();
+        }}
+      />
+
+      <ListControls 
+        search={String(ruleParams.search)} pageNumber={Number(ruleParams.pageNumber)} pageSize={Number(ruleParams.pageSize)} 
+        onChange={p => setRuleParams({ ...ruleParams, ...p })}
+        extra={
+          <>
+            <label><span>Bảng giá</span><select value={String(ruleParams.pricingPlanId || "")} onChange={e => setRuleParams({ ...ruleParams, pricingPlanId: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{planOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
+            <label><span>Loại bàn</span><select value={String(ruleParams.tableTypeId || "")} onChange={e => setRuleParams({ ...ruleParams, tableTypeId: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{tableTypeOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
+            <label><span>Loại ngày</span><select value={String(ruleParams.dayType || "")} onChange={e => setRuleParams({ ...ruleParams, dayType: e.target.value, pageNumber: 1 })}><option value="">Tất cả</option>{DAY_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
+            <label>
+              <span>Sắp xếp</span>
+              <select value={`${ruleParams.sortBy || ""}_${ruleParams.sortDir || ""}`} onChange={e => {
+                const [sb, sd] = e.target.value.split("_");
+                setRuleParams({ ...ruleParams, sortBy: sb || "", sortDir: sd || "", pageNumber: 1 });
+              }}>
+                <option value="_">Mặc định</option>
+                <option value="hourlyrate_asc">Giá (Thấp đến cao)</option>
+                <option value="hourlyrate_desc">Giá (Cao đến thấp)</option>
+                <option value="starttime_asc">Giờ bắt đầu (Sớm đến muộn)</option>
+                <option value="starttime_desc">Giờ bắt đầu (Muộn đến sớm)</option>
+              </select>
+            </label>
+          </>
+        }
+      />
+
       <DataTable
         rows={rules.map(r => ({ ...r, id: r.pricingPlanRuleId || Math.random() })) as unknown as Record<string, unknown>[]}
         columns={[
           { key: "pricingPlanId", label: "Bảng giá", render: (row) => plans.find(p => p.pricingPlanId === Number(row.pricingPlanId))?.name || String(row.pricingPlanId) },
           { key: "tableTypeId", label: "Loại bàn", render: (row) => tableTypes.find(t => t.tableTypeId === Number(row.tableTypeId))?.name || String(row.tableTypeId) },
-          { key: "dayOfWeek", label: "Thứ", render: (row) => DAYS_OF_WEEK.find(d => d.value === Number(row.dayOfWeek))?.label || String(row.dayOfWeek) },
+          { key: "dayType", label: "Loại ngày", render: (row) => DAY_TYPES.find(d => d.value === Number(row.dayType))?.label || String(row.dayType) },
           { key: "startTime", label: "Giờ bắt đầu" },
           { key: "endTime", label: "Giờ kết thúc" },
           { key: "hourlyRate", label: "Giá", render: (row) => money(Number(row.hourlyRate)) }
@@ -147,8 +196,8 @@ export default function PricingPlansPage() {
         }}
       />
       <Pagination 
-        pageNumber={ruleParams.pageNumber} 
-        totalPages={getTotalPages(data?.rules, ruleParams.pageSize)}
+        pageNumber={Number(ruleParams.pageNumber)} 
+        totalPages={getTotalPages(data?.rules, Number(ruleParams.pageSize))}
         onChange={(page) => setRuleParams(prev => ({ ...prev, pageNumber: page }))} 
       />
       {editingPlan ? <PlanFormModal plan={editingPlan} onClose={() => setEditingPlan(null)} onSaved={async () => { setEditingPlan(null); await reload(); }} /> : null}
@@ -227,7 +276,7 @@ function RuleFormModal({ rule, plans, tableTypes, onClose, onSaved }: { rule: Pr
       {error ? <div className="inline-alert error full-field">{error}</div> : null}
       <label><span>Bảng giá</span><select value={form.pricingPlanId} disabled>{plans.map((plan) => <option key={plan.pricingPlanId} value={plan.pricingPlanId}>{plan.name}</option>)}</select></label>
       <label><span>Loại bàn</span><select value={form.tableTypeId} onChange={(event) => setForm({ ...form, tableTypeId: Number(event.target.value) })}>{tableTypes.map((type) => <option key={type.tableTypeId} value={type.tableTypeId}>{type.name}</option>)}</select></label>
-      <label><span>Thứ</span><select value={form.dayOfWeek} onChange={(event) => setForm({ ...form, dayOfWeek: Number(event.target.value) })}>{DAYS_OF_WEEK.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></label>
+      <label><span>Loại ngày</span><select value={form.dayType} onChange={(event) => setForm({ ...form, dayType: Number(event.target.value) })}>{DAY_TYPES.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></label>
       <label><span>Giờ bắt đầu</span><input type="time" value={String(form.startTime ?? "").slice(0, 5)} onChange={(event) => setForm({ ...form, startTime: event.target.value })} /></label>
       <label><span>Giờ kết thúc</span><input type="time" value={String(form.endTime ?? "").slice(0, 5)} onChange={(event) => setForm({ ...form, endTime: event.target.value })} /></label>
       <label><span>Giá/giờ</span><input type="number" min={1} value={form.hourlyRate} onChange={(event) => setForm({ ...form, hourlyRate: Number(event.target.value) })} /></label>

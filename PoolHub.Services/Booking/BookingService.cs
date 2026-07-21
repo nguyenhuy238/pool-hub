@@ -680,8 +680,8 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     {
         startUtc = BusinessTime.NormalizeUtc(startUtc);
         var localTime = TimeZoneInfo.ConvertTimeFromUtc(startUtc, BusinessTime.TimeZone);
-        var dayOfWeek = (int)localTime.DayOfWeek;
-        var previousDayOfWeek = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+        var dayType = await GetDayTypeAsync(localTime.Date, ct);
+        var previousDayType = await GetDayTypeAsync(localTime.Date.AddDays(-1), ct);
         var time = localTime.TimeOfDay;
         var activePlanIds = await db.PricingPlans
             .Where(x => x.IsActive && x.StartsAtUtc <= startUtc && (x.EndsAtUtc == null || x.EndsAtUtc >= startUtc))
@@ -689,10 +689,13 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             .Select(x => x.PricingPlanId)
             .ToListAsync(ct);
         var rules = await db.PricingPlanRules
-            .Where(x => activePlanIds.Contains(x.PricingPlanId) && x.TableTypeId == tableTypeId && x.IsActive && (x.DayOfWeek == dayOfWeek || x.DayOfWeek == previousDayOfWeek))
+            .Where(x => activePlanIds.Contains(x.PricingPlanId) && x.TableTypeId == tableTypeId && x.IsActive && (x.DayType == dayType || x.DayType == previousDayType))
             .ToListAsync(ct);
-        var rule = rules.FirstOrDefault(x => RuleMatchesLocalTime(x.DayOfWeek, x.StartTime, x.EndTime, dayOfWeek, time))
-            ?? rules.FirstOrDefault()
+        
+        var orderedRules = rules.OrderBy(x => activePlanIds.IndexOf(x.PricingPlanId)).ToList();
+        
+        var rule = orderedRules.FirstOrDefault(x => RuleMatchesLocalTime(x.DayType, x.StartTime, x.EndTime, dayType, previousDayType, time))
+            ?? orderedRules.FirstOrDefault()
             ?? await db.PricingPlanRules.AsNoTracking().Where(x => x.TableTypeId == tableTypeId && x.IsActive).OrderByDescending(x => x.PricingPlanRuleId).FirstOrDefaultAsync(ct);
 
         return rule is null ? (50000m, 0, 0) : (rule.HourlyRate, rule.MinimumMinutes, rule.BillingBlockMinutes);
@@ -935,7 +938,17 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                 }
                 else
                 {
-                    throw new BusinessRuleException("Không thể tạo mã QR thanh toán cọc PayOS. Vui lòng kiểm tra lại cấu hình PayOS.");
+                    // To help debug, throw with the actual PayOS response
+                    var payosError = "Không có phản hồi từ PayOS";
+                    if (resStr != null)
+                    {
+                        using var errDoc = System.Text.Json.JsonDocument.Parse(resStr);
+                        if (errDoc.RootElement.TryGetProperty("desc", out var descEl) && descEl.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            payosError = descEl.GetString() ?? payosError;
+                        }
+                    }
+                    throw new BusinessRuleException($"Không thể tạo mã QR thanh toán cọc PayOS. Vui lòng kiểm tra lại cấu hình PayOS. Lỗi từ PayOS: {payosError}");
                 }
             }
             catch (BusinessRuleException)
@@ -1117,23 +1130,36 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private static bool IsAlignedToThirtyMinutes(DateTime value) =>
         value.Minute % 30 == 0 && value.Second == 0 && value.Millisecond == 0;
 
-    private static bool RuleMatchesLocalTime(int ruleDayOfWeek, TimeSpan startTime, TimeSpan endTime, int localDayOfWeek, TimeSpan localTime)
+    private static bool RuleMatchesLocalTime(int ruleDayType, TimeSpan startTime, TimeSpan endTime, int localDayType, int previousDayType, TimeSpan localTime)
     {
         if (startTime < endTime)
         {
-            return ruleDayOfWeek == localDayOfWeek && startTime <= localTime && localTime < endTime;
+            return ruleDayType == localDayType && startTime <= localTime && localTime < endTime;
         }
 
         if (startTime > endTime)
         {
-            return (ruleDayOfWeek == localDayOfWeek && localTime >= startTime) ||
-                   (NextDay(ruleDayOfWeek) == localDayOfWeek && localTime < endTime);
+            return (ruleDayType == localDayType && localTime >= startTime) ||
+                   (ruleDayType == previousDayType && localTime < endTime);
         }
 
-        return ruleDayOfWeek == localDayOfWeek;
+        return ruleDayType == localDayType;
     }
 
-    private static int NextDay(int dayOfWeek) => dayOfWeek == 6 ? 0 : dayOfWeek + 1;
+    private async Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
+    {
+        var specialDate = await db.PricingSpecialDates
+            .Where(x => x.Date.Date == date.Date)
+            .FirstOrDefaultAsync(ct);
+        
+        if (specialDate != null)
+        {
+            return specialDate.DayType;
+        }
+        
+        return date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1;
+    }
+
 
     private static void ValidateBookingPeriod(DateTime startTimeUtc, DateTime endTimeUtc)
     {

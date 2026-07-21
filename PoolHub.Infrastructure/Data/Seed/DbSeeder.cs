@@ -62,9 +62,9 @@ public static class DbSeeder
         var categories = await db.ProductCategories.OrderBy(x => x.ProductCategoryId).ToListAsync(ct);
 
         db.PricingPlanRules.AddRange(
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayOfWeek = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 }
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 }
         );
 
         for (var i = 1; i <= 10; i++)
@@ -360,42 +360,79 @@ public static class DbSeeder
             .ToListAsync(ct);
 
         var startOfDay = TimeSpan.Zero;
-        var firstDemoShift = TimeSpan.FromHours(8);
-        var lastDemoShiftEnd = new TimeSpan(23, 59, 59);
-        var endOfDay = TimeSpan.FromTicks(TimeSpan.TicksPerDay - 1);
+        var endOfDay = new TimeSpan(23, 59, 59);
+
+        // Map rates for table type code to (StartTime, EndTime, Rate) for Day 1
+        var day1Rates = new Dictionary<string, (TimeSpan start, TimeSpan end, decimal rate)[]>
+        {
+            { "POOL_STD", new[] {
+                (startOfDay, new TimeSpan(13, 0, 0), 40000m),
+                (new TimeSpan(13, 0, 0), new TimeSpan(18, 0, 0), 50000m),
+                (new TimeSpan(18, 0, 0), endOfDay, 60000m)
+            }},
+            { "POOL_VIP", new[] {
+                (startOfDay, new TimeSpan(13, 0, 0), 70000m),
+                (new TimeSpan(13, 0, 0), new TimeSpan(18, 0, 0), 90000m),
+                (new TimeSpan(18, 0, 0), endOfDay, 100000m)
+            }},
+            { "CAROM", new[] {
+                (startOfDay, new TimeSpan(13, 0, 0), 50000m),
+                (new TimeSpan(13, 0, 0), new TimeSpan(18, 0, 0), 60000m),
+                (new TimeSpan(18, 0, 0), endOfDay, 70000m)
+            }},
+            { "SNOOKER", new[] {
+                (startOfDay, new TimeSpan(13, 0, 0), 80000m),
+                (new TimeSpan(13, 0, 0), new TimeSpan(18, 0, 0), 90000m),
+                (new TimeSpan(18, 0, 0), endOfDay, 110000m)
+            }}
+        };
+
+        // Day 2 rates (flat rate for entire day)
+        var day2Rates = new Dictionary<string, decimal>
+        {
+            { "POOL_STD", 70000m },
+            { "POOL_VIP", 110000m },
+            { "CAROM", 80000m },
+            { "SNOOKER", 120000m }
+        };
 
         foreach (var tableType in tableTypes)
         {
-            var fallbackRate = GetDefaultHourlyRate(tableType);
-            for (var day = 0; day <= 6; day++)
+            var code = tableType.Code.ToUpperInvariant();
+            
+            // Day 1 (Weekday)
+            if (day1Rates.TryGetValue(code, out var shifts))
             {
-                var dayRules = existingRules
-                    .Where(x => x.TableTypeId == tableType.TableTypeId && x.DayOfWeek == day && x.IsActive)
-                    .ToList();
-
-                if (dayRules.Count == 0)
+                foreach (var shift in shifts)
                 {
-                    AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, day, startOfDay, endOfDay, fallbackRate);
-                    continue;
+                    AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, 1, shift.start, shift.end, shift.rate);
                 }
+            }
+            else
+            {
+                // Fallback for unknown table types
+                AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, 1, startOfDay, endOfDay, 50000m);
+            }
 
-                foreach (var planRules in dayRules.GroupBy(x => x.PricingPlanId))
-                {
-                    var rate = planRules.OrderBy(x => x.StartTime).FirstOrDefault()?.HourlyRate ?? fallbackRate;
-                    AddRuleIfMissing(planRules.Key, tableType.TableTypeId, day, startOfDay, firstDemoShift, rate);
-                    AddRuleIfMissing(planRules.Key, tableType.TableTypeId, day, lastDemoShiftEnd, endOfDay, rate);
-                }
+            // Day 2 (Weekend/Holiday)
+            if (day2Rates.TryGetValue(code, out var d2Rate))
+            {
+                AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, 2, startOfDay, endOfDay, d2Rate);
+            }
+            else
+            {
+                AddRuleIfMissing(defaultPlan.PricingPlanId, tableType.TableTypeId, 2, startOfDay, endOfDay, 50000m);
             }
         }
 
         await db.SaveChangesAsync(ct);
 
-        void AddRuleIfMissing(long pricingPlanId, long tableTypeId, int dayOfWeek, TimeSpan startTime, TimeSpan endTime, decimal hourlyRate)
+        void AddRuleIfMissing(long pricingPlanId, long tableTypeId, int dayType, TimeSpan startTime, TimeSpan endTime, decimal hourlyRate)
         {
             var exists = existingRules.Any(x =>
                 x.PricingPlanId == pricingPlanId &&
                 x.TableTypeId == tableTypeId &&
-                x.DayOfWeek == dayOfWeek &&
+                x.DayType == dayType &&
                 x.StartTime == startTime);
             if (exists)
             {
@@ -406,7 +443,7 @@ public static class DbSeeder
             {
                 PricingPlanId = pricingPlanId,
                 TableTypeId = tableTypeId,
-                DayOfWeek = dayOfWeek,
+                DayType = dayType,
                 StartTime = startTime,
                 EndTime = endTime,
                 HourlyRate = hourlyRate,
@@ -417,17 +454,6 @@ public static class DbSeeder
             existingRules.Add(rule);
             db.PricingPlanRules.Add(rule);
         }
-    }
-
-    private static decimal GetDefaultHourlyRate(TableType tableType)
-    {
-        return tableType.Code.ToUpperInvariant() switch
-        {
-            "POOL_VIP" => 90000,
-            "CAROM" => 60000,
-            "SNOOKER" => 90000,
-            _ => 50000
-        };
     }
 
     private static async Task EnsureDemoCustomerReviewsAsync(PoolHubDbContext db, CancellationToken ct)

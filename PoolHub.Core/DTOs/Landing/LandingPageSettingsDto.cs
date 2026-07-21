@@ -45,7 +45,7 @@ public class PricingRuleSummaryDto
     public long PricingPlanRuleId { get; set; }
     public long PricingPlanId { get; set; }
     public long TableTypeId { get; set; }
-    public int DayOfWeek { get; set; }
+    public int DayType { get; set; }
     public string StartTime { get; set; } = string.Empty;
     public string EndTime { get; set; } = string.Empty;
     public decimal HourlyRate { get; set; }

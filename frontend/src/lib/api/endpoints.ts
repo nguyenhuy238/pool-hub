@@ -12,6 +12,7 @@ import type {
   PaymentMethod,
   PricingPlan,
   PricingPlanRule,
+  PricingSpecialDate,
   Product,
   ProductCategory,
   RecentAuditLog,
@@ -149,14 +150,22 @@ export const productApi = {
 };
 
 export const pricingApi = {
-  plans: (params: Record<string, string | number | undefined> = {}) => apiFetch<PricingPlan[] | { items?: PricingPlan[] }>(`/api/pricing-plans${toQuery(params)}`, { skipAuth: true }),
-  rules: (params: Record<string, string | number | undefined> = {}) => apiFetch<PricingPlanRule[] | { items?: PricingPlanRule[] }>(`/api/pricing-plans/rules${toQuery(params)}`, { skipAuth: true }),
+  plans: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<PricingPlan[] | { items?: PricingPlan[] }>(`/api/pricing-plans${toQuery(params)}`, { skipAuth: true }),
+  rules: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<PricingPlanRule[] | { items?: PricingPlanRule[] }>(`/api/pricing-plans/rules${toQuery(params)}`, { skipAuth: true }),
   createPlan: (body: Partial<PricingPlan>) => apiFetch<PricingPlan>("/api/pricing-plans", { method: "POST", body: JSON.stringify(body) }),
   updatePlan: (id: number, body: Partial<PricingPlan>) => apiFetch<PricingPlan>(`/api/pricing-plans/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deletePlan: (id: number) => apiFetch(`/api/pricing-plans/${id}`, { method: "DELETE" }),
   createRule: (planId: number, body: Partial<PricingPlanRule>) => apiFetch<PricingPlanRule>(`/api/pricing-plans/${planId}/rules`, { method: "POST", body: JSON.stringify(body) }),
   updateRule: (planId: number, ruleId: number, body: Partial<PricingPlanRule>) => apiFetch<PricingPlanRule>(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteRule: (planId: number, ruleId: number) => apiFetch(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "DELETE" })
+};
+
+export const pricingSpecialDateApi = {
+  list: (params: Record<string, string | number | undefined> = {}) => apiFetch<PricingSpecialDate[] | { items?: PricingSpecialDate[] }>(`/api/pricing-special-dates${toQuery(params)}`),
+  detail: (id: number) => apiFetch<PricingSpecialDate>(`/api/pricing-special-dates/${id}`),
+  create: (body: Partial<PricingSpecialDate>) => apiFetch<PricingSpecialDate>("/api/pricing-special-dates", { method: "POST", body: JSON.stringify(body) }),
+  update: (id: number, body: Partial<PricingSpecialDate>) => apiFetch<PricingSpecialDate>(`/api/pricing-special-dates/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  delete: (id: number) => apiFetch(`/api/pricing-special-dates/${id}`, { method: "DELETE" })
 };
 
 export const adminDashboardApi = {

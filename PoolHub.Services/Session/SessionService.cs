@@ -1681,8 +1681,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     {
         var utcTime = NormalizeUtc(time);
         var localTime = ConvertUtcToVenueLocal(utcTime);
-        var dayOfWeek = (int)localTime.DayOfWeek;
-        var previousDayOfWeek = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+        var dayType = await GetDayTypeAsync(localTime.Date, ct);
+        var previousDayType = await GetDayTypeAsync(localTime.Date.AddDays(-1), ct);
         var timeOfDay = localTime.TimeOfDay;
 
         var activePlans = await db.PricingPlans
@@ -1699,36 +1699,49 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 .Where(r => r.PricingPlanId == planId &&
                             r.TableTypeId == tableTypeId &&
                             r.IsActive &&
-                            (r.DayOfWeek == dayOfWeek || r.DayOfWeek == previousDayOfWeek))
-                .OrderByDescending(r => r.DayOfWeek == dayOfWeek)
+                            (r.DayType == dayType || r.DayType == previousDayType))
+                .OrderByDescending(r => r.DayType == dayType)
                 .ThenByDescending(r => r.PricingPlanRuleId)
                 .ToListAsync(ct);
-            var rule = candidates.FirstOrDefault(r => RuleMatchesLocalTime(r, dayOfWeek, timeOfDay));
+            var rule = candidates.FirstOrDefault(r => RuleMatchesLocalTime(r, dayType, previousDayType, timeOfDay));
             if (rule != null) return rule;
         }
 
         return null;
     }
 
-    private static bool RuleMatchesLocalTime(PricingPlanRule rule, int localDayOfWeek, TimeSpan localTime)
+    private static bool RuleMatchesLocalTime(PricingPlanRule rule, int localDayType, int previousDayType, TimeSpan localTime)
     {
         if (rule.StartTime < rule.EndTime)
         {
-            return rule.DayOfWeek == localDayOfWeek &&
+            return rule.DayType == localDayType &&
                    rule.StartTime <= localTime &&
                    localTime < rule.EndTime;
         }
 
         if (rule.StartTime > rule.EndTime)
         {
-            return (rule.DayOfWeek == localDayOfWeek && localTime >= rule.StartTime) ||
-                   (NextDay(rule.DayOfWeek) == localDayOfWeek && localTime < rule.EndTime);
+            return (rule.DayType == localDayType && localTime >= rule.StartTime) ||
+                   (rule.DayType == previousDayType && localTime < rule.EndTime);
         }
 
-        return rule.DayOfWeek == localDayOfWeek;
+        return rule.DayType == localDayType;
     }
 
-    private static int NextDay(int dayOfWeek) => dayOfWeek == 6 ? 0 : dayOfWeek + 1;
+    private async Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
+    {
+        var specialDate = await db.PricingSpecialDates
+            .Where(x => x.Date.Date == date.Date)
+            .FirstOrDefaultAsync(ct);
+        
+        if (specialDate != null)
+        {
+            return specialDate.DayType;
+        }
+        
+        return date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1;
+    }
+
 
     private ConflictException BuildMissingPricingRuleException(VenueTable table, DateTime startedAtUtc, string context)
     {
