@@ -1,0 +1,439 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, unwrapList } from "@/lib/api/client";
+import { useToast } from "@/components/toast";
+import type { SelectOption } from "@/types";
+
+export function PageHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+  return (
+    <div className="page-header">
+      <div>
+        <h1>{title}</h1>
+        {description ? <p>{description}</p> : null}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export function StateBlock({ loading, error, empty }: { loading?: boolean; error?: string | null; empty?: boolean }) {
+  if (loading) return <div className="state-card loading-state"><span className="spinner" />Đang tải dữ liệu...</div>;
+  if (error) return <div className="state-card error">{error}</div>;
+  if (empty) return <div className="state-card">Chưa có dữ liệu phù hợp.</div>;
+  return null;
+}
+
+export function Modal({ title, children, onClose, size = "medium" }: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  size?: "small" | "medium" | "large";
+}) {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className={`modal-card modal-${size}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-head"><h2>{title}</h2><button className="icon-btn" type="button" onClick={onClose} aria-label="Đóng">×</button></div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+export function ConfirmDialog({ title, message, confirmLabel = "Xác nhận", danger = false, busy = false, onConfirm, onCancel }: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onCancel} size="small">
+      <p className="modal-message">{message}</p>
+      <div className="modal-actions">
+        <button className="ghost-btn" type="button" onClick={onCancel} disabled={busy}>Hủy</button>
+        <button className={danger ? "danger-btn" : "primary-btn"} type="button" onClick={onConfirm} disabled={busy}>{busy ? "Đang xử lý..." : confirmLabel}</button>
+      </div>
+    </Modal>
+  );
+}
+
+const sensitiveKeyPattern = /(password|token|secret|hash|authorization|cookie)/i;
+
+function maskSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(maskSensitive);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    sensitiveKeyPattern.test(key) ? "***" : maskSensitive(item)
+  ]));
+}
+
+export function JsonPreview({ value }: { value?: string }) {
+  if (!value) return <span className="muted-text">Không có dữ liệu</span>;
+  try {
+    return <pre className="json-preview">{JSON.stringify(maskSensitive(JSON.parse(value)), null, 2)}</pre>;
+  } catch {
+    return <pre className="json-preview">{value}</pre>;
+  }
+}
+
+export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "green" | "blue" | "yellow" | "red" | "purple" | "neutral" }) {
+  return <span className={`badge ${tone}`}>{children}</span>;
+}
+
+export function ListControls({ search, pageNumber, pageSize, onChange, extra }: {
+  search: string;
+  pageNumber: number;
+  pageSize: number;
+  onChange: (next: { search: string; pageNumber: number; pageSize: number }) => void;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <div className="card list-controls">
+      <label><span>Tìm kiếm</span><input value={search} onChange={(event) => onChange({ search: event.target.value, pageNumber: 1, pageSize })} placeholder="Nhập từ khóa" /></label>
+      <label><span>Số dòng</span><select value={pageSize} onChange={(event) => onChange({ search, pageNumber: 1, pageSize: Number(event.target.value) })}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label>
+      {extra}
+    </div>
+  );
+}
+
+export function SearchFilterBar({ children }: { children: React.ReactNode }) {
+  return <div className="card filter-grid">{children}</div>;
+}
+
+export function Pagination({ pageNumber, totalPages = 1, onChange }: {
+  pageNumber: number;
+  totalPages?: number;
+  onChange: (page: number) => void;
+}) {
+  totalPages = Math.max(1, Math.floor(Number(totalPages) || 1));
+  pageNumber = Math.min(Math.max(1, pageNumber), totalPages);
+  if (totalPages <= 1) return null;
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (pageNumber <= 4) {
+        pages.push(1, 2, 3, 4, 5, '...', totalPages);
+      } else if (pageNumber >= totalPages - 3) {
+        pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+      } else {
+        pages.push(1, '...', pageNumber - 1, pageNumber, pageNumber + 1, '...', totalPages);
+      }
+    }
+    return pages;
+  };
+
+  return (
+    <div className="pagination" style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '16px', justifyContent: 'center' }}>
+      <button 
+        style={{ padding: '6px 12px', border: '1px solid #dce7e2', borderRadius: '4px', background: 'white', cursor: pageNumber === 1 ? 'not-allowed' : 'pointer', color: pageNumber === 1 ? '#aaa' : '#333' }}
+        disabled={pageNumber === 1} 
+        onClick={() => onChange(pageNumber - 1)}
+      >
+        &lt;
+      </button>
+      {getPageNumbers().map((p, i) => (
+        <button 
+          key={i} 
+          style={{ 
+            padding: '6px 12px', 
+            border: p === '...' ? 'none' : '1px solid #dce7e2', 
+            borderRadius: '4px', 
+            background: p === pageNumber ? '#0f5d4b' : 'white', 
+            color: p === pageNumber ? 'white' : '#333',
+            cursor: p === '...' ? 'default' : 'pointer',
+            fontWeight: p === pageNumber ? 'bold' : 'normal'
+          }}
+          disabled={p === '...'}
+          onClick={() => typeof p === 'number' && onChange(p)}
+        >
+          {p}
+        </button>
+      ))}
+      <button 
+        style={{ padding: '6px 12px', border: '1px solid #dce7e2', borderRadius: '4px', background: 'white', cursor: pageNumber === totalPages ? 'not-allowed' : 'pointer', color: pageNumber === totalPages ? '#aaa' : '#333' }}
+        disabled={pageNumber === totalPages} 
+        onClick={() => onChange(pageNumber + 1)}
+      >
+        &gt;
+      </button>
+    </div>
+  );
+}
+
+export function DataTable<T extends Record<string, unknown>>({ rows, columns, actions }: {
+  rows: T[];
+  columns: { key: keyof T | string; label: string; render?: (row: T) => React.ReactNode }[];
+  actions?: (row: T) => React.ReactNode;
+}) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead><tr>{columns.map((column) => <th key={String(column.key)}>{column.label}</th>)}{actions ? <th style={{ width: "auto", minWidth: 250 }}>Thao tác</th> : null}</tr></thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={String(row.id || row[columns[0].key] || index)}>
+              {columns.map((column) => <td key={String(column.key)}>{column.render ? column.render(row) : String(row[column.key] ?? "-")}</td>)}
+              {actions ? <td style={{ width: "auto", minWidth: 250, verticalAlign: "middle" }}>{actions(row)}</td> : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function useLoad<T>(loader: () => Promise<T>, deps: React.DependencyList = []) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      setData(await loader());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không tải được dữ liệu.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [loader]);
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { data, loading, error, reload };
+}
+
+export function useDebouncedValue<T>(value: T, delayMs = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+
+  return debounced;
+}
+
+export function SmartForm<T extends Record<string, unknown>>({ title, fields, initial, submitLabel = "Lưu", onSubmit }: {
+  title: string;
+  fields: { name: keyof T; label: string; type?: string; options?: SelectOption[]; required?: boolean; step?: string | number; colSpan?: number }[];
+  initial: Partial<T>;
+  submitLabel?: string;
+  onSubmit: (value: Partial<T>) => Promise<void>;
+}) {
+  const toast = useToast();
+  const [value, setValue] = useState<Partial<T>>(initial);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setValue(initial), [initial]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const missing = fields.find((field) => field.required && (value[field.name] === undefined || value[field.name] === null || value[field.name] === ""));
+    if (missing) {
+      toast(`Vui lòng nhập ${missing.label}.`, "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSubmit(value);
+      toast("Thao tác thành công.", "success");
+    } catch (err) {
+      const message = err instanceof ApiError ? [err.message, ...err.errors].filter(Boolean).join(" ") : "Thao tác thất bại.";
+      toast(message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="card form-grid" onSubmit={submit}>
+      {title ? <h2 style={{ gridColumn: "1 / -1", margin: "0 0 8px" }}>{title}</h2> : null}
+      {fields.map((field) => {
+        const fieldNameLower = String(field.name).toLowerCase();
+        const fieldLabelLower = field.label.toLowerCase();
+        const isTextArea = field.type === "textarea" || ["description", "note", "reason"].some(k => fieldNameLower.includes(k)) || ["mô tả", "ghi chú", "lý do"].some(k => fieldLabelLower.includes(k));
+        const isFullSpan = field.colSpan ? field.colSpan > 1 : isTextArea || ["name", "productid"].includes(fieldNameLower) || ["tên chương trình", "sản phẩm"].some(k => fieldLabelLower.includes(k));
+
+        return (
+          <label key={String(field.name)} style={isFullSpan ? { gridColumn: "1 / -1" } : undefined}>
+            <span>{field.label}</span>
+            {field.options ? (
+              <select value={String(value[field.name] ?? "")} required={field.required} onChange={(event) => setValue((current) => ({ ...current, [field.name]: event.target.value }))}>
+                <option value="">Chọn</option>
+                {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            ) : isTextArea ? (
+              <textarea rows={3} required={field.required} value={String(value[field.name] ?? "")} placeholder={`Nhập ${field.label.toLowerCase()}...`} onChange={(event) => setValue((current) => ({ ...current, [field.name]: event.target.value }))} />
+            ) : (
+              <input type={field.type || "text"} step={field.step} required={field.required} value={String(value[field.name] ?? "")} placeholder={`Nhập ${field.label.toLowerCase()}...`} onChange={(event) => {
+                const raw = event.target.value;
+                const next = field.type === "number" ? (raw === "" ? "" : Number(raw)) : field.type === "checkbox" ? event.currentTarget.checked : raw;
+                setValue((current) => ({ ...current, [field.name]: next }));
+              }} />
+            )}
+          </label>
+        );
+      })}
+      <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px", paddingTop: "14px", borderTop: fields.length > 2 ? "1px solid var(--line)" : "none" }}>
+        <button type="submit" className="primary-btn" style={{ minWidth: "130px" }} disabled={saving}>{saving ? "Đang lưu..." : submitLabel}</button>
+      </div>
+    </form>
+  );
+}
+
+export function useList<T>(source: T[] | { items?: T[]; data?: T[] } | null | undefined) {
+  return useMemo(() => unwrapList<T>(source), [source]);
+}
+
+export function SearchableSelect({
+  options,
+  value,
+  onChange,
+  placeholder = "Chọn...",
+  disabled = false
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find((o) => o.value === value);
+  const filteredOptions = options.filter((o) =>
+    o.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", width: "100%", minWidth: "260px" }}>
+      <div
+        onClick={() => !disabled && setOpen(!open)}
+        style={{
+          padding: "10px 14px",
+          border: "1px solid #dce7e2",
+          borderRadius: "8px",
+          background: disabled ? "#f5f5f5" : "#ffffff",
+          cursor: disabled ? "not-allowed" : "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          minHeight: "42px",
+          userSelect: "none",
+          color: selectedOption ? "#111" : "#888"
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <span style={{ marginLeft: "8px", fontSize: "12px", color: "#666" }}>{open ? "▲" : "▼"}</span>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            marginTop: "4px",
+            background: "#ffffff",
+            border: "1px solid #dce7e2",
+            borderRadius: "8px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+            zIndex: 1000,
+            overflow: "hidden"
+          }}
+        >
+          <div style={{ padding: "8px", borderBottom: "1px solid #eee", background: "#f8faf9" }}>
+            <input
+              type="text"
+              placeholder="Tìm kiếm..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                border: "1px solid #ccc",
+                borderRadius: "6px",
+                outline: "none",
+                fontSize: "14px"
+              }}
+            />
+          </div>
+          <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+            {filteredOptions.length === 0 ? (
+              <div style={{ padding: "12px", color: "#888", textAlign: "center", fontSize: "14px" }}>
+                Không tìm thấy kết quả
+              </div>
+            ) : (
+              filteredOptions.map((opt) => {
+                const isSelected = opt.value === value;
+                return (
+                  <div
+                    key={opt.value}
+                    onClick={() => {
+                      onChange(opt.value);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    style={{
+                      padding: "10px 14px",
+                      cursor: "pointer",
+                      background: isSelected ? "#e4f7ec" : "transparent",
+                      color: isSelected ? "#0f5d4b" : "#333",
+                      fontWeight: isSelected ? 600 : 400,
+                      borderBottom: "1px solid #f5f5f5",
+                      fontSize: "14px"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = "#f0f5f3";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    {opt.label}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

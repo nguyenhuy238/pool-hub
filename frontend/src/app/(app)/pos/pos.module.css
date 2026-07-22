@@ -1,0 +1,361 @@
+.posContainer {
+  height: calc(100vh - 124px); /* Adjust for AppShell topbar (76px) + padding (48px) */
+  width: 100%;
+  display: flex;
+  background-color: var(--surface, #f8fafc);
+  overflow: hidden;
+  color: var(--ink, #0f172a);
+  font-family: inherit;
+  border-radius: 12px;
+  border: 1px solid var(--line, #e2e8f0);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* Booking Queue Column */
+.queueColumn {
+  width: 250px;
+  height: 100%;
+  border-right: 1px solid var(--line, #e2e8f0);
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  background-color: white;
+}
+.headerTitle {
+  font-weight: 700;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.scrollArea {
+  padding: 1rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Booking Item */
+.bookingCard {
+  padding: 1rem;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.bookingNormal { background-color: white; }
+.bookingWarning { 
+  background-color: #fef9c3; /* light yellow */
+  border-color: #fde047;
+}
+.bookingLate { 
+  background-color: #fee2e2; /* light red */
+  border-color: #fca5a5;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+.timeWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--primary, #2563eb);
+}
+.timeText {
+  font-size: 1rem;
+}
+.tableBadge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  background-color: var(--surface, #f1f5f9);
+  color: var(--ink, #0f172a);
+}
+.customerWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.depositText {
+  font-size: 0.8rem;
+  color: var(--muted, #64748b);
+  margin-top: 0.25rem;
+}
+
+/* Table Map Column */
+.mapColumn {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface, #f8fafc);
+}
+.mapHeader {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  background-color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mapTitle {
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin: 0;
+}
+.legendList {
+  display: flex;
+  gap: 1rem;
+}
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.legendBox {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 4px;
+}
+.legendEmpty { background-color: white; border: 1px solid var(--line, #cbd5e1); }
+.legendActive { background-color: #22c55e; } /* Green */
+.legendReserved { background-color: #facc15; } /* Yellow */
+
+.gridArea {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+.tableGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+/* Table Card */
+.tableCard {
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 8.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  background-color: white;
+}
+.tableEmpty { }
+.tableReserved { 
+  border-color: #facc15; 
+  background-color: #fefce8;
+}
+.tableActive { 
+  border-color: #22c55e;
+  background-color: #f0fdf4;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tableActive:hover { border-color: #16a34a; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+.tableSelected {
+  border-width: 2px;
+  border-color: #16a34a;
+  background-color: #dcfce7;
+}
+
+.tableCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.tableName {
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin: 0;
+}
+.emptyBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background-color: var(--surface, #f1f5f9);
+  color: var(--muted, #64748b);
+}
+.reservedText {
+  text-align: center;
+  padding: 0.5rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #a16207;
+}
+
+.timerBadge {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #16a34a;
+}
+.tableCardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.billAmount {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #16a34a;
+}
+
+/* Drawer Column */
+.drawerColumn {
+  width: 320px;
+  height: 100%;
+  border-left: 1px solid var(--line, #e2e8f0);
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0px 10px rgba(0,0,0,0.02);
+  z-index: 10;
+}
+.emptyDrawer {
+  width: 320px;
+  height: 100%;
+  border-left: 1px solid var(--line, #e2e8f0);
+  background-color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+.emptyBox {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background-color: #e2e8f0;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+.emptyTitle {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+.emptyDesc {
+  font-size: 0.9rem;
+  color: var(--muted, #64748b);
+}
+
+.drawerHeader {
+  padding: 1rem;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: white;
+}
+.drawerHeaderTitle {
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin: 0;
+}
+.drawerTimer {
+  font-weight: 600;
+  color: #16a34a;
+  margin-top: 0.25rem;
+  display: inline-block;
+}
+.closeBtn {
+  padding: 0.5rem;
+  border-radius: 8px;
+  background-color: transparent;
+  border: none;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+}
+.closeBtn:hover {
+  background-color: #f1f5f9;
+  color: var(--ink, #0f172a);
+}
+
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.sectionTitle {
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  color: var(--muted, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.fbGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.billBox {
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  padding: 1rem;
+  background-color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.billRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.billLine {
+  border-top: 1px dashed var(--line, #cbd5e1);
+  margin: 0.25rem 0;
+}
+.billLineThick {
+  border-top: 1px solid var(--line, #cbd5e1);
+  margin: 0.25rem 0;
+}
+.textRed { color: #dc2626; }
+.billTotal {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.drawerFooter {
+  padding: 1rem;
+  border-top: 1px solid var(--line, #e2e8f0);
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

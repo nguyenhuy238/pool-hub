@@ -1,9 +1,13 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\PoolHub.Core\PoolHub.Core.csproj" />
     <ProjectReference Include="..\PoolHub.Infrastructure\PoolHub.Infrastructure.csproj" />
     <ProjectReference Include="..\PoolHub.Shared\PoolHub.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

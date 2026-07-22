@@ -16,5 +16,8 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasOne<VenueTable>().WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<TableType>().WithMany().HasForeignKey(x => x.TableTypeId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<User>().WithMany().HasForeignKey(x => x.ConfirmedByUserId).OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<User>().WithMany().HasForeignKey(x => x.ApprovedByUserId).OnDelete(DeleteBehavior.NoAction);
+        builder.Property(x => x.EstimatedAmount).HasPrecision(19, 4);
+        builder.Property(x => x.Source).HasMaxLength(32);
     }
 }

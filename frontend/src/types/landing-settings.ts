@@ -1,0 +1,21 @@
+export type {
+  AboutSettings,
+  BookingPolicySettings,
+  FooterSettings,
+  GallerySettings,
+  GeneralInfoSettings,
+  HeroSettings,
+  LandingPageSettings,
+  LegalSettings,
+  LinkType,
+  PricingHighlightSettings,
+  PromotionBannerSettings,
+  PublicPricingSummary,
+  QrCodeSettings,
+  ReviewSettings,
+  SeoSettings,
+  ServiceSettings,
+  SocialLinkSettings,
+  ThemeSettings,
+  UspSettings
+} from "@/lib/api/landingSettingsApi";

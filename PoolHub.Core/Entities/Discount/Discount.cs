@@ -13,4 +13,9 @@ public class Discount : BaseEntity
     public DateTime StartsAtUtc { get; set; }
     public DateTime? EndsAtUtc { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool IsVoucher { get; set; } = false;
+    public int? PointsRequired { get; set; }
+    public long? CustomerId { get; set; }
+    public int MaxUsage { get; set; } = 0;
+    public int UsageCount { get; set; } = 0;
 }

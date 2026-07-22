@@ -1,0 +1,34 @@
+namespace PoolHub.Core.DTOs.Session;
+
+public class ActiveSessionResponse
+{
+    public long SessionId { get; set; }
+    public string SessionCode { get; set; } = string.Empty;
+    public int Status { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public int DurationMinutes { get; set; }
+    public long? CustomerId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public long? BookingId { get; set; }
+    public ActiveSessionTableDto? CurrentTable { get; set; }
+    public List<ActiveSessionTableDto> ActiveAssignments { get; set; } = [];
+    public List<ReleasedSessionTableDto> ReleasedAssignments { get; set; } = [];
+    public int ActiveTableCount { get; set; }
+    public int ReleasedTableCount { get; set; }
+    public decimal EstimatedTimeSubtotal { get; set; }
+    public decimal OrderSubtotal { get; set; }
+    public decimal EstimatedGrandTotal { get; set; }
+}
+
+public class ActiveSessionTableDto
+{
+    public long AssignmentId { get; set; }
+    public long TableId { get; set; }
+    public string TableCode { get; set; } = string.Empty;
+    public string TableName { get; set; } = string.Empty;
+    public long ZoneId { get; set; }
+    public long FloorId { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public decimal HourlyRateSnapshot { get; set; }
+    public decimal EstimatedAmount { get; set; }
+}

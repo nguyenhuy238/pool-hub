@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using PoolHub.Shared;
 using PoolHub.Shared.Exceptions;
 
@@ -15,7 +14,14 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unhandled exception");
+            if (ex is AppException)
+                logger.LogWarning(ex, "Request failed with a handled application exception");
+            else
+                logger.LogError(ex, "Unhandled exception");
+
+            if (context.Response.HasStarted)
+                throw;
+
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -27,16 +33,21 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
             ValidationException => (HttpStatusCode.BadRequest, ex.Message),
             UnauthorizedException => (HttpStatusCode.Unauthorized, ex.Message),
             ForbiddenException => (HttpStatusCode.Forbidden, ex.Message),
+            LockedException => ((HttpStatusCode)423, ex.Message),
             NotFoundException => (HttpStatusCode.NotFound, ex.Message),
             ConflictException => (HttpStatusCode.Conflict, ex.Message),
             BusinessRuleException => (HttpStatusCode.BadRequest, ex.Message),
+            ServiceUnavailableException => (HttpStatusCode.ServiceUnavailable, ex.Message),
             _ => (HttpStatusCode.InternalServerError, "Internal server error")
         };
 
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)code;
-        var response = ApiResponse<object>.Fail(message);
+        var errors = ex is AppException appException && appException.Errors.Count > 0
+            ? appException.Errors
+            : [message];
+        var response = ApiResponse<object>.Fail(message, errors);
         response.TraceId = context.TraceIdentifier;
-        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+        await context.Response.WriteAsJsonAsync(response, context.RequestAborted);
     }
 }

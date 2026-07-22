@@ -1,0 +1,177 @@
+"use client";
+
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5056";
+
+export class ApiError extends Error {
+  status: number;
+  errors: string[];
+
+  constructor(message: string, status: number, errors: string[] = []) {
+    super(message);
+    this.status = status;
+    this.errors = errors;
+  }
+}
+
+type RequestOptions = RequestInit & {
+  skipAuth?: boolean;
+  retry?: boolean;
+  timeoutMs?: number;
+};
+
+let refreshPromise: Promise<boolean> | null = null;
+
+export const tokenStore = {
+  getAccess: () => null,
+  getRefresh: () => null,
+  set: (_accessToken?: string, _refreshToken?: string) => {},
+  clear: () => {}
+};
+
+function normalize<T>(payload: unknown): { data: T; message: string } {
+  if (payload && typeof payload === "object" && "success" in payload) {
+    const response = payload as { success?: boolean; data?: T; message?: string; errors?: string[] };
+    if (response.success === false) {
+      throw new ApiError(response.message || "Request failed", 400, response.errors || []);
+    }
+    return { data: response.data as T, message: response.message || "" };
+  }
+
+  return { data: payload as T, message: "" };
+}
+
+async function executeRefresh() {
+  const response = await fetch(`${API_BASE_URL}/api/auth/refresh-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include"
+  });
+
+  if (!response.ok) return false;
+  return true;
+}
+
+export async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = executeRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+function notifyAuthInvalid() {
+  tokenStore.clear();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("poolhub:auth-invalid"));
+  }
+}
+
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  const timeoutController = options.timeoutMs ? new AbortController() : null;
+  const timeoutId = timeoutController
+    ? window.setTimeout(() => timeoutController.abort(), options.timeoutMs)
+    : null;
+  const abortFromCaller = () => timeoutController?.abort();
+
+  if (options.signal) {
+    if (options.signal.aborted) abortFromCaller();
+    else options.signal.addEventListener("abort", abortFromCaller, { once: true });
+  }
+
+  headers.set("Accept", "application/json");
+
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      cache: options.cache ?? "no-store",
+      headers,
+      signal: timeoutController?.signal ?? options.signal,
+      credentials: "include"
+    });
+  } catch {
+    if (timeoutController?.signal.aborted && !options.signal?.aborted) {
+      throw new ApiError("Backend phản hồi quá lâu. Vui lòng thử lại.", 408);
+    }
+    if (options.signal?.aborted) {
+      throw new ApiError("Yêu cầu đã bị hủy.", 499);
+    }
+    throw new ApiError("Không kết nối được backend. Vui lòng kiểm tra API server.", 0);
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+    options.signal?.removeEventListener("abort", abortFromCaller);
+  }
+
+  if (response.status === 401 && options.retry !== false && !options.skipAuth) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return apiFetch<T>(path, { ...options, retry: false });
+    notifyAuthInvalid();
+  }
+
+  const text = await response.text();
+  let payload: { message?: string; errors?: string[] } | null = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!response.ok) {
+    const fallback: Record<number, string> = {
+      400: "Dữ liệu gửi lên không hợp lệ.",
+      401: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+      403: "Bạn không có quyền truy cập.",
+      404: "Endpoint chưa được cấu hình hoặc frontend/backend chưa đồng bộ.",
+      409: "Dữ liệu bị xung đột.",
+      500: "Backend gặp lỗi khi xử lý dữ liệu.",
+      503: "Không thể kết nối dịch vụ hoặc cơ sở dữ liệu."
+    };
+    const message = payload?.message || fallback[response.status] || `Request thất bại (${response.status}).`;
+    throw new ApiError(message, response.status, payload?.errors || []);
+  }
+
+  return normalize<T>(payload).data;
+}
+
+export function toQuery(params: Record<string, string | number | boolean | Array<string | number | boolean> | undefined | null>) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== null && item !== "") query.append(key, String(item));
+      });
+      return;
+    }
+    if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  });
+  const value = query.toString();
+  return value ? `?${value}` : "";
+}
+
+export function unwrapList<T>(value: T[] | { items?: T[]; data?: T[] } | undefined | null): T[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return value.items || value.data || [];
+}
+
+export function getTotalPages(value: unknown, fallbackPageSize = 20) {
+  if (!value || Array.isArray(value) || typeof value !== "object") return 1;
+
+  const page = value as { totalPages?: unknown; totalItems?: unknown; totalCount?: unknown; pageSize?: unknown };
+  const explicitTotalPages = Number(page.totalPages);
+  if (Number.isFinite(explicitTotalPages) && explicitTotalPages > 0) return explicitTotalPages;
+
+  const totalItems = Number(page.totalItems ?? page.totalCount);
+  const pageSize = Number(page.pageSize ?? fallbackPageSize);
+  if (!Number.isFinite(totalItems) || totalItems <= 0 || !Number.isFinite(pageSize) || pageSize <= 0) return 1;
+
+  return Math.max(1, Math.ceil(totalItems / pageSize));
+}

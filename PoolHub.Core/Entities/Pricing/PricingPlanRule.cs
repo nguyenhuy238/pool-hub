@@ -5,7 +5,7 @@ public class PricingPlanRule : BaseEntity
     public long PricingPlanRuleId { get; set; }
     public long PricingPlanId { get; set; }
     public long TableTypeId { get; set; }
-    public int DayOfWeek { get; set; }
+    public int DayType { get; set; }
     public TimeSpan StartTime { get; set; }
     public TimeSpan EndTime { get; set; }
     public decimal HourlyRate { get; set; }

@@ -9,4 +9,6 @@ public class Customer : BaseEntity
     public string? Email { get; set; }
     public string? Note { get; set; }
     public bool Status { get; set; } = true;
+    public int LoyaltyPoints { get; set; } = 0;
+    public int TotalPointsEarned { get; set; } = 0;
 }

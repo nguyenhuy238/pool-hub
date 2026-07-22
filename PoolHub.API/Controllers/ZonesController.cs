@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/zones")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager, Policy = PermissionConstants.VenueManage)]
 public class ZonesController(ICrudService s) : ControllerBase
 {
     [HttpGet] public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] PaginationRequest r, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await s.GetZonesAsync(r, ct)));

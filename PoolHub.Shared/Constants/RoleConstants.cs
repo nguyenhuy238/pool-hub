@@ -6,5 +6,8 @@ public static class RoleConstants
     public const string Manager = "Manager";
     public const string Staff = "Staff";
     public const string Cashier = "Cashier";
-    public static readonly string[] All = [Admin, Manager, Staff, Cashier];
+    public const string Customer = "Customer";
+    public const string Guest = "Guest";
+    public const string Operation = Admin + "," + Manager + "," + Staff + "," + Cashier;
+    public static readonly string[] All = [Admin, Manager, Staff, Cashier, Customer, Guest];
 }

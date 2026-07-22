@@ -9,5 +9,5 @@ public class UpdateUserRequest
 
     public string? PhoneNumber { get; set; }
     public string? AvatarUrl { get; set; }
-    public bool Status { get; set; }
+    public bool EmailConfirmed { get; set; }
 }

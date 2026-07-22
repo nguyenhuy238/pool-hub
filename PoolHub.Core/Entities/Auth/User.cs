@@ -10,7 +10,7 @@ public class User : BaseEntity
     public string? PhoneNumber { get; set; }
     public string? AvatarUrl { get; set; }
     public bool EmailConfirmed { get; set; }
-    public bool Status { get; set; } = true;
+    public Enums.UserStatus Status { get; set; } = Enums.UserStatus.Active;
     public DateTime? LastLoginAtUtc { get; set; }
     public byte[] RowVersion { get; set; } = [];
 }
