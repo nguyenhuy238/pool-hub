@@ -191,9 +191,10 @@ export default function BookingsPage() {
       )}
 
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
-      <DataTable
-        rows={rows as unknown as Record<string, unknown>[]}
-        columns={[
+      <div className="bookings-table">
+        <DataTable
+          rows={rows as unknown as Record<string, unknown>[]}
+          columns={[
           { key: "bookingCode", label: "Mã Booking" },
           { key: "customerName", label: "Khách hàng", render: (row) => (
             <div>
@@ -237,8 +238,8 @@ export default function BookingsPage() {
               </div>
             );
           } }
-        ]}
-        actions={(row) => {
+          ]}
+          actions={(row) => {
           const statusValue = Number(row.status);
           const hasSession = hasStartedSession(row);
           const isPending = statusValue === BOOKING_PENDING;
@@ -380,8 +381,9 @@ export default function BookingsPage() {
               ) : null}
             </div>
           );
-        }}
-      />
+          }}
+        />
+      </div>
       <Pagination
         pageNumber={params.pageNumber}
         totalPages={getTotalPages(data?.bookings, params.pageSize)}
