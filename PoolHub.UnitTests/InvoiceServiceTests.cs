@@ -71,16 +71,14 @@ public class InvoiceServiceTests
         var plan = new PricingPlan { PricingPlanId = 1, Name = "Default Plan", IsDefault = true, IsActive = true, StartsAtUtc = DateTime.UtcNow.AddDays(-10) };
         db.PricingPlans.Add(plan);
 
-        // Monday = 1. We will set DayOfWeek based on the day of started time.
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc); // 2026-06-08 is Monday
-        int dayOfWeek = (int)startedAt.DayOfWeek; // 1
 
         var rule = new PricingPlanRule
         {
             PricingPlanRuleId = 1,
             PricingPlanId = 1,
             TableTypeId = 1,
-            DayOfWeek = dayOfWeek,
+            DayType = 1,
             StartTime = new TimeSpan(0, 0, 0),
             EndTime = new TimeSpan(23, 59, 59),
             HourlyRate = 60000, // 60,000 VND/hour
@@ -148,14 +146,13 @@ public class InvoiceServiceTests
         db.PricingPlans.Add(plan);
 
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc); // Monday
-        int dayOfWeek = (int)startedAt.DayOfWeek;
 
         var rule = new PricingPlanRule
         {
             PricingPlanRuleId = 1,
             PricingPlanId = 1,
             TableTypeId = 1,
-            DayOfWeek = dayOfWeek,
+            DayType = 1,
             StartTime = new TimeSpan(0, 0, 0),
             EndTime = new TimeSpan(23, 59, 59),
             HourlyRate = 60000,
