@@ -375,7 +375,7 @@ public class SessionServiceTests
             PricingPlanRuleId = 1,
             PricingPlanId = 1,
             TableTypeId = 1,
-            DayOfWeek = (int)startedAt.DayOfWeek,
+            DayType = 1,
             StartTime = TimeSpan.Zero,
             EndTime = new TimeSpan(23, 59, 59),
             HourlyRate = hourlyRate,

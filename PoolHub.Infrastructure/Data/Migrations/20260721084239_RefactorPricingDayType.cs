@@ -21,16 +21,15 @@ namespace PoolHub.Infrastructure.Data.Migrations
                 table: "pricing_plan_rules",
                 newName: "IX_pricing_plan_rules_pricing_plan_id_table_type_id_day_type_start_time");
 
-            // Data Migration: Map DayOfWeek (0-6) to DayType (1: Weekday, 2: Weekend)
-            // First, delete duplicates so the upcoming UPDATE won't violate unique constraints.
-            // We keep only the first row for each logical group.
+            // Data Migration: Map DayOfWeek (0-6) to DayType (1: Weekday, 2: Weekend).
+            // Remove rows that will collide on the renamed unique index before updating values.
             migrationBuilder.Sql(@"
                 WITH CTE AS (
                     SELECT pricing_plan_rule_id,
                            FIRST_VALUE(pricing_plan_rule_id) OVER (
                                PARTITION BY pricing_plan_id, table_type_id, 
                                  CASE WHEN day_type IN (0, 6) THEN 2 ELSE 1 END, 
-                                 start_time, end_time
+                                 start_time
                                ORDER BY pricing_plan_rule_id
                            ) as kept_rule_id
                     FROM pricing_plan_rules
@@ -46,7 +45,7 @@ namespace PoolHub.Infrastructure.Data.Migrations
                            ROW_NUMBER() OVER (
                                PARTITION BY pricing_plan_id, table_type_id, 
                                  CASE WHEN day_type IN (0, 6) THEN 2 ELSE 1 END, 
-                                 start_time, end_time
+                                 start_time
                                ORDER BY pricing_plan_rule_id
                            ) as row_num
                     FROM pricing_plan_rules
@@ -54,8 +53,8 @@ namespace PoolHub.Infrastructure.Data.Migrations
                 DELETE FROM pricing_plan_rules WHERE pricing_plan_rule_id IN (SELECT pricing_plan_rule_id FROM CTE WHERE row_num > 1);
             ");
 
-            migrationBuilder.Sql("UPDATE pricing_plan_rules SET day_type = 2 WHERE day_type IN (0, 6);");
-            migrationBuilder.Sql("UPDATE pricing_plan_rules SET day_type = 1 WHERE day_type IN (1, 2, 3, 4, 5);");
+            migrationBuilder.Sql("UPDATE pricing_plan_rules SET day_type = CASE WHEN day_type IN (0, 6) THEN 102 ELSE 101 END;");
+            migrationBuilder.Sql("UPDATE pricing_plan_rules SET day_type = CASE WHEN day_type = 102 THEN 2 ELSE 1 END;");
 
             migrationBuilder.CreateTable(
                 name: "pricing_special_dates",
