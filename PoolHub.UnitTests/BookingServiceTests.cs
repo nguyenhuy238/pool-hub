@@ -319,7 +319,7 @@ public class BookingServiceTests
         db.Customers.Add(new Customer { CustomerId = 1, FullName = "Customer", PhoneNumber = "0900000001", Status = true });
         db.TableTypes.Add(new TableType { TableTypeId = 1, Name = "Standard" });
         db.PricingPlans.Add(new PricingPlan { PricingPlanId = 1, Name = "Default", IsActive = true, IsDefault = true, StartsAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) });
-        db.PricingPlanRules.Add(new PricingPlanRule { PricingPlanRuleId = 1, PricingPlanId = 1, TableTypeId = 1, DayOfWeek = 6, StartTime = TimeSpan.Zero, EndTime = TimeSpan.FromHours(23), HourlyRate = 100000, MinimumMinutes = 30, BillingBlockMinutes = 15, IsActive = true });
+        db.PricingPlanRules.Add(new PricingPlanRule { PricingPlanRuleId = 1, PricingPlanId = 1, TableTypeId = 1, DayType = 1, StartTime = TimeSpan.Zero, EndTime = TimeSpan.FromHours(23), HourlyRate = 100000, MinimumMinutes = 30, BillingBlockMinutes = 15, IsActive = true });
         db.PaymentMethods.Add(new PaymentMethod
         {
             PaymentMethodId = 1,

@@ -696,7 +696,8 @@ public class InvoiceService(
         var checksumKey = config?["PayOSSettings:ChecksumKey"];
         var baseUrl = config?["EmailSettings:FrontendBaseUrl"] ?? "http://localhost:3000";
 
-        var isPayOsConfigured = !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(checksumKey) && httpClientFactory != null;
+        var payOsClientFactory = httpClientFactory;
+        var isPayOsConfigured = !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(checksumKey) && payOsClientFactory != null;
 
         if (qrConfig == null && !isPayOsConfigured)
         {
@@ -728,11 +729,11 @@ public class InvoiceService(
                     }
                 }
 
-                var client = httpClientFactory.CreateClient();
+                var client = payOsClientFactory!.CreateClient();
 
                 // 1. Thử tạo link thanh toán trên PayOS
                 string rawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
-                using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
+                using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey!));
                 var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawData));
                 var signature = BitConverter.ToString(hash).Replace("-", "").ToLower();
 
@@ -831,7 +832,7 @@ public class InvoiceService(
                         {
                             long newOrderCode = long.Parse($"{DateTime.UtcNow:yyMMddHHmmss}{Random.Shared.Next(10, 99)}");
                             string newRawData = $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={newOrderCode}&returnUrl={returnUrl}";
-                            using var newHmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey));
+                            using var newHmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(checksumKey!));
                             var newHash = newHmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(newRawData));
                             var newSignature = BitConverter.ToString(newHash).Replace("-", "").ToLower();
 
