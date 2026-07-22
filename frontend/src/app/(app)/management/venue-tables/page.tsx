@@ -106,6 +106,7 @@ export default function VenueTablesPage() {
 
 export function TableFormModal({ table, zones, tableTypes, onClose, onSaved }: { table: VenueTable | null; zones: Zone[]; tableTypes: TableType[]; onClose: () => void; onSaved: () => Promise<void> }) {
   const toast = useToast();
+  const defaultTableType = tableTypes[0];
   const [form, setForm] = useState<TableForm>(table ? {
     zoneId: table.zoneId,
     tableTypeId: table.tableTypeId,
@@ -113,9 +114,23 @@ export function TableFormModal({ table, zones, tableTypes, onClose, onSaved }: {
     tableName: table.tableName,
     capacity: table.capacity,
     operationalStatus: table.operationalStatus
-  } : { ...emptyForm, zoneId: zones[0]?.zoneId ?? 0, tableTypeId: tableTypes[0]?.tableTypeId ?? 0 });
+  } : {
+    ...emptyForm,
+    zoneId: zones[0]?.zoneId ?? 0,
+    tableTypeId: defaultTableType?.tableTypeId ?? 0,
+    capacity: defaultTableType?.defaultCapacity ?? emptyForm.capacity
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  function selectTableType(tableTypeId: number) {
+    const selectedTableType = tableTypes.find((item) => item.tableTypeId === tableTypeId);
+    setForm((current) => ({
+      ...current,
+      tableTypeId,
+      capacity: selectedTableType?.defaultCapacity ?? current.capacity
+    }));
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -150,10 +165,10 @@ export function TableFormModal({ table, zones, tableTypes, onClose, onSaved }: {
     <form className="form-grid modal-form" onSubmit={submit}>
       {error ? <div className="inline-alert error full-field">{error}</div> : null}
       <label><span>Khu vực</span><select value={form.zoneId || ""} onChange={(event) => setForm({ ...form, zoneId: Number(event.target.value) })}><option value="">Chọn khu vực</option>{zones.map((zone) => <option key={zone.zoneId} value={zone.zoneId}>{zone.name}</option>)}</select></label>
-      <label><span>Loại bàn</span><select value={form.tableTypeId || ""} onChange={(event) => setForm({ ...form, tableTypeId: Number(event.target.value) })}><option value="">Chọn loại bàn</option>{tableTypes.map((type) => <option key={type.tableTypeId} value={type.tableTypeId}>{type.name}</option>)}</select></label>
-      <label><span>Mã bàn</span><input value={form.tableCode} onChange={(event) => setForm({ ...form, tableCode: event.target.value })} /></label>
+      <label><span>Mã loại bàn</span><select value={form.tableTypeId || ""} onChange={(event) => selectTableType(Number(event.target.value))}><option value="">Chọn mã loại bàn</option>{tableTypes.map((type) => <option key={type.tableTypeId} value={type.tableTypeId}>{type.code ? `${type.code} — ${type.name}` : type.name}</option>)}</select></label>
+      <label><span>Mã bàn mới</span><input value={form.tableCode} onChange={(event) => setForm({ ...form, tableCode: event.target.value })} /></label>
       <label><span>Tên bàn</span><input value={form.tableName} onChange={(event) => setForm({ ...form, tableName: event.target.value })} /></label>
-      <label><span>Sức chứa</span><input type="number" min={1} value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} /></label>
+      <label><span>Sức chứa</span><input type="number" min={1} value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} /><small className="field-help">Tự động lấy theo mã loại bàn đã chọn.</small></label>
       <label><span>Trạng thái</span><select value={form.operationalStatus} onChange={(event) => setForm({ ...form, operationalStatus: Number(event.target.value) })}>{STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>
       <div className="modal-actions full-field"><button type="button" className="ghost-btn" onClick={onClose}>Hủy</button><button className="primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu"}</button></div>
     </form>
