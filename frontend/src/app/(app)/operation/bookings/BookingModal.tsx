@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
 import { MultiTableSelector, SelectedTablesSummary } from "@/components/booking/MultiTableSelector";
 import { normalizeTableIds } from "@/lib/bookingTables";
+import { getGuestCapacityError, getSelectedTablesCapacity } from "@/lib/bookingCapacity";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
 import "./booking-modal.css";
 
@@ -174,6 +175,13 @@ export function BookingModal({
   };
 
   const selectedTables = useMemo(() => selectedTableIds.map((id) => tables.find(t => t.tableId === id)).filter(Boolean) as VenueTable[], [tables, selectedTableIds]);
+  const maximumGuestCapacity = useMemo(
+    () => getSelectedTablesCapacity(tables, selectedTableIds),
+    [tables, selectedTableIds]
+  );
+  const guestCapacityError = selectedTableIds.length
+    ? getGuestCapacityError(Number(numberOfGuests), maximumGuestCapacity)
+    : null;
   const selectedTable = selectedTables[0];
   const selectedStartSlot = timeSlots[selectedSlotIndexes[0]];
   const selectedEndSlot = timeSlots[selectedSlotIndexes[1]];
@@ -267,6 +275,11 @@ export function BookingModal({
       toast("Vui lòng chọn ít nhất một bàn.", "error");
       return;
     }
+    const capacityError = getGuestCapacityError(Number(numberOfGuests), maximumGuestCapacity);
+    if (capacityError) {
+      toast(capacityError, "error");
+      return;
+    }
     const startSlot = timeSlots[selectedSlotIndexes[0]];
     const endSlot = timeSlots[selectedSlotIndexes[1]];
     const validation = validateSlotRange(startSlot, endSlot, overnightEnabled);
@@ -292,7 +305,7 @@ export function BookingModal({
         customerName,
         phoneNumber,
         email: email || undefined,
-        numberOfGuests: Number(numberOfGuests) || 2,
+        numberOfGuests: Number(numberOfGuests),
         tableId: normalizedTableIds[0],
         tableIds: normalizedTableIds,
         tableTypeId: selectedTable?.tableTypeId,
@@ -334,7 +347,17 @@ export function BookingModal({
             </label>
             <label>
               <span>Số lượng khách</span>
-              <input type="number" value={numberOfGuests} onChange={e => setNumberOfGuests(e.target.value)} min="1" />
+              <input
+                type="number"
+                value={numberOfGuests}
+                onChange={e => setNumberOfGuests(e.target.value)}
+                min="1"
+                aria-label="Số lượng khách"
+                aria-invalid={Boolean(guestCapacityError)}
+                aria-describedby={guestCapacityError ? "booking-guest-capacity booking-guest-capacity-error" : "booking-guest-capacity"}
+              />
+              {selectedTableIds.length ? <small id="booking-guest-capacity" className="field-help">Sức chứa tối đa: {maximumGuestCapacity} khách.</small> : null}
+              {guestCapacityError ? <small id="booking-guest-capacity-error" className="field-error">{guestCapacityError}</small> : null}
             </label>
             <hr style={{borderTop: '1px solid var(--line)', borderBottom: 'none', margin: '8px 0'}} />
             <label>

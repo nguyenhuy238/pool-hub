@@ -15,6 +15,49 @@ namespace PoolHub.UnitTests;
 public class InvoiceServiceTests
 {
     [Fact]
+    public async Task GetInvoiceDetailAsync_WhenInvoiceHasCustomer_ReturnsCustomerInformation()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        db.Customers.Add(new Customer { CustomerId = 1, FullName = "Nguyễn Văn An", PhoneNumber = "0987654321" });
+        db.Invoices.Add(new Invoice { InvoiceId = 1, SessionId = 1, CustomerId = 1, InvoiceCode = "INV1", PaymentStatus = InvoicePaymentStatuses.Unpaid, Status = 1 });
+        await db.SaveChangesAsync();
+
+        var service = new InvoiceService(db);
+        var result = await service.GetInvoiceDetailAsync(1, CancellationToken.None);
+
+        Assert.Equal("Nguyễn Văn An", result.CustomerName);
+        Assert.Equal("0987654321", result.CustomerPhone);
+    }
+
+    [Fact]
+    public async Task UpdateInvoiceCustomerAsync_WhenNameIsEdited_UpdatesAndReturnsCustomerInformation()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        db.Customers.Add(new Customer { CustomerId = 1, FullName = "Tên cũ", PhoneNumber = "0987654321" });
+        db.Invoices.Add(new Invoice { InvoiceId = 1, SessionId = 1, CustomerId = 1, InvoiceCode = "INV1", PaymentStatus = InvoicePaymentStatuses.Unpaid, Status = 1 });
+        await db.SaveChangesAsync();
+
+        var service = new InvoiceService(db);
+        var result = await service.UpdateInvoiceCustomerAsync(1, new UpdateInvoiceCustomerRequest
+        {
+            PhoneNumber = "0987654321",
+            FullName = "Nguyễn Văn An"
+        }, 99, CancellationToken.None);
+
+        Assert.Equal("Nguyễn Văn An", result.CustomerName);
+        Assert.Equal("0987654321", result.CustomerPhone);
+        Assert.Equal("Nguyễn Văn An", (await db.Customers.FindAsync([1L]))!.FullName);
+    }
+
+    [Fact]
     public async Task GenerateFromSessionAsync_CalculatesTimeFeeCorrectly_MinimumMinutesApplied()
     {
         // Arrange

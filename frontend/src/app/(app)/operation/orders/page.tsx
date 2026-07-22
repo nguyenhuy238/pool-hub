@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { orderApi, productApi, sessionApi } from "@/lib/api/endpoints";
 import { dateTime, label, money, sessionStatus } from "@/lib/status";
-import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, SearchableSelect, StateBlock, useList, useLoad } from "@/components/ui";
+import { Badge, ConfirmDialog, Modal, PageHeader, SearchableSelect, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Order, OrderItem, Product, Session } from "@/types";
 
@@ -57,7 +57,7 @@ export default function OrdersPage() {
   const selectedSummary = summary || data?.summary;
   const isSessionOpen = Number(selectedSession?.status) === SESSION_OPEN;
   const canEditOrder = Boolean(sessionId && selectedSession && isSessionOpen);
-  const currentOrder = selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : orders[0] ?? null;
+  const currentOrder = (selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : null) ?? orders[0] ?? null;
   const currentTable = (selectedSession?.assignments || []).find((assignment) => !assignment.endedAtUtc) || selectedSession?.assignments?.at?.(-1);
 
   useEffect(() => {
@@ -205,7 +205,7 @@ export default function OrdersPage() {
         title="Order POS"
         description="Tạo đơn hàng theo phiên chơi và thêm sản phẩm."
         action={
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", width: "760px", maxWidth: "100%" }}>
+          <div className="orders-session-picker">
             {sessionId ? <button className="ghost-btn" type="button" onClick={() => router.push(sessionReturnPath())}>Quay lại phiên</button> : null}
             <SearchableSelect
               options={sessionOptions}
@@ -235,7 +235,7 @@ export default function OrdersPage() {
           <div className="inline-alert error">Không tải được thông tin phiên. Vui lòng chọn phiên khác hoặc quay lại danh sách phiên.</div>
         </section>
       ) : null}
-      <div className="section-grid">
+      <div className="section-grid orders-layout">
         <div className="card">
           <h2>Sản phẩm</h2>
           <div className="floor-grid">
@@ -254,8 +254,8 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        <div className="card">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+        <div className="card orders-card">
+          <div className="orders-card-head">
             <div>
               <h2>Đơn hàng</h2>
               <div style={{ color: "#555", marginTop: 4 }}>
@@ -281,75 +281,103 @@ export default function OrdersPage() {
             </button>
           </div>
 
-          <DataTable
-            rows={orders as unknown as Record<string, unknown>[]}
-            columns={[
-              { key: "orderCode", label: "Đơn hàng" },
-              { key: "status", label: "Trạng thái", render: (row) => statusText(Number(row.status)) },
-              { key: "subtotalAmount", label: "Tổng", render: (row) => money(Number(row.subtotalAmount || 0)) }
-            ]}
-            actions={(row) => (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="ghost-btn" type="button" onClick={() => setSelectedOrderId(Number(row.orderId))}>Chọn</button>
-                <button className="danger-btn" type="button" disabled={!canEditOrder} onClick={() => setCancellingOrder(row as unknown as Order)}>Hủy</button>
-              </div>
-            )}
-          />
+          <div className="order-list" aria-label="Danh sách đơn hàng">
+            {orders.length ? orders.map((order) => {
+              const selected = currentOrder?.orderId === order.orderId;
+              return (
+                <article className={`order-list-item${selected ? " is-selected" : ""}`} key={order.orderId}>
+                  <button
+                    className="order-list-select"
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setSelectedOrderId(order.orderId)}
+                  >
+                    <span className="order-list-code">
+                      <strong>{order.orderCode || `Đơn #${order.orderId}`}</strong>
+                      {selected ? <span className="badge blue">Đang chọn</span> : null}
+                    </span>
+                    <span className="order-list-meta">
+                      <span>
+                        <small>Trạng thái</small>
+                        <strong>{statusText(Number(order.status))}</strong>
+                      </span>
+                      <span>
+                        <small>Tổng tiền</small>
+                        <strong>{money(Number(order.subtotalAmount || 0))}</strong>
+                      </span>
+                    </span>
+                  </button>
+                  <div className="order-list-actions">
+                    <button
+                      className={selected ? "primary-btn" : "ghost-btn"}
+                      type="button"
+                      onClick={() => setSelectedOrderId(order.orderId)}
+                    >
+                      {selected ? "Đang chọn" : "Chọn"}
+                    </button>
+                    <button className="danger-btn" type="button" disabled={!canEditOrder} onClick={() => setCancellingOrder(order)}>Hủy</button>
+                  </div>
+                </article>
+              );
+            }) : <p className="order-list-empty">Chưa có đơn hàng trong phiên này.</p>}
+          </div>
 
           {currentOrder ? (
-            <section style={{ marginTop: 24 }}>
-              <h3>Chi tiết đơn hàng</h3>
+            <section className="order-detail-section">
+              <div className="order-detail-heading">
+                <div>
+                  <h3>Chi tiết đơn hàng</h3>
+                  <p>{currentOrder.orderCode || `Đơn #${currentOrder.orderId}`}</p>
+                </div>
+                <strong>{money(Number(currentOrder.subtotalAmount || 0))}</strong>
+              </div>
               {currentOrder.items?.length ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Sản phẩm</th>
-                        <th>Đơn giá</th>
-                        <th>Số lượng</th>
-                        <th>Thành tiền</th>
-                        <th>Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {currentOrder.items.map((item) => {
-                        const quantity = itemQuantities[item.orderItemId] ?? item.quantity;
-                        return (
-                          <tr key={item.orderItemId}>
-                            <td>{item.productNameSnapshot}</td>
-                            <td>{money(item.unitPriceSnapshot ?? 0)}</td>
-                            <td>
-                              <input
-                                type="number"
-                                min={1}
-                                value={quantity}
-                                disabled={!canEditOrder}
-                                onChange={(event) => setItemQuantities((current) => ({
-                                  ...current,
-                                  [item.orderItemId]: Number(event.target.value)
-                                }))}
-                                style={{ width: 80 }}
-                              />
-                            </td>
-                            <td>{money(item.lineTotalAmount ?? 0)}</td>
-                            <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button
-                                className="ghost-btn"
-                                type="button"
-                                disabled={!canEditOrder}
-                                onClick={() => updateItem(item, quantity)}
-                              >
-                                Cập nhật
-                              </button>
-                              <button className="danger-btn" type="button" disabled={!canEditOrder} onClick={() => setRemovingItem(item)}>
-                                Xóa
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="order-detail-list">
+                  {currentOrder.items.map((item) => {
+                    const quantity = itemQuantities[item.orderItemId] ?? item.quantity;
+                    return (
+                      <article className="order-detail-item" key={item.orderItemId}>
+                        <div className="order-detail-cell order-detail-product">
+                          <small>Sản phẩm</small>
+                          <strong>{item.productNameSnapshot}</strong>
+                        </div>
+                        <div className="order-detail-cell">
+                          <small>Đơn giá</small>
+                          <span>{money(item.unitPriceSnapshot ?? 0)}</span>
+                        </div>
+                        <label className="order-detail-quantity">
+                          <span>Số lượng</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={quantity}
+                            disabled={!canEditOrder}
+                            onChange={(event) => setItemQuantities((current) => ({
+                              ...current,
+                              [item.orderItemId]: Number(event.target.value)
+                            }))}
+                          />
+                        </label>
+                        <div className="order-detail-cell">
+                          <small>Thành tiền</small>
+                          <strong>{money(item.lineTotalAmount ?? 0)}</strong>
+                        </div>
+                        <div className="order-detail-actions">
+                          <button
+                            className="ghost-btn"
+                            type="button"
+                            disabled={!canEditOrder}
+                            onClick={() => updateItem(item, quantity)}
+                          >
+                            Cập nhật
+                          </button>
+                          <button className="danger-btn" type="button" disabled={!canEditOrder} onClick={() => setRemovingItem(item)}>
+                            Xóa
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <p>Chưa có sản phẩm trong order.</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { bookingApi, venueApi } from "@/lib/api/endpoints";
 import { getTotalPages } from "@/lib/api/client";
@@ -9,6 +9,7 @@ import { dateTime, label, bookingStatus, depositStatus, money } from "@/lib/stat
 import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { compactBookingTablesLabel, getBookingTables, normalizeTableIds } from "@/lib/bookingTables";
+import { getGuestCapacityError, getSelectedTablesCapacity } from "@/lib/bookingCapacity";
 import type { Booking } from "@/types";
 import { BookingModal } from "./BookingModal";
 
@@ -28,7 +29,7 @@ const DEPOSIT_APPLIED_TO_INVOICE = 4;
 const DEPOSIT_FORFEITED = 7;
 const NO_SHOW_GRACE_MINUTES = 15;
 
-type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number };
+type TableOption = { tableId: number; tableName?: string; tableCode?: string; tableTypeId?: number; capacity: number };
 type TableTypeOption = { tableTypeId: number; name?: string };
 
 function hasStartedSession(row: Record<string, unknown>) {
@@ -191,9 +192,10 @@ export default function BookingsPage() {
       )}
 
       <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
-      <DataTable
-        rows={rows as unknown as Record<string, unknown>[]}
-        columns={[
+      <div className="bookings-table">
+        <DataTable
+          rows={rows as unknown as Record<string, unknown>[]}
+          columns={[
           { key: "bookingCode", label: "Mã Booking" },
           { key: "customerName", label: "Khách hàng", render: (row) => (
             <div>
@@ -237,8 +239,8 @@ export default function BookingsPage() {
               </div>
             );
           } }
-        ]}
-        actions={(row) => {
+          ]}
+          actions={(row) => {
           const statusValue = Number(row.status);
           const hasSession = hasStartedSession(row);
           const isPending = statusValue === BOOKING_PENDING;
@@ -380,8 +382,9 @@ export default function BookingsPage() {
               ) : null}
             </div>
           );
-        }}
-      />
+          }}
+        />
+      </div>
       <Pagination
         pageNumber={params.pageNumber}
         totalPages={getTotalPages(data?.bookings, params.pageSize)}
@@ -447,6 +450,13 @@ function EditBookingModal({
   const [numberOfGuests, setNumberOfGuests] = useState(String(booking.numberOfGuests || 1));
   const [note, setNote] = useState(booking.note || "");
   const [saving, setSaving] = useState(false);
+  const maximumGuestCapacity = useMemo(
+    () => getSelectedTablesCapacity(tables, selectedTableIds),
+    [tables, selectedTableIds]
+  );
+  const guestCapacityError = selectedTableIds.length
+    ? getGuestCapacityError(Number(numberOfGuests), maximumGuestCapacity)
+    : null;
 
   async function save() {
     const startUtc = startTime ? new Date(vietnamDatetimeLocalToUtcIso(startTime)) : null;
@@ -463,12 +473,13 @@ function EditBookingModal({
       toast("Giờ kết thúc phải ở tương lai.", "error");
       return;
     }
-    if ((Number(numberOfGuests) || 0) <= 0) {
-      toast("Số lượng khách phải lớn hơn 0.", "error");
-      return;
-    }
     if (!selectedTableIds.length) {
       toast("Vui lòng chọn ít nhất một bàn.", "error");
+      return;
+    }
+    const capacityError = getGuestCapacityError(Number(numberOfGuests), maximumGuestCapacity);
+    if (capacityError) {
+      toast(capacityError, "error");
       return;
     }
 
@@ -554,13 +565,14 @@ function EditBookingModal({
                 const tableId = Number(table.tableId);
                 const checked = selectedTableIds.includes(tableId);
                 return (
-                  <label key={tableId} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px", background: checked ? "#eff6ff" : "#ffffff" }}>
+                  <label key={tableId} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px", background: checked ? "#eff6ff" : "#ffffff", textAlign: "left" }}>
                     <input
                       type="checkbox"
                       checked={checked}
+                      style={{ width: 16, height: 16, margin: 0, flex: "0 0 auto" }}
                       onChange={(event) => setSelectedTableIds((current) => event.target.checked ? normalizeTableIds([...current, tableId]) : current.filter((id) => id !== tableId))}
                     />
-                    <span>{table.tableName || table.tableCode || table.tableId}</span>
+                    <span style={{ flex: 1, textAlign: "left" }}>{table.tableName || table.tableCode || table.tableId}</span>
                   </label>
                 );
               })}
@@ -572,7 +584,20 @@ function EditBookingModal({
           </select></BookingEditField>
           <BookingEditField label="Bắt đầu"><input style={bookingInputStyle} type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></BookingEditField>
           <BookingEditField label="Kết thúc"><input style={bookingInputStyle} type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></BookingEditField>
-          <BookingEditField label="Số lượng khách"><input style={bookingInputStyle} type="number" min="1" value={numberOfGuests} onChange={(e) => setNumberOfGuests(e.target.value)} /></BookingEditField>
+          <BookingEditField label="Số lượng khách">
+            <input
+              style={bookingInputStyle}
+              type="number"
+              min="1"
+              value={numberOfGuests}
+              onChange={(e) => setNumberOfGuests(e.target.value)}
+              aria-label="Số lượng khách"
+              aria-invalid={Boolean(guestCapacityError)}
+              aria-describedby={guestCapacityError ? "edit-booking-guest-capacity edit-booking-guest-capacity-error" : "edit-booking-guest-capacity"}
+            />
+            <small id="edit-booking-guest-capacity" className="field-help">Sức chứa tối đa: {maximumGuestCapacity} khách.</small>
+            {guestCapacityError ? <small id="edit-booking-guest-capacity-error" className="field-error">{guestCapacityError}</small> : null}
+          </BookingEditField>
           <BookingEditField label="Ghi chú" full><textarea style={{ ...bookingInputStyle, minHeight: 92, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} rows={3} /></BookingEditField>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
@@ -586,6 +611,7 @@ function EditBookingModal({
 
 const bookingInputStyle: CSSProperties = {
   width: "100%",
+  height: 42,
   minHeight: 42,
   border: "1px solid #cbd5e1",
   borderRadius: 8,
@@ -597,7 +623,7 @@ const bookingInputStyle: CSSProperties = {
 
 function BookingEditField({ label, full, children }: { label: string; full?: boolean; children: ReactNode }) {
   return (
-    <label style={{ display: "grid", gap: 6, gridColumn: full ? "1 / -1" : undefined }}>
+    <label style={{ display: "grid", alignSelf: "start", alignContent: "start", gap: 6, gridColumn: full ? "1 / -1" : undefined }}>
       <span style={{ color: "#475569", fontSize: 13, fontWeight: 700 }}>{label}</span>
       {children}
     </label>
