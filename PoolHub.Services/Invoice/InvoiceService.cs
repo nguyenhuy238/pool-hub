@@ -409,12 +409,22 @@ public class InvoiceService(
                                   Note = p.Note
                               }).ToListAsync(ct);
 
+        var customer = invoice.CustomerId.HasValue
+            ? await db.Customers
+                .AsNoTracking()
+                .Where(x => x.CustomerId == invoice.CustomerId.Value)
+                .Select(x => new { x.FullName, x.PhoneNumber })
+                .FirstOrDefaultAsync(ct)
+            : null;
+
         return new InvoiceDetailDto
         {
             InvoiceId = invoice.InvoiceId,
             InvoiceCode = invoice.InvoiceCode,
             SessionId = invoice.SessionId,
             CustomerId = invoice.CustomerId,
+            CustomerName = customer?.FullName,
+            CustomerPhone = customer?.PhoneNumber,
             TimeSubtotalAmount = invoice.TimeSubtotalAmount,
             ProductSubtotalAmount = invoice.ProductSubtotalAmount,
             SubtotalAmount = invoice.SubtotalAmount,
@@ -1201,7 +1211,17 @@ public class InvoiceService(
             }
         }
 
-        if (invoice.CustomerId != customer?.CustomerId)
+        var requestedName = request.FullName?.Trim();
+        var customerNameChanged = customer != null
+            && !string.IsNullOrWhiteSpace(requestedName)
+            && !string.Equals(customer.FullName, requestedName, StringComparison.Ordinal);
+        if (customerNameChanged)
+        {
+            customer!.FullName = requestedName!;
+        }
+
+        var invoiceCustomerChanged = invoice.CustomerId != customer?.CustomerId;
+        if (invoiceCustomerChanged)
         {
             invoice.CustomerId = customer?.CustomerId;
             if (invoice.SessionId > 0)
@@ -1221,7 +1241,10 @@ public class InvoiceService(
                     invoice.GrandTotalAmount = Math.Max(0, invoice.SubtotalAmount - invoice.DiscountAmount + invoice.TaxAmount);
                 }
             }
+        }
 
+        if (invoiceCustomerChanged || customerNameChanged)
+        {
             await db.SaveChangesAsync(ct);
         }
 

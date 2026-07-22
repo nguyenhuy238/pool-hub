@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { invoiceApi, sessionApi, productApi, discountApi } from "@/lib/api/endpoints";
+import { customerApi, invoiceApi, sessionApi, productApi, discountApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
 import { customerReviewsApi } from "@/lib/api/customerReviewsApi";
 import { money, dateTime } from "@/lib/status";
@@ -75,10 +75,23 @@ export default function InvoicesPage() {
 
   const loadDetail = useCallback(async (id: number) => {
     const detail = await invoiceApi.detail(id);
-    setInvoice(detail);
+    let customerPhone = detail.customerPhone || "";
+    let customerName = detail.customerName || "";
+
+    if (detail.customerId && (!customerPhone || !customerName)) {
+      try {
+        const customer = await customerApi.detail(detail.customerId);
+        customerPhone ||= customer.phoneNumber || "";
+        customerName ||= customer.fullName || "";
+      } catch {
+        // Vẫn hiển thị chi tiết hóa đơn nếu không tải được hồ sơ khách hàng.
+      }
+    }
+
+    setInvoice({ ...detail, customerPhone, customerName });
     setReviewInvitation(null);
-    setLoyaltyPhone("");
-    setLoyaltyName("");
+    setLoyaltyPhone(customerPhone);
+    setLoyaltyName(customerName);
     setQrExpiresAt(null);
   }, []);
 
@@ -354,7 +367,7 @@ export default function InvoicesPage() {
         setCreatingInvoice(true);
         try {
           const created = await invoiceApi.generate(Number(selectedSessionId));
-          setInvoice(await invoiceApi.detail(created.invoiceId));
+          await loadDetail(created.invoiceId);
           reload();
           toast("Thao tác thành công.", "success");
         } catch (err) {
@@ -582,7 +595,7 @@ export default function InvoicesPage() {
                   />
                 </label>
                 <label style={{ flex: '1 1 180px' }}>
-                  <span style={{ fontSize: '12px', color: '#15803d', display: 'block', marginBottom: '4px' }}>Tên khách (nếu tạo mới)</span>
+                  <span style={{ fontSize: '12px', color: '#15803d', display: 'block', marginBottom: '4px' }}>Tên khách hàng</span>
                   <input
                     type="text"
                     placeholder="Tên khách hàng..."
@@ -602,7 +615,9 @@ export default function InvoicesPage() {
                     try {
                       const updated = await invoiceApi.updateCustomer(invoice.invoiceId, { phoneNumber: loyaltyPhone.trim(), fullName: loyaltyName.trim() || undefined });
                       setInvoice(updated);
-                      toast("Đã gắn/cập nhật thông tin SĐT cho hóa đơn.", "success");
+                      setLoyaltyPhone(updated.customerPhone || loyaltyPhone.trim());
+                      setLoyaltyName(updated.customerName || loyaltyName.trim());
+                      toast("Đã lưu thông tin khách hàng cho hóa đơn.", "success");
                     } catch (err) {
                       toast(err instanceof Error ? err.message : "Cập nhật thất bại.", "error");
                     } finally {
@@ -610,7 +625,7 @@ export default function InvoicesPage() {
                     }
                   }}
                 >
-                  {updatingCustomer ? "Đang xử lý..." : "Gắn SĐT ngay"}
+                  {updatingCustomer ? "Đang xử lý..." : "Lưu thông tin khách"}
                 </button>
               </div>
             )}

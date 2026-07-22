@@ -9,6 +9,8 @@ public class InvoiceDetailDto
     public string InvoiceCode { get; set; } = string.Empty;
     public long SessionId { get; set; }
     public long? CustomerId { get; set; }
+    public string? CustomerName { get; set; }
+    public string? CustomerPhone { get; set; }
     public decimal TimeSubtotalAmount { get; set; }
     public decimal ProductSubtotalAmount { get; set; }
     public decimal SubtotalAmount { get; set; }
