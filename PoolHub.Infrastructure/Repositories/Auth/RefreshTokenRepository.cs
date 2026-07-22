@@ -4,11 +4,6 @@ using PoolHub.Infrastructure.Data;
 
 namespace PoolHub.Infrastructure.Repositories;
 
-public interface IRefreshTokenRepository
-{
-    Task<RefreshToken?> FindValidTokenAsync(string tokenHash, CancellationToken ct);
-}
-
 public class RefreshTokenRepository(PoolHubDbContext db) : IRefreshTokenRepository
 {
     public Task<RefreshToken?> FindValidTokenAsync(string tokenHash, CancellationToken ct) =>

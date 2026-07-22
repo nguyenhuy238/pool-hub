@@ -4,11 +4,6 @@ using PoolHub.Infrastructure.Data;
 
 namespace PoolHub.Infrastructure.Repositories;
 
-public interface INotificationRepository
-{
-    Task<List<Notification>> GetUnreadByUserAsync(long userId, CancellationToken ct);
-}
-
 public class NotificationRepository(PoolHubDbContext db) : INotificationRepository
 {
     public Task<List<Notification>> GetUnreadByUserAsync(long userId, CancellationToken ct) =>

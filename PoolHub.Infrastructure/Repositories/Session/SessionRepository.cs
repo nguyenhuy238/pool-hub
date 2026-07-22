@@ -4,11 +4,6 @@ using PoolHub.Infrastructure.Data;
 
 namespace PoolHub.Infrastructure.Repositories;
 
-public interface ISessionRepository
-{
-    Task<Session?> GetActiveSessionByTableAsync(long tableId, CancellationToken ct);
-}
-
 public class SessionRepository(PoolHubDbContext db) : ISessionRepository
 {
     public async Task<Session?> GetActiveSessionByTableAsync(long tableId, CancellationToken ct)

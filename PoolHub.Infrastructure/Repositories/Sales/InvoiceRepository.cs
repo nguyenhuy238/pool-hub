@@ -4,11 +4,6 @@ using PoolHub.Infrastructure.Data;
 
 namespace PoolHub.Infrastructure.Repositories;
 
-public interface IInvoiceRepository
-{
-    Task<Invoice?> GetInvoiceWithLinesAsync(long invoiceId, CancellationToken ct);
-}
-
 public class InvoiceRepository(PoolHubDbContext db) : IInvoiceRepository
 {
     public Task<Invoice?> GetInvoiceWithLinesAsync(long invoiceId, CancellationToken ct) =>
