@@ -1923,6 +1923,261 @@ textarea:focus {
   font-weight: 650;
 }
 
+.orders-layout {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: start;
+}
+
+.orders-session-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+}
+
+.orders-session-picker > * {
+  min-width: 0;
+}
+
+.orders-layout > *,
+.orders-card,
+.order-list-select,
+.order-detail-cell {
+  min-width: 0;
+}
+
+.orders-card-head,
+.order-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.orders-card-head {
+  margin-bottom: 16px;
+}
+
+.orders-card-head > div,
+.order-detail-heading > div {
+  min-width: 0;
+}
+
+.order-list {
+  display: grid;
+  gap: 10px;
+}
+
+.order-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.order-list-item.is-selected {
+  border-color: var(--brand);
+  background: var(--soft);
+  box-shadow: 0 0 0 2px rgba(15, 118, 92, 0.14);
+}
+
+.order-list-select {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.order-list-select:hover {
+  background: var(--soft);
+}
+
+.order-list-select:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -3px;
+}
+
+.order-list-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.order-list-code strong {
+  overflow-wrap: anywhere;
+}
+
+.order-list-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.order-list-meta > span,
+.order-detail-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.order-list-meta small,
+.order-detail-cell small,
+.order-detail-quantity > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.order-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-left: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.order-list-actions button,
+.order-detail-actions button {
+  white-space: nowrap;
+}
+
+.order-list-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.order-detail-section {
+  margin-top: 24px;
+}
+
+.order-detail-heading {
+  margin-bottom: 12px;
+}
+
+.order-detail-heading h3,
+.order-detail-heading p {
+  margin: 0;
+}
+
+.order-detail-heading p {
+  margin-top: 4px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.order-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.order-detail-item {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.order-detail-product {
+  grid-column: 1 / -1;
+}
+
+.order-detail-product strong {
+  overflow-wrap: anywhere;
+}
+
+.order-detail-quantity {
+  display: grid;
+  gap: 6px;
+}
+
+.order-detail-quantity input {
+  width: 100%;
+  min-width: 0;
+}
+
+.order-detail-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1100px) {
+  .orders-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .orders-session-picker {
+    max-width: none;
+  }
+
+  .orders-session-picker > * {
+    width: 100%;
+  }
+
+  .orders-card-head {
+    align-items: stretch;
+  }
+
+  .orders-card-head > *,
+  .orders-card-head > button {
+    width: 100%;
+  }
+
+  .order-list-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .order-list-actions {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .order-list-actions button,
+  .order-detail-actions button {
+    flex: 1 1 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .order-list-meta,
+  .order-detail-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .order-detail-product {
+    grid-column: auto;
+  }
+
+  .order-detail-actions {
+    justify-content: stretch;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
