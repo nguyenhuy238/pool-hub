@@ -792,6 +792,17 @@ textarea {
   font-size: 18px;
 }
 
+.dashboard-actions {
+  margin-top: 18px;
+}
+
+.dashboard-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .state-card {
   padding: 22px;
   color: var(--muted);
@@ -1868,6 +1879,11 @@ textarea:focus {
 
   .page-header {
     display: grid;
+  }
+
+  .dashboard-action-list {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .hero {
