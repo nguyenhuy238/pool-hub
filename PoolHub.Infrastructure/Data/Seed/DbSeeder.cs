@@ -62,9 +62,9 @@ public static class DbSeeder
         var categories = await db.ProductCategories.OrderBy(x => x.ProductCategoryId).ToListAsync(ct);
 
         db.PricingPlanRules.AddRange(
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 }
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 0, BillingBlockMinutes = 1 },
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 0, BillingBlockMinutes = 1 },
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 0, BillingBlockMinutes = 1 }
         );
 
         for (var i = 1; i <= 10; i++)
@@ -447,8 +447,8 @@ public static class DbSeeder
                 StartTime = startTime,
                 EndTime = endTime,
                 HourlyRate = hourlyRate,
-                MinimumMinutes = 30,
-                BillingBlockMinutes = 15,
+                MinimumMinutes = 0,
+                BillingBlockMinutes = 1,
                 IsActive = true
             };
             existingRules.Add(rule);

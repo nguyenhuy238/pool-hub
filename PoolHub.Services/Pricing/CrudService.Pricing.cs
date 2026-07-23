@@ -145,8 +145,8 @@ public partial class CrudService
             throw new ValidationException("Table type is invalid or inactive.");
         if (rule.StartTime < TimeSpan.Zero || rule.EndTime > TimeSpan.FromDays(1) || rule.EndTime <= rule.StartTime)
             throw new ValidationException("Pricing rule end time must be after start time within one day.");
-        if (rule.MinimumMinutes <= 0 || rule.BillingBlockMinutes <= 0 || rule.HourlyRate <= 0)
-            throw new ValidationException("Pricing rule values must be greater than zero.");
+        if (rule.MinimumMinutes < 0 || rule.BillingBlockMinutes < 1 || rule.HourlyRate <= 0)
+            throw new ValidationException("Hourly rate must be greater than zero, minimum minutes must be non-negative, and billing block minutes must be at least one.");
 
         var overlaps = await db.PricingPlanRules.AnyAsync(x =>
             x.PricingPlanId == planId &&

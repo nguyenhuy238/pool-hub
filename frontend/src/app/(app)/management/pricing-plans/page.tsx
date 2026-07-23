@@ -130,7 +130,7 @@ export default function PricingPlansPage() {
 
       <SmartForm<PricingPlanRule>
         title="Tạo quy tắc tính giá"
-        initial={{ minimumMinutes: 30, billingBlockMinutes: 15 } as any}
+        initial={{ minimumMinutes: 0, billingBlockMinutes: 1 } as any}
         fields={[
           { name: "pricingPlanId", label: "Bảng giá", options: planOptions, required: true },
           { name: "tableTypeId", label: "Loại bàn", options: tableTypeOptions, required: true },
@@ -259,7 +259,7 @@ function RuleFormModal({ rule, plans, tableTypes, onClose, onSaved }: { rule: Pr
     event.preventDefault();
     if (!form.pricingPlanId || !form.tableTypeId) return setError("Vui lòng chọn bảng giá và loại bàn.");
     if (!form.startTime || !form.endTime || String(form.startTime) >= String(form.endTime)) return setError("Giờ kết thúc phải lớn hơn giờ bắt đầu.");
-    if (Number(form.hourlyRate) <= 0 || Number(form.minimumMinutes) <= 0 || Number(form.billingBlockMinutes) <= 0) return setError("Giá, phút tối thiểu và block tính tiền phải lớn hơn 0.");
+    if (Number(form.hourlyRate) <= 0 || Number(form.minimumMinutes) < 0 || Number(form.billingBlockMinutes) <= 0) return setError("Giá phải lớn hơn 0, phút tối thiểu không được âm và block tính tiền phải lớn hơn 0.");
     setSaving(true);
     try {
       await pricingApi.updateRule(rule.pricingPlanId, rule.pricingPlanRuleId, form);
@@ -280,7 +280,7 @@ function RuleFormModal({ rule, plans, tableTypes, onClose, onSaved }: { rule: Pr
       <label><span>Giờ bắt đầu</span><input type="time" value={String(form.startTime ?? "").slice(0, 5)} onChange={(event) => setForm({ ...form, startTime: event.target.value })} /></label>
       <label><span>Giờ kết thúc</span><input type="time" value={String(form.endTime ?? "").slice(0, 5)} onChange={(event) => setForm({ ...form, endTime: event.target.value })} /></label>
       <label><span>Giá/giờ</span><input type="number" min={1} value={form.hourlyRate} onChange={(event) => setForm({ ...form, hourlyRate: Number(event.target.value) })} /></label>
-      <label><span>Phút tối thiểu</span><input type="number" min={1} value={form.minimumMinutes} onChange={(event) => setForm({ ...form, minimumMinutes: Number(event.target.value) })} /></label>
+      <label><span>Phút tối thiểu</span><input type="number" min={0} value={form.minimumMinutes} onChange={(event) => setForm({ ...form, minimumMinutes: Number(event.target.value) })} /></label>
       <label><span>Block tính tiền</span><input type="number" min={1} value={form.billingBlockMinutes} onChange={(event) => setForm({ ...form, billingBlockMinutes: Number(event.target.value) })} /></label>
       <div className="modal-actions full-field"><button type="button" className="ghost-btn" onClick={onClose}>Hủy</button><button className="primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu"}</button></div>
     </form>

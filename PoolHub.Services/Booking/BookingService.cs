@@ -723,14 +723,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     private static decimal CalculateTimeAmount(decimal hourlyRate, int durationMinutes, int minimumMinutes, int billingBlockMinutes)
     {
-        var billableMinutes = Math.Max(durationMinutes, minimumMinutes);
-        if (billingBlockMinutes > 0)
-        {
-            var remainder = billableMinutes % billingBlockMinutes;
-            if (remainder > 0) billableMinutes += billingBlockMinutes - remainder;
-        }
-
-        return Math.Round(((decimal)billableMinutes / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
+        return Math.Round(((decimal)Math.Max(0, durationMinutes) / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
     }
 
     public static decimal CalculateDepositRequiredAmount(decimal estimatedAmount)
