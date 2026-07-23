@@ -6,6 +6,8 @@ import type { HeroSettings } from "@/lib/api/landingSettingsApi";
 export function HeroSection({ hero }: { hero: HeroSettings }) {
   const [videoFailed, setVideoFailed] = useState(false);
   const showVideo = hero.useVideo && hero.backgroundVideoUrl && !videoFailed;
+  const primaryLink = hero.primaryCtaLink || "#booking";
+  const secondaryLink = hero.secondaryCtaLink || "#pricing";
   return (
     <section className="landing-hero" id="hero" style={{ backgroundImage: `url("${hero.fallbackImageUrl || hero.backgroundImageUrl}")` }}>
       {showVideo ? (
@@ -19,8 +21,8 @@ export function HeroSection({ hero }: { hero: HeroSettings }) {
         <h1>{hero.title}</h1>
         <p>{hero.description}</p>
         <div className="hero-actions">
-          <a className="primary-btn hero-cta" href={hero.primaryCtaLink || "#booking"} target={hero.primaryCtaLinkType === "external" || hero.primaryCtaLinkType === "map" ? "_blank" : undefined} rel={hero.primaryCtaLinkType === "external" || hero.primaryCtaLinkType === "map" ? "noreferrer" : undefined}>{hero.primaryCtaText}</a>
-          <a className="secondary-btn" href={hero.secondaryCtaLink || "#pricing"} target={hero.secondaryCtaLinkType === "external" || hero.secondaryCtaLinkType === "map" ? "_blank" : undefined} rel={hero.secondaryCtaLinkType === "external" || hero.secondaryCtaLinkType === "map" ? "noreferrer" : undefined}>{hero.secondaryCtaText}</a>
+          <a className="primary-btn hero-cta" href={primaryLink} target={hero.primaryCtaLinkType === "external" || hero.primaryCtaLinkType === "map" ? "_blank" : undefined} rel={hero.primaryCtaLinkType === "external" || hero.primaryCtaLinkType === "map" ? "noreferrer" : undefined}>{hero.primaryCtaText}</a>
+          <a className="secondary-btn" href={secondaryLink} target={hero.secondaryCtaLinkType === "external" || hero.secondaryCtaLinkType === "map" ? "_blank" : undefined} rel={hero.secondaryCtaLinkType === "external" || hero.secondaryCtaLinkType === "map" ? "noreferrer" : undefined}>{hero.secondaryCtaText}</a>
         </div>
         <div className="hero-stats" aria-label="Thống kê nhanh PoolHub">
           {hero.badges.map((badge) => {
