@@ -102,6 +102,39 @@ public class SmtpEmailService(
         return at >= 0 ? email[(at + 1)..] : "unknown";
     }
 
+    public async Task SendDepositRefundNotificationAsync(
+        string email,
+        string subject,
+        string title,
+        string message,
+        IReadOnlyDictionary<string, string> details,
+        string? actionUrl,
+        string? actionText,
+        CancellationToken ct)
+    {
+        EnsureConfigured();
+        using var mail = new MailMessage
+        {
+            From = new MailAddress(_settings.FromEmail, _settings.FromName, Encoding.UTF8),
+            Subject = subject,
+            SubjectEncoding = Encoding.UTF8,
+            BodyEncoding = Encoding.UTF8,
+            IsBodyHtml = true,
+            Body = BuildDepositRefundHtml(title, message, details, actionUrl, actionText)
+        };
+        mail.To.Add(new MailAddress(email));
+        using var client = BuildSmtpClient();
+        try
+        {
+            await client.SendMailAsync(mail, ct);
+            logger.LogInformation("Deposit refund email sent to {EmailDomain}", GetEmailDomain(email));
+        }
+        catch (Exception ex) when (ex is SmtpException or InvalidOperationException)
+        {
+            logger.LogError(ex, "Failed to send deposit refund email to {EmailDomain}", GetEmailDomain(email));
+        }
+    }
+
     public async Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode,
         string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct)
     {
@@ -220,6 +253,43 @@ public class SmtpEmailService(
                         <strong style="color:#4a5568">Trung tâm Giải trí PoolHub</strong><br>
                         Hotline: 1900 xxxx | Email: <a href="mailto:support@poolhub.vn" style="color:#0f5d4b;text-decoration:none">support@poolhub.vn</a>
                       </div>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body>
+            </html>
+            """;
+    }
+
+    private static string BuildDepositRefundHtml(
+        string title,
+        string message,
+        IReadOnlyDictionary<string, string> details,
+        string? actionUrl,
+        string? actionText)
+    {
+        var rows = string.Join("", details.Select(x =>
+            $"<tr><td style=\"padding:8px 0;color:#718096;width:42%\">{HtmlEncoder.Default.Encode(x.Key)}:</td><td style=\"padding:8px 0;font-weight:700;color:#1a202c\">{HtmlEncoder.Default.Encode(x.Value)}</td></tr>"));
+        var encodedMessage = HtmlEncoder.Default.Encode(message);
+        var button = !string.IsNullOrWhiteSpace(actionUrl)
+            ? $"<p style=\"margin:28px 0\"><a href=\"{HtmlEncoder.Default.Encode(actionUrl)}\" style=\"display:inline-block;padding:12px 18px;background:#0f5d4b;color:#fff;text-decoration:none;border-radius:8px;font-weight:700\">{HtmlEncoder.Default.Encode(actionText ?? "Xem chi tiết")}</a></p>"
+            : string.Empty;
+        return $$"""
+            <!doctype html>
+            <html lang="vi">
+            <body style="margin:0;background:#f4f8f6;font-family:Arial,sans-serif;color:#10201c">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr><td align="center" style="padding:32px 16px">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border:1px solid #dce7e2;border-radius:12px">
+                    <tr><td style="padding:28px">
+                      <div style="font-size:22px;font-weight:800;color:#0f5d4b">PoolHub</div>
+                      <h1 style="font-size:22px;margin:24px 0 12px">{{HtmlEncoder.Default.Encode(title)}}</h1>
+                      <p style="line-height:1.6;color:#60746d">{{encodedMessage}}</p>
+                      <table style="width:100%;border-collapse:collapse;font-size:15px;margin-top:16px">{{rows}}</table>
+                      {{button}}
+                      <hr style="border:0;border-top:1px solid #dce7e2;margin:24px 0">
+                      <p style="font-size:12px;color:#60746d">Email này không chứa số tài khoản ngân hàng đầy đủ hoặc mã bảo mật nội bộ.</p>
                     </td></tr>
                   </table>
                 </td></tr>

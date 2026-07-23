@@ -226,6 +226,77 @@ public class BookingServiceTests
     }
 
     [Fact]
+    public async Task CancelAsync_WhenCustomerCancelsAtLeast120MinutesBeforeStart_CreatesPendingRefund()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 1);
+        var start = DateTime.UtcNow.AddMinutes(130);
+        db.Bookings.Add(NewBooking(1, BookingStatuses.Confirmed, start, start.AddHours(1)));
+        db.BookingDeposits.Add(new BookingDeposit { BookingDepositId = 1, BookingId = 1, RequiredAmount = 50000, PaidAmount = 50000, Status = BookingDepositStatuses.Paid, PaidAtUtc = DateTime.UtcNow, DueAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        await CreateService(db).CancelAsync(1, new CancelBookingRequest { Reason = "Customer cancelled" }, CancellationToken.None);
+
+        var deposit = await db.BookingDeposits.SingleAsync();
+        var refund = await db.BookingDepositRefunds.SingleAsync();
+        Assert.Equal(BookingStatuses.Cancelled, (await db.Bookings.FindAsync(1L))!.Status);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(50000, refund.Amount);
+        Assert.Equal(BookingDepositRefundReasons.CustomerCancelledInTime, refund.Reason);
+        Assert.Equal(BookingDepositRefundStatuses.PendingCustomerInfo, refund.Status);
+    }
+
+    [Fact]
+    public async Task CancelAsync_WhenCustomerCancelsExactly120MinutesBeforeStart_CreatesPendingRefund()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 1);
+        var start = DateTime.UtcNow.AddMinutes(120).AddSeconds(1);
+        db.Bookings.Add(NewBooking(1, BookingStatuses.Confirmed, start, start.AddHours(1)));
+        db.BookingDeposits.Add(new BookingDeposit { BookingDepositId = 1, BookingId = 1, RequiredAmount = 50000, PaidAmount = 50000, Status = BookingDepositStatuses.Paid, PaidAtUtc = DateTime.UtcNow, DueAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        await CreateService(db).CancelAsync(1, new CancelBookingRequest { Reason = "Customer cancelled" }, CancellationToken.None);
+
+        Assert.Equal(1, await db.BookingDepositRefunds.CountAsync());
+    }
+
+    [Fact]
+    public async Task CancelAsync_WhenCustomerCancelsUnder120Minutes_ForfeitsDeposit()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 1);
+        var start = DateTime.UtcNow.AddMinutes(90);
+        db.Bookings.Add(NewBooking(1, BookingStatuses.Confirmed, start, start.AddHours(1)));
+        db.BookingDeposits.Add(new BookingDeposit { BookingDepositId = 1, BookingId = 1, RequiredAmount = 50000, PaidAmount = 50000, Status = BookingDepositStatuses.Paid, PaidAtUtc = DateTime.UtcNow, DueAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        await CreateService(db).CancelAsync(1, new CancelBookingRequest { Reason = "Customer cancelled" }, CancellationToken.None);
+
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(BookingDepositStatuses.Forfeited, deposit.Status);
+        Assert.Equal(50000, deposit.ForfeitedAmount);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CancelAsync_WhenCancelledByVenue_CreatesVenueFaultRefund()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 1);
+        var start = DateTime.UtcNow.AddMinutes(30);
+        db.Bookings.Add(NewBooking(1, BookingStatuses.Confirmed, start, start.AddHours(1)));
+        db.BookingDeposits.Add(new BookingDeposit { BookingDepositId = 1, BookingId = 1, RequiredAmount = 50000, PaidAmount = 50000, Status = BookingDepositStatuses.Paid, PaidAtUtc = DateTime.UtcNow, DueAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        await CreateService(db).CancelAsync(1, new CancelBookingRequest { Reason = "Venue fault", CancelledByVenue = true }, CancellationToken.None);
+
+        var refund = await db.BookingDepositRefunds.SingleAsync();
+        Assert.Equal(BookingDepositRefundReasons.VenueFault, refund.Reason);
+        Assert.Equal(50000, refund.Amount);
+    }
+
+    [Fact]
     public async Task Availability_PendingDepositExpired_DoesNotBlockSlot()
     {
         await using var db = CreateDb();
@@ -542,5 +613,6 @@ public class BookingServiceTests
         public Task SendPasswordResetOtpAsync(string email, string otp, int expirationMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct) => Task.CompletedTask;
         public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) => Task.CompletedTask;
+        public Task SendDepositRefundNotificationAsync(string email, string subject, string title, string message, IReadOnlyDictionary<string, string> details, string? actionUrl, string? actionText, CancellationToken ct) => Task.CompletedTask;
     }
 }

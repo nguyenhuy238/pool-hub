@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PoolHub.Infrastructure.Data;
 
 #nullable disable
 
-namespace PoolHub.Infrastructure.Migrations
+namespace PoolHub.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(PoolHubDbContext))]
-    partial class PoolHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723181725_AddBookingDepositRefunds")]
+    partial class AddBookingDepositRefunds
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -344,19 +347,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("cancelled_at_utc");
 
-                    b.Property<DateTime?>("CashPickupCodeExpiresAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("cash_pickup_code_expires_at_utc");
-
-                    b.Property<string>("CashPickupCodeHash")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)")
-                        .HasColumnName("cash_pickup_code_hash");
-
-                    b.Property<DateTime?>("CashPickupCodeUsedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("cash_pickup_code_used_at_utc");
-
                     b.Property<string>("CashReceiptCode")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
@@ -372,13 +362,11 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnName("customer_bank_account_last4");
 
                     b.Property<string>("CustomerBankAccountNameEncrypted")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("customer_bank_account_name_encrypted");
 
                     b.Property<string>("CustomerBankAccountNumberEncrypted")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("customer_bank_account_number_encrypted");
 
                     b.Property<string>("CustomerBankCode")
@@ -413,18 +401,10 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("customer_token_expires_at_utc");
 
-                    b.Property<DateTime?>("CustomerTokenGeneratedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("customer_token_generated_at_utc");
-
                     b.Property<string>("CustomerTokenHash")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
                         .HasColumnName("customer_token_hash");
-
-                    b.Property<DateTime?>("CustomerVerifiedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("customer_verified_at_utc");
 
                     b.Property<DateTime?>("FailedAtUtc")
                         .HasColumnType("datetime2")
@@ -520,23 +500,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<DateTime?>("VerificationCodeExpiresAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("verification_code_expires_at_utc");
-
-                    b.Property<string>("VerificationCodeHash")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)")
-                        .HasColumnName("verification_code_hash");
-
-                    b.Property<DateTime?>("VerificationCodeSentAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("verification_code_sent_at_utc");
-
-                    b.Property<int>("VerificationFailedAttempts")
-                        .HasColumnType("int")
-                        .HasColumnName("verification_failed_attempts");
-
                     b.HasKey("BookingDepositRefundId");
 
                     b.HasIndex("ApprovedByUserId");
@@ -548,8 +511,6 @@ namespace PoolHub.Infrastructure.Migrations
                     b.HasIndex("CreatedAtUtc");
 
                     b.HasIndex("CustomerId");
-
-                    b.HasIndex("CustomerTokenHash");
 
                     b.HasIndex("IdempotencyKey")
                         .IsUnique();
@@ -662,10 +623,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<long?>("UserId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("user_id");
-
                     b.HasKey("CustomerId");
 
                     b.HasIndex("Email")
@@ -677,10 +634,6 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
-
-                    b.HasIndex("UserId")
-                        .IsUnique()
-                        .HasFilter("[user_id] IS NOT NULL");
 
                     b.ToTable("customers", (string)null);
                 });
@@ -2839,14 +2792,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("PoolHub.Core.Entities.Customer", b =>
-                {
-                    b.HasOne("PoolHub.Core.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.CustomerReview", b =>

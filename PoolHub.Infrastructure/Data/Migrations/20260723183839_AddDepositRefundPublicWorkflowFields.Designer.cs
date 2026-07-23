@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PoolHub.Infrastructure.Data;
 
 #nullable disable
 
-namespace PoolHub.Infrastructure.Migrations
+namespace PoolHub.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(PoolHubDbContext))]
-    partial class PoolHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723183839_AddDepositRefundPublicWorkflowFields")]
+    partial class AddDepositRefundPublicWorkflowFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -662,10 +665,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<long?>("UserId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("user_id");
-
                     b.HasKey("CustomerId");
 
                     b.HasIndex("Email")
@@ -677,10 +676,6 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
-
-                    b.HasIndex("UserId")
-                        .IsUnique()
-                        .HasFilter("[user_id] IS NOT NULL");
 
                     b.ToTable("customers", (string)null);
                 });
@@ -2839,14 +2834,6 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("PoolHub.Core.Entities.Customer", b =>
-                {
-                    b.HasOne("PoolHub.Core.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.CustomerReview", b =>
