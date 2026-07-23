@@ -231,6 +231,34 @@ export const paymentsApi = {
   refund: (id: number, reason: string) => apiFetch(`/api/payments/${id}/refund`, { method: "POST", body: JSON.stringify({ reason }) })
 };
 
+export const publicDepositRefundApi = {
+  get: (token: string) => apiFetch<PublicDepositRefund>(`/api/public/deposit-refunds/${encodeURIComponent(token)}`, { skipAuth: true }),
+  sendVerificationCode: (token: string) => apiFetch(`/api/public/deposit-refunds/${encodeURIComponent(token)}/send-verification-code`, { method: "POST", skipAuth: true }),
+  verify: (token: string, body: VerifyRefundRequest) =>
+    apiFetch<PublicDepositRefund>(`/api/public/deposit-refunds/${encodeURIComponent(token)}/verify`, { method: "POST", body: JSON.stringify(body), skipAuth: true }),
+  submitMethod: (token: string, body: SubmitRefundMethodRequest) =>
+    apiFetch<PublicDepositRefund>(`/api/public/deposit-refunds/${encodeURIComponent(token)}/submit-method`, { method: "POST", body: JSON.stringify(body), skipAuth: true })
+};
+
+export const depositRefundApi = {
+  list: (params: Record<string, string | number | undefined> = {}) =>
+    apiFetch<{ items?: DepositRefundListItem[]; totalItems?: number; totalCount?: number; totalPages?: number; pageNumber?: number; pageSize?: number }>(`/api/deposit-refunds${toQuery(params)}`),
+  detail: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}`),
+  bankInfo: (id: number) => apiFetch<DepositRefundBankInfo>(`/api/deposit-refunds/${id}/bank-info`),
+  approve: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/approve`, { method: "POST" }),
+  reject: (id: number, body: RejectRefundRequest) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/reject`, { method: "POST", body: JSON.stringify(body) }),
+  requestCustomerUpdate: (id: number, body: RequestCustomerRefundUpdateRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/request-customer-update`, { method: "POST", body: JSON.stringify(body) }),
+  markProcessing: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/mark-processing`, { method: "POST" }),
+  completeBankTransfer: (id: number, body: CompleteBankTransferRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/complete-bank-transfer`, { method: "POST", body: JSON.stringify(body) }),
+  markFailed: (id: number, body: MarkRefundFailedRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/mark-failed`, { method: "POST", body: JSON.stringify(body) }),
+  prepareCashPickup: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/prepare-cash-pickup`, { method: "POST" }),
+  completeCashPickup: (id: number, body: CompleteCashPickupRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/complete-cash-pickup`, { method: "POST", body: JSON.stringify(body) })
+};
+
 export const reportsApi = {
   revenue: (params: Record<string, string | undefined> = {}) => apiFetch<RevenueReport[]>(`/api/reports/revenue${toQuery(params)}`),
   tableUsage: (params: Record<string, string | undefined> = {}) => apiFetch<TableUsageReport[]>(`/api/reports/table-usage${toQuery(params)}`),
