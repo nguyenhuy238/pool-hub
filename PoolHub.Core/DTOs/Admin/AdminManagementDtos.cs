@@ -73,6 +73,10 @@ public class InventoryQueryRequest : PaginationRequest
 {
     public long? ProductId { get; set; }
     public int? TransactionType { get; set; }
+    public string? ReferenceType { get; set; }
+    public long? InvoiceId { get; set; }
+    public DateTime? FromUtc { get; set; }
+    public DateTime? ToUtc { get; set; }
 }
 
 public class InventoryTransactionDto
@@ -85,6 +89,9 @@ public class InventoryTransactionDto
     public decimal? UnitCost { get; set; }
     public string? ReferenceType { get; set; }
     public long? ReferenceId { get; set; }
+    public long? OrderId { get; set; }
+    public long? InvoiceId { get; set; }
+    public string? InvoiceCode { get; set; }
     public string? Note { get; set; }
     public long? CreatedByUserId { get; set; }
     public DateTime CreatedAtUtc { get; set; }
