@@ -106,6 +106,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             throw new ConflictException("Booking already has a session and cannot be changed.");
 
         var tableIds = NormalizeTableIds(request.TableIds, request.TableId);
+        if (tableIds.Count == 0) throw new ValidationException("At least one table must be selected.");
         await EnsureTablesCanBeBookedAsync(tableIds, booking.BookingId, request.StartTimeUtc, request.EndTimeUtc, ct);
 
         var estimated = await EstimateAmountAsync(tableIds, request.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
@@ -405,13 +406,13 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var totalActiveTables = await db.VenueTables.CountAsync(x => x.IsActive && x.OperationalStatus != 4 && x.OperationalStatus != 5, ct);
         var selectedCount = requestedTableIds.Count > 0 ? requestedTableIds.Count : 1;
         var requiresApproval = RequiresApproval(selectedCount, totalActiveTables);
+        var activeSessionTableIds = await GetActiveSessionTableIdsAsync(requestedTableIds, ct);
 
         var query = from table in db.VenueTables.AsNoTracking()
                     join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
                     where table.IsActive
                        && table.OperationalStatus != 4
                        && table.OperationalStatus != 5
-                       && !db.SessionTableAssignments.Any(a => a.TableId == table.TableId && a.EndedAtUtc == null)
                     select new { table, type };
         if (requestedTableIds.Count > 0) query = query.Where(x => requestedTableIds.Contains(x.table.TableId));
         if (request.TableTypeId.HasValue) query = query.Where(x => x.table.TableTypeId == request.TableTypeId.Value);
@@ -420,6 +421,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var result = new List<AvailableTableDto>();
         foreach (var row in rows)
         {
+            if (activeSessionTableIds.Contains(row.table.TableId)) continue;
             var conflict = await HasConflictAsync(0, [row.table.TableId], request.StartTimeUtc, request.EndTimeUtc, ct);
             var estimated = await EstimateAmountAsync([row.table.TableId], row.table.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
             if (!conflict)
@@ -636,8 +638,33 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (missing.Count > 0) throw new NotFoundException($"Table not found: {string.Join(", ", missing)}.");
         var unavailable = tables.FirstOrDefault(x => !x.IsActive || x.OperationalStatus is 4 or 5);
         if (unavailable is not null) throw new BusinessRuleException($"Table is not available for booking (Status: {unavailable.OperationalStatus}).");
+        var activeSessionTableIds = await GetActiveSessionTableIdsAsync(tableIds, ct);
+        if (activeSessionTableIds.Count > 0)
+        {
+            var activeTableLabels = tables
+                .Where(x => activeSessionTableIds.Contains(x.TableId))
+                .OrderBy(x => x.TableCode)
+                .Select(x => string.IsNullOrWhiteSpace(x.TableCode) ? x.TableName : x.TableCode)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+            var details = activeTableLabels.Count > 0
+                ? $" Active tables: {string.Join(", ", activeTableLabels)}."
+                : string.Empty;
+            throw new ConflictException($"One or more tables are currently in use and cannot be booked.{details}");
+        }
         if (await HasConflictAsync(excludeBookingId, tableIds, startTimeUtc, endTimeUtc, ct))
             throw new ConflictException("Table is already booked for the selected time.");
+    }
+
+    private async Task<HashSet<long>> GetActiveSessionTableIdsAsync(IReadOnlyCollection<long> tableIds, CancellationToken ct)
+    {
+        var query = from assignment in db.SessionTableAssignments.AsNoTracking()
+                    join session in db.Sessions.AsNoTracking() on assignment.SessionId equals session.SessionId
+                    where assignment.EndedAtUtc == null
+                       && session.Status == 1
+                    select assignment.TableId;
+        if (tableIds.Count > 0) query = query.Where(tableId => tableIds.Contains(tableId));
+        return (await query.ToListAsync(ct)).ToHashSet();
     }
 
     private async Task<bool> HasConflictAsync(long excludeBookingId, List<long> tableIds, DateTime startTimeUtc, DateTime endTimeUtc, CancellationToken ct)

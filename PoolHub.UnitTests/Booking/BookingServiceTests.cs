@@ -276,6 +276,166 @@ public class BookingServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_WhenAllAvailableTablesRequested_CreatesOneBookingWithAllTables()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 4);
+        var service = CreateService(db);
+        var request = NewCreateRequest(tableId: 1);
+        request.TableIds = [1, 2, 3, 4];
+
+        var booking = await service.CreateAsync(request, CancellationToken.None);
+
+        Assert.Equal([1, 2, 3, 4], booking.TableIds.OrderBy(x => x).ToList());
+        Assert.Equal(4, await db.BookingTables.CountAsync(x => x.BookingId == booking.BookingId));
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenAnyRequestedTableHasActiveSession_RejectsWholeBookingWithoutPartialWrites()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 4);
+        db.Sessions.Add(NewSession(1, status: 1));
+        db.SessionTableAssignments.Add(NewAssignment(1, tableId: 3));
+        await db.SaveChangesAsync();
+        var request = NewCreateRequest(tableId: 1);
+        request.TableIds = [1, 2, 3, 4];
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateService(db).CreateAsync(request, CancellationToken.None));
+
+        Assert.Contains("currently in use", exception.Message);
+        Assert.Empty(db.Bookings);
+        Assert.Empty(db.BookingTables);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DirectServiceCallWithoutAvailability_WhenTableHasActiveSession_Rejects()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 2);
+        db.Sessions.Add(NewSession(1, status: 1));
+        db.SessionTableAssignments.Add(NewAssignment(1, tableId: 2));
+        await db.SaveChangesAsync();
+        var request = NewCreateRequest(tableId: 2);
+        request.TableIds = [2];
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateService(db).CreateAsync(request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenAddingTableWithActiveSession_RejectsAndKeepsOldTables()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 3);
+        var existing = NewBooking(1, BookingStatuses.PendingDeposit, DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTime.UtcNow.Date.AddDays(1).AddHours(11));
+        existing.TableId = 1;
+        existing.TableTypeId = 1;
+        db.Bookings.Add(existing);
+        db.BookingTables.Add(new BookingTable { BookingId = 1, TableId = 1 });
+        db.Sessions.Add(NewSession(1, status: 1));
+        db.SessionTableAssignments.Add(NewAssignment(1, tableId: 2));
+        await db.SaveChangesAsync();
+
+        var update = NewUpdateRequest([1, 2]);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateService(db).UpdateAsync(1, update, CancellationToken.None));
+
+        Assert.Equal(1, existing.TableId);
+        Assert.Equal([1], await db.BookingTables.Where(x => x.BookingId == 1).Select(x => x.TableId).OrderBy(x => x).ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateAsync_WhenTableIdsEmpty_RejectsAndKeepsOldTables()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 2);
+        var existing = NewBooking(1, BookingStatuses.PendingDeposit, DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTime.UtcNow.Date.AddDays(1).AddHours(11));
+        existing.TableId = 1;
+        existing.TableTypeId = 1;
+        db.Bookings.Add(existing);
+        db.BookingTables.Add(new BookingTable { BookingId = 1, TableId = 1 });
+        await db.SaveChangesAsync();
+
+        var update = NewUpdateRequest([]);
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            CreateService(db).UpdateAsync(1, update, CancellationToken.None));
+
+        Assert.Equal(1, existing.TableId);
+        Assert.Equal([1], await db.BookingTables.Where(x => x.BookingId == 1).Select(x => x.TableId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenRequestedTableIsMaintenance_Rejects()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 3);
+        (await db.VenueTables.FindAsync(3L))!.OperationalStatus = 4;
+        await db.SaveChangesAsync();
+        var request = NewCreateRequest(tableId: 1);
+        request.TableIds = [1, 3];
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(db).CreateAsync(request, CancellationToken.None));
+
+        Assert.Empty(db.Bookings);
+        Assert.Empty(db.BookingTables);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenAnyRequestedTableOverlapsExistingBooking_Rejects()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 3);
+        var request = NewCreateRequest(tableId: 1);
+        var existing = NewBooking(99, BookingStatuses.Confirmed, request.StartTimeUtc.AddMinutes(15), request.EndTimeUtc.AddMinutes(15));
+        existing.TableId = 2;
+        existing.TableTypeId = 1;
+        db.Bookings.Add(existing);
+        await db.SaveChangesAsync();
+        request.TableIds = [1, 2];
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateService(db).CreateAsync(request, CancellationToken.None));
+
+        Assert.Single(db.Bookings);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenSessionAssignmentEnded_AllowsBooking()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 2);
+        db.Sessions.Add(NewSession(1, status: 1));
+        db.SessionTableAssignments.Add(NewAssignment(1, tableId: 2, endedAtUtc: DateTime.UtcNow.AddMinutes(-5)));
+        await db.SaveChangesAsync();
+        var request = NewCreateRequest(tableId: 1);
+        request.TableIds = [1, 2];
+
+        var booking = await CreateService(db).CreateAsync(request, CancellationToken.None);
+
+        Assert.Equal([1, 2], booking.TableIds.OrderBy(x => x).ToList());
+    }
+
+    [Fact]
+    public async Task CreatePublicAsync_WhenAllVenueTablesAvailable_CreatesPendingApprovalWithoutTableLimit()
+    {
+        await using var db = CreateDb();
+        await SeedBookingBasicsAsync(db, tableCount: 5);
+        var request = NewCreateRequest(tableId: 1);
+        request.TableIds = [1, 2, 3, 4, 5];
+
+        var booking = await CreateService(db).CreatePublicAsync(request, CancellationToken.None);
+
+        Assert.Equal(BookingStatuses.PendingApproval, booking.Status);
+        Assert.True(booking.RequiresApproval);
+        Assert.Equal([1, 2, 3, 4, 5], booking.TableIds.OrderBy(x => x).ToList());
+    }
+
+    [Fact]
     public async Task ApproveAsync_WhenPendingApproval_MovesToPendingDeposit()
     {
         await using var db = CreateDb();
@@ -344,6 +504,33 @@ public class BookingServiceTests
         StartTimeUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTimeKind.Utc),
         EndTimeUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(11), DateTimeKind.Utc),
         NumberOfGuests = 2
+    };
+
+    private static UpdateBookingRequest NewUpdateRequest(List<long> tableIds) => new()
+    {
+        TableId = tableIds.FirstOrDefault(),
+        TableIds = tableIds,
+        TableTypeId = 1,
+        StartTimeUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTimeKind.Utc),
+        EndTimeUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1).AddHours(11), DateTimeKind.Utc),
+        NumberOfGuests = 2
+    };
+
+    private static Session NewSession(long id, int status) => new()
+    {
+        SessionId = id,
+        SessionCode = $"SS{id}",
+        Status = status,
+        StartedAtUtc = DateTime.UtcNow.AddMinutes(-30),
+        OpenedByUserId = 1
+    };
+
+    private static SessionTableAssignment NewAssignment(long sessionId, long tableId, DateTime? endedAtUtc = null) => new()
+    {
+        SessionId = sessionId,
+        TableId = tableId,
+        StartedAtUtc = DateTime.UtcNow.AddMinutes(-30),
+        EndedAtUtc = endedAtUtc
     };
 
     private sealed class TestEmailService : PoolHub.Core.Interfaces.Services.IEmailService
