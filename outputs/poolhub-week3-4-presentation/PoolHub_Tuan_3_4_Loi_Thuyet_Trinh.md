@@ -25,7 +25,7 @@ Tuần 4 yêu cầu JWT Authentication, login/register, role-based authorization
 Luồng demo có thể đi theo 5 bước: đăng nhập bằng seed account, hệ thống verify password bằng BCrypt, phát access token và refresh token, dùng Bearer token để gọi protected APIs, sau đó demo refresh token hoặc logout để revoke token. Đây là kịch bản rõ nhất để chứng minh phần tuần 4.
 
 ## Slide 9 - Phân quyền
-Role-based authorization đã được gắn theo nhóm API. Admin có quyền cao nhất, Manager có quyền quản lý vận hành, Staff và Cashier có quyền với các API vận hành như venue table read, session và order. Điểm quan trọng là hệ thống không chỉ đăng nhập được, mà còn kiểm soát quyền theo nghiệp vụ.
+Role-based authorization đã được gắn theo nhóm API. Admin có quyền cao nhất, Manager có quyền quản lý vận hành, Staff có quyền với các API vận hành như venue table read, session, order, invoice và payment. Điểm quan trọng là hệ thống không chỉ đăng nhập được, mà còn kiểm soát quyền theo nghiệp vụ.
 
 ## Slide 10 - Tình trạng thực tế
 Về kiểm chứng, em đã chạy `dotnet test pool-hub.sln` và kết quả pass 2/2 tests. README có seed accounts và docs/postman có collection Week4 Auth. Tuy nhiên coverage hiện còn mỏng: chưa có nhiều test cho CRUD, domain flows, refresh token edge cases và role access matrix.

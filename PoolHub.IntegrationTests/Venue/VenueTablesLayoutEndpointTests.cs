@@ -35,7 +35,7 @@ public class VenueTablesLayoutEndpointTests
     {
         using var factory = CreateFactory();
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", CreateToken(RoleConstants.Cashier));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", CreateToken(RoleConstants.Customer));
 
         var response = await client.GetAsync("/api/venue-tables/layout");
 

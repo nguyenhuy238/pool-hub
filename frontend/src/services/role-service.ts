@@ -16,5 +16,5 @@ export const roleService = {
   ,
   getPermissions: () => apiFetch<Permission[]>("/api/roles/permissions"),
   setPermissions: (id: number, permissionIds: number[]) =>
-    apiFetch(`/api/roles/${id}/permissions`, { method: "PUT", body: JSON.stringify({ permissionIds }) })
+    apiFetch<Role>(`/api/roles/${id}/permissions`, { method: "PUT", body: JSON.stringify({ permissionIds }) })
 };

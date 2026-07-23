@@ -25,7 +25,7 @@ public class BookingsControllerContractTests
                 "GET",
                 "calendar",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<PagedResult<BookingCalendarItem>>>>",
                 new[]
                 {
@@ -103,7 +103,7 @@ public class BookingsControllerContractTests
                 "PUT",
                 "{id:long}",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -115,7 +115,7 @@ public class BookingsControllerContractTests
                 "PUT",
                 "{id:long}/confirm",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -148,7 +148,7 @@ public class BookingsControllerContractTests
                 "POST",
                 "{id:long}/deposit/confirm",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -160,7 +160,7 @@ public class BookingsControllerContractTests
                 "POST",
                 "{id:long}/deposit/reject",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -172,7 +172,7 @@ public class BookingsControllerContractTests
                 "POST",
                 "{id:long}/deposit/mock-pay",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -183,7 +183,7 @@ public class BookingsControllerContractTests
                 "PUT",
                 "{id:long}/cancel",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -195,7 +195,7 @@ public class BookingsControllerContractTests
                 "PUT",
                 "{id:long}/no-show",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -207,7 +207,7 @@ public class BookingsControllerContractTests
                 "PUT",
                 "{id:long}/complete",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<BookingDto>>>",
                 new[]
                 {
@@ -218,7 +218,7 @@ public class BookingsControllerContractTests
                 "POST",
                 "{id:long}/start-session",
                 "Authorize",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<SessionDto>>>",
                 new[]
                 {

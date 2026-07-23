@@ -5,7 +5,7 @@ PoolHub là hệ thống quản lý trung tâm giải trí/bida với mục tiê
 
 ## 2. Người dùng mục tiêu
 - Khách hàng: xem bàn trống, đặt bàn, tra cứu trạng thái đặt chỗ.
-- Staff/Cashier: mở phiên, chuyển bàn, ghi nhận order, tạo invoice và thanh toán.
+- Staff: mở phiên, chuyển bàn, ghi nhận order, tạo invoice và thanh toán.
 - Manager/Admin: quản lý danh mục, giá, báo cáo, quyền truy cập, audit và cấu hình hệ thống.
 
 ## 3. Vấn đề hệ thống giải quyết

@@ -171,7 +171,7 @@
 **Các Jira Subtasks (Phần Booking):**
 - [x] **POOL1-72**: Migration: tạo bảng Bookings (id, customerId, tableId, startTimeUtc, endTimeUtc, status, v.v.)
 - [x] **POOL1-73**: `GET /api/tables/availability?date=&type=` — (Đã triển khai thông qua `GET /api/bookings/calendar` để Frontend tự map lịch trống).
-- [x] **POOL1-74**: `POST /api/bookings` — Guest/Cashier đặt lịch, check conflict, INSERT booking.
+- [x] **POOL1-74**: `POST /api/bookings` — Guest/Staff đặt lịch, check conflict, INSERT booking.
 - [x] **POOL1-75**: `PATCH /api/bookings/{id}/confirm` — Staff xác nhận booking.
 - [x] **POOL1-76**: `PATCH /api/bookings/{id}/cancel` — Huỷ booking.
 - [ ] **POOL1-77**: Background job (IHostedService): auto-release bàn sau 15 phút nếu khách NoShow.

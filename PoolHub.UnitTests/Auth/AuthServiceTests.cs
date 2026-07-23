@@ -132,5 +132,8 @@ public class AuthServiceTests
 
         public Task RevokeFamilyAsync(string familyId, string? ipAddress, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task RevokeUserAsync(long userId, string? ipAddress, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

@@ -6,8 +6,9 @@ import { useAuth } from "@/components/auth-provider";
 import type { RoleName } from "@/types";
 
 function hasAccess(userRoles: RoleName[], userPermissions: string[], roles: RoleName[], permissions: string[]) {
-  if (!roles.length && !permissions.length) return true;
-  return userRoles.some((role) => roles.includes(role)) || userPermissions.some((permission) => permissions.includes(permission));
+  const roleAllowed = !roles.length || userRoles.some((role) => roles.includes(role));
+  const permissionAllowed = !permissions.length || userPermissions.some((permission) => permissions.includes(permission));
+  return roleAllowed && permissionAllowed;
 }
 
 export function ProtectedRoute({ children, roles = [], permissions = [] }: {
