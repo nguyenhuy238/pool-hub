@@ -450,6 +450,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new BusinessRuleException("Only confirmed bookings can start a session.");
             }
 
+            var earliestStartUtc = bookingStartUtc.AddMinutes(-GetEarlyCheckInMinutes());
+            if (nowUtc < earliestStartUtc)
+            {
+                throw new BusinessRuleException("Booking cannot start before the early check-in window.");
+            }
         }
 
         var tableId = request.TableId > 0
@@ -553,6 +558,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw new BusinessRuleException("Only confirmed bookings can start a session.");
         }
 
+        var earliestStartUtc = bookingStartUtc.AddMinutes(-GetEarlyCheckInMinutes());
+        if (nowUtc < earliestStartUtc)
+        {
+            throw new BusinessRuleException("Booking cannot start before the early check-in window.");
+        }
 
         var tableIds = await GetBookingTableIdsAsync(booking, ct);
         if (tableId.HasValue && tableId.Value > 0 && !tableIds.Contains(tableId.Value))
