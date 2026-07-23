@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.Extensions.Logging;
@@ -118,10 +119,12 @@ public class SmtpEmailService(
             From = new MailAddress(_settings.FromEmail, _settings.FromName, Encoding.UTF8),
             Subject = subject,
             SubjectEncoding = Encoding.UTF8,
+            HeadersEncoding = Encoding.UTF8,
             BodyEncoding = Encoding.UTF8,
             IsBodyHtml = true,
             Body = BuildDepositRefundHtml(title, message, details, actionUrl, actionText)
         };
+        mail.BodyTransferEncoding = TransferEncoding.QuotedPrintable;
         mail.To.Add(new MailAddress(email));
         using var client = BuildSmtpClient();
         try

@@ -71,7 +71,7 @@ public class AuthController(IAuthService authService, IAuthCookieService authCoo
         var result = await authService.LoginAsync(
             request,
             ct,
-            [RoleConstants.Admin, RoleConstants.Manager, RoleConstants.Staff, RoleConstants.Cashier]);
+            [RoleConstants.Admin, RoleConstants.Manager, RoleConstants.Staff]);
         if (result is null)
         {
             return Unauthorized(ApiResponse<AuthResponse>.Fail(

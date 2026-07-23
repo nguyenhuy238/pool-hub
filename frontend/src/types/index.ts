@@ -704,6 +704,8 @@ export type DepositRefundListItem = {
   createdAtUtc: string;
   bookingCode?: string;
   customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
   customerEmailMasked?: string;
   customerPhoneMasked?: string;
   bankCode?: string;

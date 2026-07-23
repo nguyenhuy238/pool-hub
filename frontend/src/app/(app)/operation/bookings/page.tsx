@@ -135,8 +135,16 @@ export default function BookingsPage() {
   const tableTypes = data?.tableTypes || [];
 
   async function action(fn: Promise<unknown>, message: string) {
-    await fn.then(() => toast(message, "success")).catch((err) => toast(err.message, "error"));
-    reload();
+    try {
+      await fn;
+      toast(message, "success");
+      reload();
+      return true;
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Thao tác thất bại.", "error");
+      reload();
+      return false;
+    }
   }
 
   async function startBookingSession(booking: Booking) {
@@ -434,8 +442,77 @@ export default function BookingsPage() {
           }}
         />
       ) : null}
-      {cancelling ? <ConfirmDialog title="Hủy đặt bàn" message={`Xác nhận hủy đặt bàn ${cancelling.bookingCode || cancelling.bookingId}?`} confirmLabel="Hủy đặt bàn" danger onCancel={() => setCancelling(null)} onConfirm={async () => { await action(bookingApi.cancel(cancelling.bookingId), "Đã hủy booking."); setCancelling(null); }} /> : null}
+      {cancelling ? (
+        <CancelBookingModal
+          booking={cancelling}
+          onClose={() => setCancelling(null)}
+          onConfirm={async ({ reason, cancelledByVenue }) => {
+            const ok = await action(bookingApi.cancel(cancelling.bookingId, reason, cancelledByVenue), "Đã hủy booking.");
+            if (ok) setCancelling(null);
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+function CancelBookingModal({
+  booking,
+  onClose,
+  onConfirm
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onConfirm: (payload: { reason: string; cancelledByVenue: boolean }) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [cancelledByVenue, setCancelledByVenue] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const refundHint = cancelledByVenue
+    ? "Hủy do lỗi phía quán sẽ tạo yêu cầu hoàn cọc nếu booking đã nhận cọc."
+    : "Nếu khách hủy trước ít nhất 120 phút, hệ thống sẽ tạo yêu cầu hoàn cọc. Nếu hủy sát giờ, cọc sẽ không được hoàn.";
+
+  async function submit() {
+    if (!reason.trim()) return;
+    setSaving(true);
+    try {
+      await onConfirm({ reason: reason.trim(), cancelledByVenue });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card" style={{ maxWidth: 520 }}>
+        <h2>Hủy đặt bàn</h2>
+        <p className="muted-text">Booking {booking.bookingCode || booking.bookingId}</p>
+        <label className="full-field">
+          <span>Lý do hủy *</span>
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={4}
+            placeholder="Nhập lý do hủy để lưu lại và thông báo cho khách"
+          />
+        </label>
+        <label className="check-option full-field">
+          <input
+            type="checkbox"
+            checked={cancelledByVenue}
+            onChange={(event) => setCancelledByVenue(event.target.checked)}
+          />
+          Hủy do lỗi phía quán
+        </label>
+        <div className="inline-alert warning">{refundHint}</div>
+        <div className="modal-actions">
+          <button className="ghost-btn" onClick={onClose} disabled={saving}>Đóng</button>
+          <button className="danger-btn" onClick={submit} disabled={saving || !reason.trim()}>
+            {saving ? "Đang hủy..." : "Hủy đặt bàn"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

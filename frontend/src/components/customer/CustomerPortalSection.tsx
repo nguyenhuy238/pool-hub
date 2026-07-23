@@ -337,7 +337,7 @@ function InvoiceModal({ invoice, onClose }: { invoice: Invoice; onClose: () => v
   return <Modal title={invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`} onClose={onClose} size="large"><div className="customer-invoice-detail">
     <div className="customer-invoice-meta"><span>Trạng thái</span><Badge tone={invoice.paymentStatus === 3 ? "green" : invoice.paymentStatus === 2 ? "blue" : "yellow"}>{invoicePaymentStatus[invoice.paymentStatus || 1] || "Chờ thanh toán"}</Badge><span>Tổng thanh toán</span><strong>{money(invoice.grandTotalAmount)}</strong></div>
     <div className="customer-table-scroll"><table className="customer-table"><thead><tr><th>Diễn giải</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>{(invoice.lines || []).map((line) => { const isTime = String(line.lineType || "").toUpperCase() === "TIME"; return <tr key={line.invoiceLineId}><td>{line.description}</td><td>{isTime ? `${Math.round(line.quantity * 60).toLocaleString("vi-VN")} phút` : line.quantity.toLocaleString("vi-VN")}</td><td>{isTime ? `${money(line.unitPrice)} / giờ` : money(line.unitPrice)}</td><td>{money(line.lineTotalAmount)}</td></tr>; })}</tbody></table></div>
-    <DepositRefundSummaryPanel summary={invoice.depositRefundSummary} />
+    <DepositRefundSummaryPanel summary={invoice.depositRefundSummary} variant="bill" />
     <div className="customer-invoice-total"><span>Còn phải trả</span><strong>{money(invoice.remainingAmount ?? 0)}</strong></div>
   </div></Modal>;
 }

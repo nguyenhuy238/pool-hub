@@ -10,7 +10,7 @@ namespace PoolHub.API.Controllers.Booking;
 
 [ApiController]
 [Route("api/deposit-refunds")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Cashier)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
 public class DepositRefundsController(IBookingDepositRefundService service) : ControllerBase
 {
     [HttpGet]
@@ -22,7 +22,7 @@ public class DepositRefundsController(IBookingDepositRefundService service) : Co
         Ok(ApiResponse<DepositRefundManagementDto>.Ok(await service.GetManagementAsync(id, ct)));
 
     [HttpGet("{id:long}/bank-info")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<DepositRefundBankInfoDto>>> GetBankInfo(long id, CancellationToken ct) =>
         Ok(ApiResponse<DepositRefundBankInfoDto>.Ok(await service.GetBankInfoAsync(id, User.GetUserId(), ct)));
 
@@ -42,27 +42,27 @@ public class DepositRefundsController(IBookingDepositRefundService service) : Co
         Ok(ApiResponse<BookingDepositRefundDto>.Ok(await service.RequestCustomerUpdateAsync(id, User.GetUserId(), request.Reason, ct), "Customer update requested."));
 
     [HttpPost("{id:long}/mark-processing")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<BookingDepositRefundDto>>> MarkProcessing(long id, CancellationToken ct) =>
         Ok(ApiResponse<BookingDepositRefundDto>.Ok(await service.MarkProcessingAsync(id, User.GetUserId(), ct), "Refund marked processing."));
 
     [HttpPost("{id:long}/complete-bank-transfer")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<BookingDepositRefundDto>>> CompleteBankTransfer(long id, [FromBody] CompleteBankTransferRefundRequest request, CancellationToken ct) =>
         Ok(ApiResponse<BookingDepositRefundDto>.Ok(await service.CompleteBankTransferAsync(id, User.GetUserId(), request, ct), "Bank transfer refund completed."));
 
     [HttpPost("{id:long}/mark-failed")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<BookingDepositRefundDto>>> MarkFailed(long id, [FromBody] MarkDepositRefundFailedRequest request, CancellationToken ct) =>
         Ok(ApiResponse<BookingDepositRefundDto>.Ok(await service.MarkFailedAsync(id, User.GetUserId(), request.Reason, ct), "Refund marked failed."));
 
     [HttpPost("{id:long}/prepare-cash-pickup")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<BookingDepositRefundDto>>> PrepareCashPickup(long id, CancellationToken ct) =>
         Ok(ApiResponse<BookingDepositRefundDto>.Ok(await service.PrepareCashPickupAsync(id, User.GetUserId(), ct), "Cash pickup prepared."));
 
     [HttpPost("{id:long}/complete-cash-pickup")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<BookingDepositRefundDto>>> CompleteCashPickup(long id, [FromBody] CompleteCashPickupRefundRequest request, CancellationToken ct) =>
         Ok(ApiResponse<BookingDepositRefundDto>.Ok(await service.CompleteCashPickupAsync(id, User.GetUserId(), request, ct), "Cash pickup completed."));
 }

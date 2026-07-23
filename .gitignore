@@ -19,6 +19,7 @@ x86/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+.artifacts/
 
 # Node / Next.js frontend
 node_modules/

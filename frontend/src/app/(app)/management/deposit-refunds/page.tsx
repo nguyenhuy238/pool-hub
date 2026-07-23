@@ -37,7 +37,7 @@ export default function DepositRefundsPage() {
   const toast = useToast();
   const { hasAnyRole } = useAuth();
   const isManager = hasAnyRole(["Admin", "Manager"]);
-  const isCashier = hasAnyRole(["Admin", "Cashier"]);
+  const canProcessRefund = hasAnyRole(["Admin", "Staff"]);
   const [query, setQuery] = useState({ search: "", status: "", refundMethod: "", reason: "", pageNumber: 1, pageSize: 20 });
   const [selected, setSelected] = useState<DepositRefundDetail | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message: string; action: () => Promise<void>; danger?: boolean } | null>(null);
@@ -119,6 +119,11 @@ export default function DepositRefundsPage() {
         <Modal title="Chi tiết hoàn cọc" size="large" onClose={() => { setSelected(null); setBankInfo(null); }}>
           <RefundDetail refund={selected} />
           <div className="refund-modal-actions">
+            {selected.status === 1 ? (
+              <div className="inline-alert warning" style={{ marginBottom: 12 }}>
+                Yêu cầu này đang chờ khách mở link hoàn cọc, xác minh email và chọn phương thức nhận tiền. Sau khi khách gửi thông tin, trạng thái sẽ chuyển sang “Chờ duyệt” và Manager sẽ thấy nút Duyệt/Từ chối.
+              </div>
+            ) : null}
             <div className="refund-action-row">
               {isManager && selected.status === 2 ? (
                 <>
@@ -127,20 +132,20 @@ export default function DepositRefundsPage() {
                   <button className="ghost-btn" onClick={() => setRequestingUpdate(selected)}><RefreshCcw size={16} /> Yêu cầu cập nhật</button>
                 </>
               ) : null}
-              {isCashier && selected.status === 3 && selected.refundMethod === 1 ? (
+              {canProcessRefund && selected.status === 3 && selected.refundMethod === 1 ? (
                 <button className="primary-btn" onClick={() => run(() => depositRefundApi.markProcessing(selected.bookingDepositRefundId), "Đã chuyển sang trạng thái đang xử lý.")}><Banknote size={16} /> Bắt đầu xử lý</button>
               ) : null}
-              {isCashier && selected.status === 4 && selected.refundMethod === 1 ? (
+              {canProcessRefund && selected.status === 4 && selected.refundMethod === 1 ? (
                 <>
                   <button className="secondary-btn" onClick={() => depositRefundApi.bankInfo(selected.bookingDepositRefundId).then(setBankInfo).catch((err) => toast(apiMessage(err), "error"))}><Eye size={16} /> Xem thông tin chuyển khoản</button>
                   <button className="primary-btn" onClick={() => setBankProcessing(selected)}><CheckCircle size={16} /> Hoàn tất chuyển khoản</button>
                   <button className="danger-btn" onClick={() => setFailing(selected)}><XCircle size={16} /> Thất bại</button>
                 </>
               ) : null}
-              {isCashier && selected.status === 3 && selected.refundMethod === 2 ? (
+              {canProcessRefund && selected.status === 3 && selected.refundMethod === 2 ? (
                 <button className="primary-btn" onClick={() => setConfirm({ title: "Chuẩn bị tiền mặt", message: `Xác nhận chuẩn bị ${money(selected.amount)} để khách đến nhận?`, action: () => run(() => depositRefundApi.prepareCashPickup(selected.bookingDepositRefundId), "Đã chuẩn bị tiền mặt và gửi mã cho khách.") })}><WalletCards size={16} /> Chuẩn bị tiền mặt</button>
               ) : null}
-              {isCashier && selected.status === 5 && selected.refundMethod === 2 ? (
+              {canProcessRefund && selected.status === 5 && selected.refundMethod === 2 ? (
                 <button className="primary-btn" onClick={() => setCashPickup(selected)}><CheckCircle size={16} /> Xác nhận khách đã nhận</button>
               ) : null}
             </div>
@@ -171,8 +176,8 @@ function RefundDetail({ refund }: { refund: DepositRefundDetail }) {
       </div>
       <div className="refund-detail-grid">
         <Info label="Khách hàng" value={refund.customerName || "Khách public"} />
-        <Info label="Email" value={refund.customerEmailMasked || "-"} />
-        <Info label="Điện thoại" value={refund.customerPhoneMasked || "-"} />
+        <Info label="Email" value={refund.customerEmail || refund.customerEmailMasked || "-"} />
+        <Info label="Điện thoại" value={refund.customerPhone || refund.customerPhoneMasked || "-"} />
         <Info label="Số tiền yêu cầu hoàn" value={money(refund.amount)} strong />
         <Info label="Phương thức" value={getRefundMethodLabel(refund.refundMethod)} />
         <Info label="Tài khoản" value={maskedAccount(refund.bankAccountLast4)} />

@@ -21,6 +21,7 @@ function accessForPath(pathname: string): RouteAccess {
     permissions: [PERMISSIONS.REPORTS_VIEW]
   };
   if (pathname.startsWith("/admin")) return { roles: [ROLES.ADMIN] };
+  if (pathname.startsWith("/management/deposit-refunds")) return { roles: [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF] };
   if (pathname.startsWith("/management")) return { roles: MANAGEMENT_READ_ROLES };
   if (pathname.startsWith("/operation")) return { roles: OPERATION_ROLES };
   if (pathname.startsWith("/profile") || pathname.startsWith("/change-password")) return {};

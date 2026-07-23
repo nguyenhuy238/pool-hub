@@ -3815,6 +3815,31 @@ textarea:focus {
   display: block;
 }
 
+.deposit-refund-summary.bill {
+  border-top: 1px dashed var(--line, #e2e8f0);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.deposit-refund-bill-row {
+  align-items: center;
+  color: var(--muted, #64748b);
+  display: flex;
+  font-size: 14px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.deposit-refund-bill-row strong {
+  color: var(--text, #0f172a);
+}
+
+.deposit-refund-note {
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+
 .deposit-refund-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

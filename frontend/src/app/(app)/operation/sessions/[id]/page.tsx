@@ -244,7 +244,7 @@ export default function SessionDetailPage() {
                 <Info label="Tổng tiền" value={money(Number(grandTotal))} strong />
               </div>
               <div style={{ marginTop: 14 }}>
-                <DepositRefundSummaryPanel summary={summary?.depositRefundSummary || session.depositRefundSummary} />
+                <DepositRefundSummaryPanel summary={summary?.depositRefundSummary || session.depositRefundSummary} variant="bill" />
               </div>
             </div>
 

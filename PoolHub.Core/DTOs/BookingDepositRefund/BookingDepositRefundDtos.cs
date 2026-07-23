@@ -113,6 +113,8 @@ public class DepositRefundManagementDto : BookingDepositRefundDto
 {
     public string? BookingCode { get; set; }
     public string? CustomerName { get; set; }
+    public string? CustomerEmail { get; set; }
+    public string? CustomerPhone { get; set; }
     public string? CustomerEmailMasked { get; set; }
     public string? CustomerPhoneMasked { get; set; }
     public string? BankCode { get; set; }
