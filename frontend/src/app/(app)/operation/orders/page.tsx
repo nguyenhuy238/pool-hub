@@ -25,6 +25,7 @@ export default function OrdersPage() {
   const [cancellingOrder, setCancellingOrder] = useState<Order | null>(null);
   const [removingItem, setRemovingItem] = useState<OrderItem | null>(null);
   const [itemQuantities, setItemQuantities] = useState<Record<number, number>>({});
+  const [detailItemPage, setDetailItemPage] = useState(1);
   const [summary, setSummary] = useState<any | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
@@ -58,6 +59,10 @@ export default function OrdersPage() {
   const isSessionOpen = Number(selectedSession?.status) === SESSION_OPEN;
   const canEditOrder = Boolean(sessionId && selectedSession && isSessionOpen);
   const currentOrder = (selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : null) ?? orders[0] ?? null;
+  const currentOrderItems = currentOrder?.items ?? [];
+  const detailItemPageCount = Math.max(1, currentOrderItems.length);
+  const activeDetailItemPage = Math.min(detailItemPage, detailItemPageCount);
+  const activeDetailItem = currentOrderItems[activeDetailItemPage - 1] ?? null;
   const currentTable = (selectedSession?.assignments || []).find((assignment) => !assignment.endedAtUtc) || selectedSession?.assignments?.at?.(-1);
 
   useEffect(() => {
@@ -77,6 +82,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     setItemQuantities({});
+    setDetailItemPage(1);
   }, [currentOrder?.orderId]);
 
   async function ensureOrder() {
@@ -332,11 +338,53 @@ export default function OrdersPage() {
                 <strong>{money(Number(currentOrder.subtotalAmount || 0))}</strong>
               </div>
               {currentOrder.items?.length ? (
-                <div className="order-detail-list">
-                  {currentOrder.items.map((item) => {
-                    const quantity = itemQuantities[item.orderItemId] ?? item.quantity;
-                    return (
-                      <article className="order-detail-item" key={item.orderItemId}>
+                <>
+                  <div className="order-detail-controls">
+                    <label className="order-detail-picker">
+                      <span>Sản phẩm trong đơn</span>
+                      <select
+                        value={activeDetailItem ? String(activeDetailItem.orderItemId) : ""}
+                        onChange={(event) => {
+                          const selectedIndex = currentOrderItems.findIndex(
+                            (item) => item.orderItemId === Number(event.target.value)
+                          );
+                          if (selectedIndex >= 0) setDetailItemPage(selectedIndex + 1);
+                        }}
+                      >
+                        {currentOrderItems.map((item, index) => (
+                          <option key={item.orderItemId} value={item.orderItemId}>
+                            {index + 1}. {item.productNameSnapshot} · SL {item.quantity}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <nav className="order-detail-pagination" aria-label="Phân trang chi tiết đơn hàng">
+                      <button
+                        className="ghost-btn"
+                        type="button"
+                        disabled={activeDetailItemPage <= 1}
+                        onClick={() => setDetailItemPage(activeDetailItemPage - 1)}
+                      >
+                        Trước
+                      </button>
+                      <span>
+                        Sản phẩm {activeDetailItemPage}/{currentOrderItems.length}
+                      </span>
+                      <button
+                        className="ghost-btn"
+                        type="button"
+                        disabled={activeDetailItemPage >= currentOrderItems.length}
+                        onClick={() => setDetailItemPage(activeDetailItemPage + 1)}
+                      >
+                        Sau
+                      </button>
+                    </nav>
+                  </div>
+                  <div className="order-detail-list">
+                    {currentOrderItems.slice(activeDetailItemPage - 1, activeDetailItemPage).map((item) => {
+                      const quantity = itemQuantities[item.orderItemId] ?? item.quantity;
+                      return (
+                        <article className="order-detail-item" key={item.orderItemId}>
                         <div className="order-detail-cell order-detail-product">
                           <small>Sản phẩm</small>
                           <strong>{item.productNameSnapshot}</strong>
@@ -375,10 +423,11 @@ export default function OrdersPage() {
                             Xóa
                           </button>
                         </div>
-                      </article>
-                    );
-                  })}
-                </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
               ) : (
                 <p>Chưa có sản phẩm trong order.</p>
               )}

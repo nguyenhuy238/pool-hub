@@ -2083,6 +2083,49 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.order-detail-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.order-detail-picker {
+  display: grid;
+  flex: 1 1 280px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.order-detail-picker > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.order-detail-picker select {
+  width: 100%;
+  min-width: 0;
+}
+
+.order-detail-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.order-detail-pagination > span {
+  min-width: 104px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+}
+
 .order-detail-list {
   display: grid;
   gap: 10px;
@@ -2159,6 +2202,21 @@ textarea:focus {
 
   .order-list-actions button,
   .order-detail-actions button {
+    flex: 1 1 120px;
+  }
+
+  .order-detail-controls,
+  .order-detail-pagination {
+    align-items: stretch;
+  }
+
+  .order-detail-picker,
+  .order-detail-pagination,
+  .order-detail-pagination button {
+    width: 100%;
+  }
+
+  .order-detail-pagination button {
     flex: 1 1 120px;
   }
 }
