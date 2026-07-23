@@ -17,6 +17,7 @@ public class BookingDepositRefundConfiguration : IEntityTypeConfiguration<Bookin
         builder.HasIndex(x => x.Status);
         builder.HasIndex(x => x.BookingDepositId);
         builder.HasIndex(x => x.CreatedAtUtc);
+        builder.HasIndex(x => x.CustomerTokenHash);
 
         builder.Property(x => x.RefundCode).HasMaxLength(32).IsRequired();
         builder.Property(x => x.Reason).HasMaxLength(64).IsRequired();
@@ -26,11 +27,15 @@ public class BookingDepositRefundConfiguration : IEntityTypeConfiguration<Bookin
         builder.Property(x => x.CustomerEmailSnapshot).HasMaxLength(256);
         builder.Property(x => x.CustomerPhoneSnapshot).HasMaxLength(32);
         builder.Property(x => x.CustomerTokenHash).HasMaxLength(128);
+        builder.Property(x => x.VerificationCodeHash).HasMaxLength(128);
         builder.Property(x => x.CustomerBankCode).HasMaxLength(32);
         builder.Property(x => x.CustomerBankName).HasMaxLength(128);
+        builder.Property(x => x.CustomerBankAccountNumberEncrypted).HasMaxLength(2048);
+        builder.Property(x => x.CustomerBankAccountNameEncrypted).HasMaxLength(2048);
         builder.Property(x => x.CustomerBankAccountLast4).HasMaxLength(4);
         builder.Property(x => x.ManualTransferCode).HasMaxLength(128);
         builder.Property(x => x.CashReceiptCode).HasMaxLength(128);
+        builder.Property(x => x.CashPickupCodeHash).HasMaxLength(128);
 
         builder.HasOne<BookingDeposit>()
             .WithMany(x => x.Refunds)

@@ -101,6 +101,8 @@ public class AuthServiceTests
             Task.CompletedTask;
         public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) =>
             Task.CompletedTask;
+        public Task SendDepositRefundNotificationAsync(string email, string subject, string title, string message, IReadOnlyDictionary<string, string> details, string? actionUrl, string? actionText, CancellationToken ct) =>
+            Task.CompletedTask;
     }
 
     private sealed class TestRefreshTokenStore : IRefreshTokenStore

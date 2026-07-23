@@ -1,18 +1,32 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
 using PoolHub.Core.DTOs.BookingDepositRefund;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using PoolHub.Shared.Time;
 using EntitySession = PoolHub.Core.Entities.Session;
 using EntityInvoice = PoolHub.Core.Entities.Invoice;
+using EntityCustomer = PoolHub.Core.Entities.Customer;
+using EntityBooking = PoolHub.Core.Entities.Booking;
 
 namespace PoolHub.Services.Booking;
 
-public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? auditService = null, IClock? clock = null) : IBookingDepositRefundService
+public class BookingDepositRefundService(
+    PoolHubDbContext db,
+    IAuditService? auditService = null,
+    IClock? clock = null,
+    IEmailService? emailService = null,
+    IConfiguration? config = null,
+    ISensitiveDataProtector? sensitiveDataProtector = null,
+    ILogger<BookingDepositRefundService>? logger = null) : IBookingDepositRefundService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
     private static readonly int[] BalanceHoldingStatuses =
@@ -33,6 +47,18 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
             .Where(x => x.BookingDepositId == bookingDepositId && BalanceHoldingStatuses.Contains(x.Status))
             .SumAsync(x => x.Amount, ct);
 
+        return Math.Max(0, deposit.PaidAmount - deposit.AppliedAmount - deposit.ForfeitedAmount - reserved);
+    }
+
+    private async Task<decimal> CalculateRefundableBalanceExcludingRefundAsync(long bookingDepositId, long refundId, CancellationToken ct)
+    {
+        var deposit = await db.BookingDeposits.AsNoTracking().FirstOrDefaultAsync(x => x.BookingDepositId == bookingDepositId, ct)
+            ?? throw new NotFoundException("Booking deposit not found.");
+        var reserved = await db.BookingDepositRefunds.AsNoTracking()
+            .Where(x => x.BookingDepositRefundId != refundId &&
+                        x.BookingDepositId == bookingDepositId &&
+                        BalanceHoldingStatuses.Contains(x.Status))
+            .SumAsync(x => x.Amount, ct);
         return Math.Max(0, deposit.PaidAmount - deposit.AppliedAmount - deposit.ForfeitedAmount - reserved);
     }
 
@@ -85,9 +111,15 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
             RequestedByUserId = request.RequestedByUserId,
             IdempotencyKey = request.IdempotencyKey.Trim()
         };
+        var rawToken = GenerateToken();
+        SetCustomerToken(refund, rawToken);
         db.BookingDepositRefunds.Add(refund);
         await db.SaveChangesAsync(ct);
         await LogAsync(request.RequestedByUserId, AuditActions.BookingDepositRefundCreated, refund, ct);
+        await LogAsync(request.RequestedByUserId, AuditActions.RefundTokenGenerated, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Yeu cau thong tin hoan coc", "Cung cap thong tin nhan hoan coc",
+            "PoolHub can ban xac minh va chon hinh thuc nhan tien hoan coc.",
+            BuildPublicRefundUrl(rawToken), "Mo trang hoan coc", ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         return Map(refund);
     }
@@ -141,16 +173,26 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
     {
         var refund = await GetRefundAsync(refundId, ct);
         EnsureTransition(refund.Status, BookingDepositRefundStatuses.Approved);
+        if (refund.RefundMethod is null) throw new BusinessRuleException("Refund method must be selected before approval.");
+        if (refund.RefundMethod == BookingDepositRefundMethods.BankTransfer &&
+            (string.IsNullOrWhiteSpace(refund.CustomerBankAccountNumberEncrypted) || string.IsNullOrWhiteSpace(refund.CustomerBankAccountNameEncrypted)))
+            throw new BusinessRuleException("Bank information is required before approval.");
+        var balance = await CalculateRefundableBalanceExcludingRefundAsync(refund.BookingDepositId, refund.BookingDepositRefundId, ct);
+        if (refund.Amount > balance)
+            throw new BusinessRuleException("Refund amount exceeds the current refundable balance.");
         refund.Status = BookingDepositRefundStatuses.Approved;
         refund.ApprovedByUserId = approvedByUserId;
         refund.ApprovedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(approvedByUserId, AuditActions.BookingDepositRefundApproved, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Hoan coc da duoc duyet", "Hoan coc da duoc duyet",
+            "Yeu cau hoan coc cua ban da duoc quan ly duyet va dang cho thu ngan xu ly.", null, null, ct);
         return Map(refund);
     }
 
     public async Task<BookingDepositRefundDto> RejectAsync(long refundId, long rejectedByUserId, string reason, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(reason)) throw new ValidationException("Reject reason is required.");
         var refund = await GetRefundAsync(refundId, ct);
         EnsureTransition(refund.Status, BookingDepositRefundStatuses.Rejected);
         refund.Status = BookingDepositRefundStatuses.Rejected;
@@ -158,23 +200,30 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
         refund.RejectedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(rejectedByUserId, AuditActions.BookingDepositRefundRejected, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Yeu cau hoan coc bi tu choi", "Yeu cau hoan coc bi tu choi",
+            $"Ly do: {refund.RejectReason}", null, null, ct);
         return Map(refund);
     }
 
     public async Task<BookingDepositRefundDto> MarkProcessingAsync(long refundId, long processedByUserId, CancellationToken ct)
     {
         var refund = await GetRefundAsync(refundId, ct);
+        if (refund.RefundMethod != BookingDepositRefundMethods.BankTransfer)
+            throw new BusinessRuleException("Only BankTransfer refunds can be marked Processing.");
         EnsureTransition(refund.Status, BookingDepositRefundStatuses.Processing);
         refund.Status = BookingDepositRefundStatuses.Processing;
         refund.ProcessedByUserId = processedByUserId;
         refund.ProcessingAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(processedByUserId, AuditActions.BookingDepositRefundProcessing, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Hoan coc dang xu ly", "Hoan coc dang xu ly",
+            "Thu ngan dang thuc hien chuyen khoan hoan coc.", null, null, ct);
         return Map(refund);
     }
 
     public async Task<BookingDepositRefundDto> MarkFailedAsync(long refundId, long processedByUserId, string reason, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(reason)) throw new ValidationException("Failure reason is required.");
         var refund = await GetRefundAsync(refundId, ct);
         EnsureTransition(refund.Status, BookingDepositRefundStatuses.Failed);
         refund.Status = BookingDepositRefundStatuses.Failed;
@@ -183,6 +232,8 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
         refund.FailedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(processedByUserId, AuditActions.BookingDepositRefundFailed, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Hoan coc that bai", "Hoan coc that bai",
+            $"Ly do: {refund.FailureReason}", null, null, ct);
         return Map(refund);
     }
 
@@ -212,6 +263,246 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
         await LogAsync(processedByUserId, AuditActions.BookingDepositRefundCompleted, refund, ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         return Map(refund);
+    }
+
+    public async Task<PublicDepositRefundDto> GetPublicAsync(string token, CancellationToken ct)
+    {
+        var refund = await GetRefundByTokenAsync(token, ct);
+        return await MapPublicAsync(refund, ct);
+    }
+
+    public async Task SendVerificationCodeAsync(string token, CancellationToken ct)
+    {
+        var refund = await GetRefundByTokenAsync(token, ct);
+        EnsurePendingCustomerInfo(refund);
+        if (refund.VerificationCodeSentAtUtc.HasValue &&
+            refund.VerificationCodeSentAtUtc.Value > _clock.UtcNow.AddSeconds(-GetVerificationResendSeconds()))
+            throw new BusinessRuleException("Please wait before requesting another verification code.");
+
+        var code = GenerateNumericCode();
+        refund.VerificationCodeHash = HashToken(code);
+        refund.VerificationCodeExpiresAtUtc = _clock.UtcNow.AddMinutes(GetVerificationMinutes());
+        refund.VerificationCodeSentAtUtc = _clock.UtcNow;
+        refund.VerificationFailedAttempts = 0;
+        refund.CustomerVerifiedAtUtc = null;
+        await db.SaveChangesAsync(ct);
+        await LogAsync(null, AuditActions.RefundVerificationCodeSent, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Ma xac minh hoan coc", "Ma xac minh hoan coc",
+            $"Ma xac minh cua ban la {code}. Ma het han sau {GetVerificationMinutes()} phut.",
+            null, null, ct);
+    }
+
+    public async Task<PublicDepositRefundDto> VerifyCustomerAsync(string token, VerifyDepositRefundRequest request, CancellationToken ct)
+    {
+        var refund = await GetRefundByTokenAsync(token, ct);
+        EnsurePendingCustomerInfo(refund);
+        if (refund.VerificationCodeHash is null || refund.VerificationCodeExpiresAtUtc <= _clock.UtcNow)
+            throw new UnauthorizedException("Verification code is invalid or expired.");
+        if (refund.VerificationFailedAttempts >= GetVerificationMaxAttempts())
+            throw new UnauthorizedException("Too many invalid verification attempts.");
+        if (!PhoneLast4Matches(refund.CustomerPhoneSnapshot, request.PhoneLast4) ||
+            !FixedTimeEquals(refund.VerificationCodeHash, HashToken(request.VerificationCode.Trim())))
+        {
+            refund.VerificationFailedAttempts += 1;
+            await db.SaveChangesAsync(ct);
+            throw new UnauthorizedException("Verification code or phone last 4 digits are incorrect.");
+        }
+
+        refund.CustomerVerifiedAtUtc = _clock.UtcNow;
+        refund.VerificationFailedAttempts = 0;
+        await db.SaveChangesAsync(ct);
+        await LogAsync(null, AuditActions.RefundCustomerVerified, refund, ct);
+        return await MapPublicAsync(refund, ct);
+    }
+
+    public async Task<PublicDepositRefundDto> SubmitMethodAsync(string token, SubmitDepositRefundMethodRequest request, CancellationToken ct)
+    {
+        var refund = await GetRefundByTokenAsync(token, ct);
+        EnsurePendingCustomerInfo(refund);
+        EnsureCustomerVerified(refund);
+        var method = ParseRefundMethod(request.RefundMethod);
+
+        if (method == BookingDepositRefundMethods.BankTransfer)
+        {
+            if (sensitiveDataProtector is null) throw new ServiceUnavailableException("Sensitive data protection is not configured.");
+            var accountNumber = NormalizeRequired(request.AccountNumber, "Account number is required.");
+            var confirm = NormalizeRequired(request.ConfirmAccountNumber, "Confirm account number is required.");
+            if (!string.Equals(accountNumber, confirm, StringComparison.Ordinal))
+                throw new ValidationException("Account numbers do not match.");
+            refund.CustomerBankCode = NormalizeRequired(request.BankCode, "Bank code is required.").ToUpperInvariant();
+            refund.CustomerBankName = NormalizeRequired(request.BankName, "Bank name is required.");
+            refund.CustomerBankAccountNumberEncrypted = sensitiveDataProtector.Protect(accountNumber);
+            refund.CustomerBankAccountNameEncrypted = sensitiveDataProtector.Protect(NormalizeHolderName(request.AccountHolderName));
+            refund.CustomerBankAccountLast4 = Last4(accountNumber);
+        }
+        else
+        {
+            refund.CustomerBankCode = null;
+            refund.CustomerBankName = null;
+            refund.CustomerBankAccountNumberEncrypted = null;
+            refund.CustomerBankAccountNameEncrypted = null;
+            refund.CustomerBankAccountLast4 = null;
+        }
+
+        refund.RefundMethod = method;
+        refund.Status = BookingDepositRefundStatuses.PendingApproval;
+        refund.CustomerInfoSubmittedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        await LogAsync(null, AuditActions.CustomerRefundInfoSubmitted, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Da nhan thong tin hoan coc", "Da nhan thong tin hoan coc",
+            "Thong tin nhan hoan coc cua ban da duoc gui den quan ly de duyet.", null, null, ct);
+        return await MapPublicAsync(refund, ct);
+    }
+
+    public async Task<PagedResult<DepositRefundManagementDto>> GetRefundsAsync(DepositRefundQueryRequest request, CancellationToken ct)
+    {
+        request.PageNumber = Math.Max(1, request.PageNumber);
+        request.PageSize = Math.Clamp(request.PageSize, 1, 100);
+        var query = ManagementQuery();
+        if (request.Status.HasValue) query = query.Where(x => x.Refund.Status == request.Status.Value);
+        if (request.RefundMethod.HasValue) query = query.Where(x => x.Refund.RefundMethod == request.RefundMethod.Value);
+        if (!string.IsNullOrWhiteSpace(request.Reason)) query = query.Where(x => x.Refund.Reason == request.Reason.Trim());
+        if (!string.IsNullOrWhiteSpace(request.BookingCode)) query = query.Where(x => x.Booking.BookingCode.Contains(request.BookingCode.Trim()));
+        if (!string.IsNullOrWhiteSpace(request.RefundCode)) query = query.Where(x => x.Refund.RefundCode.Contains(request.RefundCode.Trim()));
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var search = request.Search.Trim();
+            query = query.Where(x => x.Refund.RefundCode.Contains(search) || x.Booking.BookingCode.Contains(search) ||
+                (x.Customer != null && (x.Customer.FullName.Contains(search) || x.Customer.PhoneNumber.Contains(search) || (x.Customer.Email != null && x.Customer.Email.Contains(search)))));
+        }
+        if (request.CreatedFromUtc.HasValue) query = query.Where(x => x.Refund.CreatedAtUtc >= request.CreatedFromUtc.Value);
+        if (request.CreatedToUtc.HasValue) query = query.Where(x => x.Refund.CreatedAtUtc <= request.CreatedToUtc.Value);
+
+        var total = await query.CountAsync(ct);
+        var rows = await query.OrderByDescending(x => x.Refund.CreatedAtUtc)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToListAsync(ct);
+        return new PagedResult<DepositRefundManagementDto>
+        {
+            Items = rows.Select(x => MapManagement(x.Refund, x.Booking, x.Customer)).ToList(),
+            PageNumber = request.PageNumber,
+            PageSize = request.PageSize,
+            TotalItems = total
+        };
+    }
+
+    public async Task<DepositRefundManagementDto> GetManagementAsync(long refundId, CancellationToken ct)
+    {
+        var row = await ManagementQuery().FirstOrDefaultAsync(x => x.Refund.BookingDepositRefundId == refundId, ct)
+            ?? throw new NotFoundException("Booking deposit refund not found.");
+        return MapManagement(row.Refund, row.Booking, row.Customer);
+    }
+
+    public async Task<DepositRefundBankInfoDto> GetBankInfoAsync(long refundId, long actorUserId, CancellationToken ct)
+    {
+        var refund = await GetRefundAsync(refundId, ct);
+        if (refund.RefundMethod != BookingDepositRefundMethods.BankTransfer)
+            throw new BusinessRuleException("Refund is not configured for bank transfer.");
+        if (sensitiveDataProtector is null) throw new ServiceUnavailableException("Sensitive data protection is not configured.");
+        await LogAsync(actorUserId, AuditActions.BankInformationViewed, refund, ct);
+        return new DepositRefundBankInfoDto
+        {
+            BookingDepositRefundId = refund.BookingDepositRefundId,
+            RefundCode = refund.RefundCode,
+            BankCode = refund.CustomerBankCode,
+            BankName = refund.CustomerBankName,
+            AccountNumber = refund.CustomerBankAccountNumberEncrypted is null ? null : sensitiveDataProtector.Unprotect(refund.CustomerBankAccountNumberEncrypted),
+            AccountHolderName = refund.CustomerBankAccountNameEncrypted is null ? null : sensitiveDataProtector.Unprotect(refund.CustomerBankAccountNameEncrypted),
+            AccountLast4 = refund.CustomerBankAccountLast4
+        };
+    }
+
+    public async Task<BookingDepositRefundDto> RequestCustomerUpdateAsync(long refundId, long actorUserId, string? reason, CancellationToken ct)
+    {
+        var refund = await GetRefundAsync(refundId, ct);
+        EnsureTransition(refund.Status, BookingDepositRefundStatuses.PendingCustomerInfo);
+        refund.Status = BookingDepositRefundStatuses.PendingCustomerInfo;
+        refund.RefundMethod = null;
+        refund.CustomerVerifiedAtUtc = null;
+        refund.VerificationCodeHash = null;
+        refund.VerificationCodeExpiresAtUtc = null;
+        refund.VerificationCodeSentAtUtc = null;
+        refund.VerificationFailedAttempts = 0;
+        refund.CustomerInfoSubmittedAtUtc = null;
+        refund.CustomerBankCode = null;
+        refund.CustomerBankName = null;
+        refund.CustomerBankAccountNumberEncrypted = null;
+        refund.CustomerBankAccountNameEncrypted = null;
+        refund.CustomerBankAccountLast4 = null;
+        refund.Note = string.IsNullOrWhiteSpace(reason) ? refund.Note : reason.Trim();
+        var rawToken = GenerateToken();
+        SetCustomerToken(refund, rawToken);
+        await db.SaveChangesAsync(ct);
+        await LogAsync(actorUserId, AuditActions.DepositRefundCustomerUpdateRequested, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Can cap nhat thong tin hoan coc", "Can cap nhat thong tin hoan coc",
+            "Quan ly can ban cap nhat lai thong tin nhan hoan coc.", BuildPublicRefundUrl(rawToken), "Cap nhat thong tin", ct);
+        return Map(refund);
+    }
+
+    public async Task<BookingDepositRefundDto> PrepareCashPickupAsync(long refundId, long processedByUserId, CancellationToken ct)
+    {
+        var refund = await GetRefundAsync(refundId, ct);
+        if (refund.RefundMethod != BookingDepositRefundMethods.CashAtVenue)
+            throw new BusinessRuleException("Only CashAtVenue refunds can be prepared for cash pickup.");
+        EnsureTransition(refund.Status, BookingDepositRefundStatuses.ReadyForCashPickup);
+        var code = GenerateNumericCode();
+        refund.CashPickupCodeHash = HashToken(code);
+        refund.CashPickupCodeExpiresAtUtc = _clock.UtcNow.AddHours(GetCashPickupCodeHours());
+        refund.CashPickupCodeUsedAtUtc = null;
+        refund.CashReceiptCode = $"CASHRF{_clock.UtcNow:yyyyMMddHHmmss}";
+        refund.Status = BookingDepositRefundStatuses.ReadyForCashPickup;
+        refund.ProcessedByUserId = processedByUserId;
+        await db.SaveChangesAsync(ct);
+        await LogAsync(processedByUserId, AuditActions.CashRefundPrepared, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Tien mat san sang nhan", "Tien mat san sang nhan",
+            $"Ma nhan tien mat cua ban la {code}. Vui long mang ma nay den quay thu ngan.",
+            null, null, ct);
+        return Map(refund);
+    }
+
+    public async Task<BookingDepositRefundDto> CompleteBankTransferAsync(long refundId, long processedByUserId, CompleteBankTransferRefundRequest request, CancellationToken ct)
+    {
+        var refund = await GetRefundAsync(refundId, ct);
+        if (refund.RefundMethod != BookingDepositRefundMethods.BankTransfer)
+            throw new BusinessRuleException("Refund method must be BankTransfer.");
+        if (refund.Status != BookingDepositRefundStatuses.Processing)
+            throw new BusinessRuleException("Bank transfer refund must be Processing before completion.");
+        var transferCode = NormalizeRequired(request.ManualTransferCode, "Manual transfer code is required.");
+        refund.ProofMediaAssetId = request.ProofMediaAssetId;
+        refund.Note = NormalizeOptional(request.Note);
+        var result = await CompleteAsync(refundId, processedByUserId, transferCode, ct);
+        await TrySendRefundEmailAsync(refund, "Da chuyen khoan hoan coc", "Da chuyen khoan hoan coc",
+            "PoolHub da hoan coc bang chuyen khoan ngan hang.", null, null, ct);
+        return result;
+    }
+
+    public async Task<BookingDepositRefundDto> CompleteCashPickupAsync(long refundId, long processedByUserId, CompleteCashPickupRefundRequest request, CancellationToken ct)
+    {
+        var refund = await GetRefundAsync(refundId, ct);
+        if (refund.RefundMethod != BookingDepositRefundMethods.CashAtVenue)
+            throw new BusinessRuleException("Refund method must be CashAtVenue.");
+        if (refund.Status != BookingDepositRefundStatuses.ReadyForCashPickup)
+            throw new BusinessRuleException("Cash refund is not ready for pickup.");
+        if (refund.CashPickupCodeUsedAtUtc.HasValue)
+            throw new ConflictException("Cash pickup code has already been used.");
+        if (refund.CashPickupCodeHash is null || refund.CashPickupCodeExpiresAtUtc <= _clock.UtcNow ||
+            !FixedTimeEquals(refund.CashPickupCodeHash, HashToken(request.CashPickupCode.Trim())))
+            throw new UnauthorizedException("Cash pickup code is invalid or expired.");
+        var booking = await db.Bookings.AsNoTracking().FirstOrDefaultAsync(x => x.BookingId == refund.BookingId, ct)
+            ?? throw new NotFoundException("Booking not found.");
+        if (!string.Equals(booking.BookingCode, request.BookingCode.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedException("Booking code does not match.");
+        if (!PhoneLast4Matches(refund.CustomerPhoneSnapshot, request.PhoneLast4))
+            throw new UnauthorizedException("Phone last 4 digits do not match.");
+
+        refund.CashPickupCodeUsedAtUtc = _clock.UtcNow;
+        refund.Note = NormalizeOptional(request.Note);
+        var result = await CompleteAsync(refundId, processedByUserId, refund.CashReceiptCode, ct);
+        await LogAsync(processedByUserId, AuditActions.CashRefundPickedUp, refund, ct);
+        await TrySendRefundEmailAsync(refund, "Da hoan tien mat", "Da hoan tien mat",
+            "PoolHub da xac nhan ban da nhan tien mat hoan coc.", null, null, ct);
+        return result;
     }
 
     public async Task<DepositApplicationResult> ApplyDepositToInvoiceAsync(EntitySession session, EntityInvoice invoice, CancellationToken ct)
@@ -320,6 +611,26 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
         await db.BookingDepositRefunds.FirstOrDefaultAsync(x => x.BookingDepositRefundId == refundId, ct)
         ?? throw new NotFoundException("Booking deposit refund not found.");
 
+    private async Task<BookingDepositRefund> GetRefundByTokenAsync(string token, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(token)) throw new NotFoundException("Deposit refund not found.");
+        var hash = HashToken(token.Trim());
+        var refund = await db.BookingDepositRefunds.FirstOrDefaultAsync(x => x.CustomerTokenHash == hash, ct)
+            ?? throw new NotFoundException("Deposit refund not found.");
+        if (refund.CustomerTokenExpiresAtUtc <= _clock.UtcNow)
+            throw new UnauthorizedException("Deposit refund link is invalid or expired.");
+        if (refund.Status is BookingDepositRefundStatuses.Succeeded or BookingDepositRefundStatuses.Rejected or BookingDepositRefundStatuses.Cancelled)
+            throw new BusinessRuleException("Deposit refund is already closed.");
+        return refund;
+    }
+
+    private IQueryable<RefundManagementRow> ManagementQuery() =>
+        from refund in db.BookingDepositRefunds.AsNoTracking()
+        join booking in db.Bookings.AsNoTracking() on refund.BookingId equals booking.BookingId
+        join customer in db.Customers.AsNoTracking() on refund.CustomerId equals customer.CustomerId into customers
+        from customer in customers.DefaultIfEmpty()
+        select new RefundManagementRow(refund, booking, customer);
+
     private static bool HasUsablePaidDeposit(BookingDeposit deposit) =>
         deposit.PaidAmount > 0 &&
         deposit.Status is BookingDepositStatuses.Paid or BookingDepositStatuses.AppliedToInvoice or BookingDepositStatuses.PartiallyRefunded or BookingDepositStatuses.Refunded;
@@ -336,6 +647,19 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
             _ => false
         };
         if (!valid) throw new BusinessRuleException("Invalid booking deposit refund status transition.");
+    }
+
+    private static void EnsurePendingCustomerInfo(BookingDepositRefund refund)
+    {
+        if (refund.Status != BookingDepositRefundStatuses.PendingCustomerInfo)
+            throw new BusinessRuleException("Deposit refund is not waiting for customer information.");
+    }
+
+    private void EnsureCustomerVerified(BookingDepositRefund refund)
+    {
+        if (!refund.CustomerVerifiedAtUtc.HasValue ||
+            refund.CustomerVerifiedAtUtc.Value < _clock.UtcNow.AddMinutes(-GetVerifiedSessionMinutes()))
+            throw new UnauthorizedException("Customer verification is required or expired.");
     }
 
     private static void UpdateDepositRefundStatus(BookingDeposit deposit)
@@ -360,6 +684,181 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
     private Task LogAsync(long? actorUserId, string action, BookingDepositRefund refund, CancellationToken ct) =>
         auditService?.LogAsync(actorUserId, action, nameof(BookingDepositRefund), refund.BookingDepositRefundId, refund.PublicId, newValues: refund, ct: ct)
         ?? Task.CompletedTask;
+
+    private void SetCustomerToken(BookingDepositRefund refund, string rawToken)
+    {
+        refund.CustomerTokenHash = HashToken(rawToken);
+        refund.CustomerTokenGeneratedAtUtc = _clock.UtcNow;
+        refund.CustomerTokenExpiresAtUtc = _clock.UtcNow.AddHours(GetTokenHours());
+    }
+
+    private async Task<PublicDepositRefundDto> MapPublicAsync(BookingDepositRefund refund, CancellationToken ct)
+    {
+        var bookingCode = await db.Bookings.AsNoTracking()
+            .Where(x => x.BookingId == refund.BookingId)
+            .Select(x => x.BookingCode)
+            .FirstOrDefaultAsync(ct);
+        return new PublicDepositRefundDto
+        {
+            RefundCode = refund.RefundCode,
+            BookingCode = bookingCode,
+            Amount = refund.Amount,
+            Reason = refund.Reason,
+            Status = refund.Status,
+            TokenExpiresAtUtc = refund.CustomerTokenExpiresAtUtc,
+            CustomerEmailMasked = MaskEmail(refund.CustomerEmailSnapshot),
+            CustomerPhoneMasked = MaskPhone(refund.CustomerPhoneSnapshot),
+            RefundMethod = refund.RefundMethod,
+            BankCode = refund.CustomerBankCode,
+            BankName = refund.CustomerBankName,
+            BankAccountLast4 = refund.CustomerBankAccountLast4,
+            IsVerified = refund.CustomerVerifiedAtUtc.HasValue && refund.CustomerVerifiedAtUtc.Value >= _clock.UtcNow.AddMinutes(-GetVerifiedSessionMinutes()),
+            NextStep = GetPublicNextStep(refund)
+        };
+    }
+
+    private static DepositRefundManagementDto MapManagement(BookingDepositRefund refund, EntityBooking booking, EntityCustomer? customer)
+    {
+        var dto = new DepositRefundManagementDto
+        {
+            BookingCode = booking.BookingCode,
+            CustomerName = customer?.FullName,
+            CustomerEmailMasked = MaskEmail(refund.CustomerEmailSnapshot ?? customer?.Email),
+            CustomerPhoneMasked = MaskPhone(refund.CustomerPhoneSnapshot ?? customer?.PhoneNumber),
+            BankCode = refund.CustomerBankCode,
+            BankName = refund.CustomerBankName,
+            BankAccountLast4 = refund.CustomerBankAccountLast4,
+            ManualTransferCode = refund.ManualTransferCode,
+            FailureReason = refund.FailureReason,
+            RejectReason = refund.RejectReason,
+            Note = refund.Note,
+            ApprovedAtUtc = refund.ApprovedAtUtc,
+            ProcessingAtUtc = refund.ProcessingAtUtc,
+            SucceededAtUtc = refund.SucceededAtUtc
+        };
+        var baseDto = Map(refund);
+        dto.BookingDepositRefundId = baseDto.BookingDepositRefundId;
+        dto.PublicId = baseDto.PublicId;
+        dto.BookingDepositId = baseDto.BookingDepositId;
+        dto.BookingId = baseDto.BookingId;
+        dto.InvoiceId = baseDto.InvoiceId;
+        dto.CustomerId = baseDto.CustomerId;
+        dto.RefundCode = baseDto.RefundCode;
+        dto.Amount = baseDto.Amount;
+        dto.Status = baseDto.Status;
+        dto.Reason = baseDto.Reason;
+        dto.RefundMethod = baseDto.RefundMethod;
+        dto.ReasonDetail = baseDto.ReasonDetail;
+        dto.IdempotencyKey = baseDto.IdempotencyKey;
+        dto.CreatedAtUtc = baseDto.CreatedAtUtc;
+        return dto;
+    }
+
+    private async Task TrySendRefundEmailAsync(BookingDepositRefund refund, string subject, string title, string message, string? actionUrl, string? actionText, CancellationToken ct)
+    {
+        if (emailService is null || string.IsNullOrWhiteSpace(refund.CustomerEmailSnapshot)) return;
+        try
+        {
+            var bookingCode = await db.Bookings.AsNoTracking()
+                .Where(x => x.BookingId == refund.BookingId)
+                .Select(x => x.BookingCode)
+                .FirstOrDefaultAsync(ct) ?? refund.BookingId.ToString();
+            await emailService.SendDepositRefundNotificationAsync(refund.CustomerEmailSnapshot, subject, title, message,
+                new Dictionary<string, string>
+                {
+                    ["Ma hoan coc"] = refund.RefundCode,
+                    ["Ma booking"] = bookingCode,
+                    ["So tien"] = $"{refund.Amount:N0} VND",
+                    ["Ly do"] = refund.Reason
+                },
+                actionUrl, actionText, ct);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Failed to send deposit refund email for {RefundCode}", refund.RefundCode);
+        }
+    }
+
+    private string BuildPublicRefundUrl(string token)
+    {
+        var baseUrl = config?["EmailSettings:FrontendBaseUrl"] ?? "http://localhost:3000";
+        return $"{baseUrl.TrimEnd('/')}/deposit-refunds/{Uri.EscapeDataString(token)}";
+    }
+
+    private int GetTokenHours() => ReadInt("Refunds:CustomerTokenHours", 48, 1, 168);
+    private int GetVerificationMinutes() => ReadInt("Refunds:VerificationCodeMinutes", 10, 1, 60);
+    private int GetVerificationResendSeconds() => ReadInt("Refunds:VerificationResendSeconds", 60, 10, 600);
+    private int GetVerificationMaxAttempts() => ReadInt("Refunds:VerificationMaxAttempts", 5, 1, 20);
+    private int GetVerifiedSessionMinutes() => ReadInt("Refunds:VerifiedSessionMinutes", 30, 5, 240);
+    private int GetCashPickupCodeHours() => ReadInt("Refunds:CashPickupCodeHours", 48, 1, 168);
+
+    private int ReadInt(string key, int fallback, int min, int max) =>
+        int.TryParse(config?[key], out var value) ? Math.Clamp(value, min, max) : fallback;
+
+    private static string GenerateToken()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private static string GenerateNumericCode() => RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+
+    private static string HashToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+
+    private static bool FixedTimeEquals(string left, string right) =>
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(left), Encoding.UTF8.GetBytes(right));
+
+    private static int ParseRefundMethod(string value) =>
+        value.Trim().Equals("BankTransfer", StringComparison.OrdinalIgnoreCase) ? BookingDepositRefundMethods.BankTransfer :
+        value.Trim().Equals("CashAtVenue", StringComparison.OrdinalIgnoreCase) ? BookingDepositRefundMethods.CashAtVenue :
+        throw new ValidationException("Refund method must be BankTransfer or CashAtVenue.");
+
+    private static string NormalizeRequired(string? value, string message) =>
+        string.IsNullOrWhiteSpace(value) ? throw new ValidationException(message) : value.Trim();
+
+    private static string? NormalizeOptional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string NormalizeHolderName(string? value) =>
+        string.Join(' ', NormalizeRequired(value, "Account holder name is required.").Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+
+    private static string Last4(string value) => value.Length <= 4 ? value : value[^4..];
+
+    private static bool PhoneLast4Matches(string? phone, string? last4)
+    {
+        if (string.IsNullOrWhiteSpace(last4)) return false;
+        var normalized = PhoneNumberNormalizer.Normalize(phone);
+        return normalized.Length >= 4 && string.Equals(normalized[^4..], last4.Trim(), StringComparison.Ordinal);
+    }
+
+    private static string? MaskEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        var at = email.IndexOf('@');
+        if (at <= 1) return $"***{email[at..]}";
+        return $"{email[0]}***{email[(at - 1)..]}";
+    }
+
+    private static string? MaskPhone(string? phone)
+    {
+        var normalized = PhoneNumberNormalizer.Normalize(phone);
+        if (normalized.Length < 4) return string.IsNullOrWhiteSpace(normalized) ? null : "***";
+        return $"***{normalized[^4..]}";
+    }
+
+    private string GetPublicNextStep(BookingDepositRefund refund) => refund.Status switch
+    {
+        BookingDepositRefundStatuses.PendingCustomerInfo when refund.CustomerVerifiedAtUtc is null => "Verify email code and phone last 4 digits.",
+        BookingDepositRefundStatuses.PendingCustomerInfo => "Choose refund method.",
+        BookingDepositRefundStatuses.PendingApproval => "Waiting for manager approval.",
+        BookingDepositRefundStatuses.Approved => "Waiting for cashier processing.",
+        BookingDepositRefundStatuses.Processing => "Bank transfer is being processed.",
+        BookingDepositRefundStatuses.ReadyForCashPickup => "Cash is ready for pickup at the venue.",
+        BookingDepositRefundStatuses.Succeeded => "Refund completed.",
+        BookingDepositRefundStatuses.Rejected => "Refund rejected.",
+        BookingDepositRefundStatuses.Failed => "Refund failed.",
+        _ => "No further action is available."
+    };
 
     private static BookingDepositRefundDto Map(BookingDepositRefund refund) => new()
     {
@@ -391,4 +890,6 @@ public class BookingDepositRefundService(PoolHubDbContext db, IAuditService? aud
             return null;
         }
     }
+
+    private sealed record RefundManagementRow(BookingDepositRefund Refund, EntityBooking Booking, EntityCustomer? Customer);
 }
