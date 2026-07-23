@@ -11,6 +11,7 @@ public interface IInvoiceService
     Task<InvoiceDto> GenerateFromSessionAsync(long sessionId, long? issuedByUserId, CancellationToken ct);
     Task<CreatePaymentResponse> CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct);
     Task<InvoiceDetailDto> GetInvoiceDetailAsync(long id, CancellationToken ct);
+    Task<InvoiceDetailDto> GetInvoiceDetailForCustomerAsync(long id, long customerId, CancellationToken ct);
     Task<List<PaymentMethodDto>> GetPaymentMethodsAsync(CancellationToken ct);
     Task ApplyDiscountAsync(long invoiceId, ApplyDiscountRequest request, long userId, CancellationToken ct);
     Task RemoveDiscountAsync(long invoiceId, long userId, CancellationToken ct);

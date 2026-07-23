@@ -39,4 +39,14 @@ public interface ICustomerService
     Task<PagedResult<CustomerInvoiceHistoryDto>> GetInvoiceHistoryAsync(long id, PaginationRequest request, CancellationToken ct);
     Task<PoolHub.Core.DTOs.Admin.DiscountDto> ExchangeVoucherAsync(long customerId, long voucherTemplateId, long actorUserId, CancellationToken ct);
     Task<PagedResult<CustomerPointHistoryDto>> GetPointHistoryAsync(long customerId, PaginationRequest request, CancellationToken ct);
+    Task<CustomerPortalProfileDto> GetPortalProfileAsync(long userId, CancellationToken ct);
+    Task<CustomerPortalProfileDto> UpdatePortalProfileAsync(long userId, UpdateCustomerPortalProfileRequest request, CancellationToken ct);
+    Task<IReadOnlyList<PoolHub.Core.DTOs.Admin.DiscountDto>> GetPortalVoucherTemplatesAsync(long userId, CancellationToken ct);
+    Task<PoolHub.Core.DTOs.Admin.DiscountDto> ExchangePortalVoucherAsync(long userId, long voucherTemplateId, CancellationToken ct);
+    Task<PagedResult<CustomerBookingHistoryDto>> GetPortalBookingHistoryAsync(long userId, PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<CustomerSessionHistoryDto>> GetPortalSessionHistoryAsync(long userId, PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<CustomerInvoiceHistoryDto>> GetPortalInvoiceHistoryAsync(long userId, PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<PoolHub.Core.DTOs.Admin.DiscountDto>> GetPortalVouchersAsync(long userId, PaginationRequest request, CancellationToken ct);
+    Task<PagedResult<CustomerPointHistoryDto>> GetPortalPointHistoryAsync(long userId, PaginationRequest request, CancellationToken ct);
+    Task<long> ResolvePortalCustomerIdAsync(long userId, CancellationToken ct);
 }
