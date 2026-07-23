@@ -65,8 +65,7 @@ BEGIN TRY
     VALUES
         (1, N'Admin',   N'Full system administrator', 1, SYSUTCDATETIME(), NULL),
         (2, N'Manager', N'Business and operation manager', 1, SYSUTCDATETIME(), NULL),
-        (3, N'Staff',   N'Floor staff who manages tables, sessions and orders', 1, SYSUTCDATETIME(), NULL),
-        (4, N'Cashier', N'Cashier who issues invoices and receives payments', 1, SYSUTCDATETIME(), NULL);
+        (3, N'Staff',   N'Floor staff who manages tables, sessions, orders, invoices and payments', 1, SYSUTCDATETIME(), NULL);
 
     SET IDENTITY_INSERT roles OFF;
 
@@ -85,7 +84,7 @@ BEGIN TRY
         (1, '11111111-1111-1111-1111-111111111111', N'PoolHub Admin',   N'admin@poolhub.local',   N'$2a$12$Ahs/.D69Cz.P2K377Jb8eOZeP4W55IaIhIUmicWwREtqGa7ggMAre', N'0900000001', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
         (2, '22222222-2222-2222-2222-222222222222', N'Nguyễn Quản Lý',  N'manager@poolhub.local', N'$2a$12$surFTrJVqBrnaBf/y/50SeH342ENq6wBs94y7hGHt056zMSteK2IW', N'0900000002', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
         (3, '33333333-3333-3333-3333-333333333333', N'Trần Nhân Viên',  N'staff@poolhub.local',   N'$2a$12$eLAs9QmdqQ25QYqMESH6Rehjczu8HXLDLi/RfsIMQT1dmwQ/j2jqO', N'0900000003', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL),
-        (4, '44444444-4444-4444-4444-444444444444', N'Lê Thu Ngân',     N'cashier@poolhub.local', N'$2a$12$Uqx2RtOx2kTGELQujgemzeWn0i.K9Nk6lHTOt3tGPNohzlTCjWpQa', N'0900000004', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL);
+        (4, '44444444-4444-4444-4444-444444444444', N'Lê Nhân Viên 2',  N'staff2@poolhub.local',  N'$2a$12$Uqx2RtOx2kTGELQujgemzeWn0i.K9Nk6lHTOt3tGPNohzlTCjWpQa', N'0900000004', NULL, 1, 1, NULL, SYSUTCDATETIME(), NULL);
 
     SET IDENTITY_INSERT users OFF;
 
@@ -100,7 +99,7 @@ BEGIN TRY
         (1, 1, SYSUTCDATETIME(), NULL),
         (2, 2, SYSUTCDATETIME(), 1),
         (3, 3, SYSUTCDATETIME(), 1),
-        (4, 4, SYSUTCDATETIME(), 1);
+        (4, 3, SYSUTCDATETIME(), 1);
 
 
     ------------------------------------------------------------
@@ -599,12 +598,12 @@ BEGIN TRY
         (5, 4, N'ISSUE_INVOICE', N'invoices', 1, '60000000-0000-0000-0000-000000000001',
          NULL,
          N'{"invoiceCode":"INV-20260524-0001","grandTotalAmount":290000}',
-         N'127.0.0.1', N'SeedScript', N'Cashier issued invoice INV-20260524-0001', SYSUTCDATETIME()),
+         N'127.0.0.1', N'SeedScript', N'Staff issued invoice INV-20260524-0001', SYSUTCDATETIME()),
 
         (6, 4, N'RECEIVE_PAYMENT', N'payments', 1, '70000000-0000-0000-0000-000000000001',
          NULL,
          N'{"amount":290000,"paymentMethod":"CASH"}',
-         N'127.0.0.1', N'SeedScript', N'Cashier received payment for invoice INV-20260524-0001', SYSUTCDATETIME());
+         N'127.0.0.1', N'SeedScript', N'Staff received payment for invoice INV-20260524-0001', SYSUTCDATETIME());
 
     SET IDENTITY_INSERT audit_logs OFF;
 

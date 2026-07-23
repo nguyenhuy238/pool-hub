@@ -37,7 +37,7 @@
 ## 4. Public vs protected
 - Public: login, register, forgot/reset password, public booking flow, public calendar, venue availability/public layout paths theo controller hiện có.
 - Protected: phần lớn CRUD vận hành, session, invoice, order, dashboard, audit, notification.
-- Role-sensitive: Admin/Manager/Staff/Cashier tùy module.
+- Role-sensitive: Admin/Manager/Staff tùy module.
 
 ## 5. Ghi chú cho frontend
 - Frontend hiện có nhiều service module đã map trực tiếp tới API thật.

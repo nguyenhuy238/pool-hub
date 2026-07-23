@@ -18,8 +18,11 @@ public static class AuditActions
     public const string RoleCreated = "ROLE_CREATED";
     public const string RoleUpdated = "ROLE_UPDATED";
     public const string RoleDeleted = "ROLE_DELETED";
+    public const string RolePermissionsUpdated = "ROLE_PERMISSIONS_UPDATED";
     public const string UserRoleAssigned = "USER_ROLE_ASSIGNED";
     public const string UserRoleRemoved = "USER_ROLE_REMOVED";
+    public const string UserTokensRevoked = "USER_TOKENS_REVOKED";
+    public const string LegacyCashierMigrated = "LEGACY_CASHIER_MIGRATED";
     public const string CustomerCreated = "CUSTOMER_CREATED";
     public const string CustomerUpdated = "CUSTOMER_UPDATED";
     public const string CustomerStatusChanged = "CUSTOMER_STATUS_CHANGED";

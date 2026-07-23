@@ -1,4 +1,4 @@
-export type RoleName = "Admin" | "Owner" | "Manager" | "Staff" | "Cashier" | "Customer" | "Guest" | string;
+export type RoleName = "Admin" | "Owner" | "Manager" | "Staff" | "Customer" | "Guest" | string;
 
 export type ApiResponse<T> = {
   success?: boolean;
@@ -513,7 +513,7 @@ export type VenueLayoutResponse = {
 };
 
 export type PricingPlan = { pricingPlanId: number; name: string; isDefault?: boolean; isActive?: boolean };
-export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayType: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
+export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayType?: number; dayOfWeek?: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
 export type PricingSpecialDate = { pricingSpecialDateId: number; date: string; dayType: number; description: string };
 export type Notification = { notificationId: number; title?: string; message?: string; isRead?: boolean; createdAtUtc?: string };
 export type Discount = {

@@ -14,10 +14,6 @@ const accounts = {
   staff: {
     email: process.env.E2E_STAFF_EMAIL || "staff1@poolhub.com",
     password: process.env.E2E_STAFF_PASSWORD || "Staff@123"
-  },
-  cashier: {
-    email: process.env.E2E_CASHIER_EMAIL || "cashier@poolhub.com",
-    password: process.env.E2E_CASHIER_PASSWORD || "Cashier@123"
   }
 };
 
@@ -68,30 +64,23 @@ test.describe("role route guard smoke", () => {
     }
   });
 
-  test("manager can access management, audit, reports but not users or roles", async ({ page }) => {
+  test("manager can access management and reports but not users, roles, or audit", async ({ page }) => {
     await login(page, accounts.manager.email, accounts.manager.password);
-    for (const path of ["/dashboard", "/management/floors", "/management/products", "/admin/audit-logs", "/admin/reports", "/admin/analytics"]) {
+    for (const path of ["/dashboard", "/management/floors", "/management/products", "/admin/reports", "/admin/analytics"]) {
       await expectAllowed(page, path);
     }
     await expectForbidden(page, "/admin/users");
     await expectForbidden(page, "/admin/roles");
+    await expectForbidden(page, "/admin/audit-logs");
   });
 
-  test("staff can access operation routes but not admin or management", async ({ page }) => {
+  test("staff can access operation and payment routes but not IAM or management", async ({ page }) => {
     await login(page, accounts.staff.email, accounts.staff.password);
-    for (const path of ["/operation/floor-map", "/operation/bookings", "/operation/sessions", "/operation/orders"]) {
+    for (const path of ["/operation/floor-map", "/operation/bookings", "/operation/sessions", "/operation/orders", "/operation/invoices", "/admin/payments/history"]) {
       await expectAllowed(page, path);
     }
     await expectForbidden(page, "/admin/users");
-    await expectForbidden(page, "/management/floors");
-  });
-
-  test("cashier can access invoice/payment routes but not admin-only or management", async ({ page }) => {
-    await login(page, accounts.cashier.email, accounts.cashier.password);
-    for (const path of ["/operation/invoices", "/admin/payments"]) {
-      await expectAllowed(page, path);
-    }
-    await expectForbidden(page, "/admin/users");
+    await expectForbidden(page, "/admin/roles");
     await expectForbidden(page, "/management/products");
   });
 

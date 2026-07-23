@@ -32,7 +32,6 @@ These accounts are created by the development database seeder and are only for l
 | Manager | `manager@poolhub.com` | `Manager@123` |
 | Staff | `staff1@poolhub.com` | `Staff@123` |
 | Staff | `staff2@poolhub.com` | `Staff@123` |
-| Cashier | `cashier@poolhub.com` | `Cashier@123` |
 
 ## Seed Data
 
@@ -42,7 +41,7 @@ The seeder prepares the core demo data:
 - Pricing plans and pricing rules.
 - Customers, bookings, sessions, orders, invoices, and payments.
 - Product categories, products with stock, payment methods, and TIME discounts.
-- Admin, Manager, Staff, and Cashier accounts with role permissions.
+- Admin, Manager, and Staff accounts with role permissions.
 
 ## E2E Smoke Tests
 
@@ -73,15 +72,14 @@ The tests fail clearly if the backend is not reachable.
 4. Review pricing plans and rules.
 5. Login as Staff and open the floor map.
 6. Start or review a session, then add an order item.
-7. Login as Cashier and create/review invoice, apply discount, take payment, and print bill.
-8. Login as Manager and review reports and audit logs.
+7. Login as Staff and create/review invoice, apply discount, take payment, and print bill.
+8. Login as Manager and review reports.
 
 ## Manual Guard Checks
 
 - Admin can access admin, management, operation, dashboard, reports, and audit.
-- Manager can access management, reports, audit, and operation, but not users/roles admin screens.
-- Staff can access operation routes but not admin-only or management routes.
-- Cashier can access invoices/payments/discounts and operation routes, but not users/roles or management routes.
+- Manager can access management, reports, and operation, but not users/roles/audit admin screens.
+- Staff can access operation, invoices, payments, and discounts, but not IAM or management routes.
 - Anonymous users can access public pages and are redirected to login for protected routes.
 
 ## Export Status

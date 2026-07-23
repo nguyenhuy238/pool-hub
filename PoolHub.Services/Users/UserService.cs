@@ -12,7 +12,7 @@ using PoolHub.Shared.Time;
 
 namespace PoolHub.Services.Users;
 
-public class UserService(PoolHubDbContext db, IAuditService auditService, IClock? clock = null) : IUserService
+public class UserService(PoolHubDbContext db, IAuditService auditService, IRefreshTokenStore? refreshTokenStore = null, IClock? clock = null) : IUserService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
 
@@ -82,7 +82,8 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
         var roleIds = request.RoleIds.Distinct().ToList();
         if (roleIds.Count == 0 && !string.IsNullOrWhiteSpace(request.Role))
         {
-            roleIds = await db.Roles.Where(x => x.Name == request.Role && x.IsActive)
+            var roleName = request.Role.Trim().ToLowerInvariant();
+            roleIds = await db.Roles.Where(x => x.Name.ToLower() == roleName && x.IsActive)
                 .Select(x => x.RoleId).ToListAsync(ct);
         }
         await ValidateRolesAsync(roleIds, ct);
@@ -134,7 +135,8 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
         var roleIds = request.RoleIds.Distinct().ToList();
         if (roleIds.Count == 0 && request.Roles.Count > 0)
         {
-            roleIds = await db.Roles.Where(x => request.Roles.Contains(x.Name) && x.IsActive)
+            var names = request.Roles.Select(x => x.Trim().ToLowerInvariant()).Distinct().ToList();
+            roleIds = await db.Roles.Where(x => names.Contains(x.Name.ToLower()) && x.IsActive)
                 .Select(x => x.RoleId).ToListAsync(ct);
         }
         await ValidateRolesAsync(roleIds, ct);
@@ -151,9 +153,11 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
         await db.SaveChangesAsync(ct);
         if (additions.Count > 0)
         {
+            await RevokeAllRefreshTokensAsync(id, ct);
+            await db.SaveChangesAsync(ct);
             await auditService.LogAsync(actorUserId, AuditActions.UserRoleAssigned, "User",
                 user.UserId, user.PublicId, newValues: new { RoleIds = additions },
-                description: "Roles assigned to user.", ct: ct);
+                description: "Roles assigned to user and refresh tokens revoked.", ct: ct);
         }
     }
 
@@ -167,21 +171,22 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
             throw new BusinessRuleException("A user must have at least one role.");
 
         var role = await db.Roles.FindAsync([roleId], ct) ?? throw new NotFoundException("Role not found.");
-        if (id == actorUserId && role.Name == RoleConstants.Admin)
+        if (role.Name == RoleConstants.Admin)
         {
             var adminRoleId = role.RoleId;
             var activeAdminCount = await db.UserRoles.CountAsync(ur =>
                 ur.RoleId == adminRoleId &&
                 db.Users.Any(u => u.UserId == ur.UserId && u.Status == UserStatus.Active), ct);
             if (activeAdminCount <= 1)
-                throw new BusinessRuleException("The last active administrator cannot remove their own Admin role.");
+                throw new BusinessRuleException("The last active administrator cannot lose the Admin role.");
         }
 
         db.UserRoles.Remove(assignment);
+        await RevokeAllRefreshTokensAsync(id, ct);
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.UserRoleRemoved, "User",
             user.UserId, user.PublicId, oldValues: new { RoleId = roleId, role.Name },
-            description: "Role removed from user.", ct: ct);
+            description: "Role removed from user and refresh tokens revoked.", ct: ct);
     }
 
     public async Task UpdateStatusAsync(long id, string status, long actorUserId, CancellationToken ct)
@@ -191,6 +196,8 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
             throw new ValidationException("Status must be Active, Locked, or Deleted.");
         if (id == actorUserId && parsed != UserStatus.Active)
             throw new BusinessRuleException("An administrator cannot lock or delete their own account.");
+        if (parsed != UserStatus.Active && await IsLastActiveAdminAsync(id, ct))
+            throw new BusinessRuleException("The last active administrator cannot be locked or deleted.");
 
         var oldStatus = user.Status;
         user.Status = parsed;
@@ -198,11 +205,7 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
         user.UpdatedAtUtc = now;
         if (parsed != UserStatus.Active)
         {
-            foreach (var token in db.RefreshTokens.Where(x => x.UserId == id && !x.IsRevoked))
-            {
-                token.IsRevoked = true;
-                token.RevokedAtUtc = now;
-            }
+            await RevokeAllRefreshTokensAsync(id, ct);
         }
         await db.SaveChangesAsync(ct);
         await auditService.LogAsync(actorUserId, AuditActions.UserStatusChanged, "User",
@@ -213,8 +216,39 @@ public class UserService(PoolHubDbContext db, IAuditService auditService, IClock
     private async Task ValidateRolesAsync(List<long> roleIds, CancellationToken ct)
     {
         if (roleIds.Count == 0) throw new ValidationException("At least one role is required.");
-        var count = await db.Roles.CountAsync(x => roleIds.Contains(x.RoleId) && x.IsActive, ct);
-        if (count != roleIds.Count) throw new ValidationException("One or more roles are invalid.");
+        var roles = await db.Roles.Where(x => roleIds.Contains(x.RoleId) && x.IsActive)
+            .Select(x => new { x.RoleId, x.Name }).ToListAsync(ct);
+        if (roles.Count != roleIds.Count) throw new ValidationException("One or more roles are invalid.");
+        if (roles.Any(x => RoleConstants.Retired.Contains(x.Name, StringComparer.OrdinalIgnoreCase)))
+            throw new BusinessRuleException("One or more roles have been retired and cannot be assigned.");
+    }
+
+    private async Task<bool> IsLastActiveAdminAsync(long userId, CancellationToken ct)
+    {
+        var adminRoleId = await db.Roles
+            .Where(x => x.Name == RoleConstants.Admin && x.IsActive)
+            .Select(x => (long?)x.RoleId)
+            .FirstOrDefaultAsync(ct);
+        if (!adminRoleId.HasValue) return false;
+        var userHasAdmin = await db.UserRoles.AnyAsync(x => x.UserId == userId && x.RoleId == adminRoleId.Value, ct);
+        if (!userHasAdmin) return false;
+        var activeAdminCount = await db.UserRoles.CountAsync(ur =>
+            ur.RoleId == adminRoleId.Value &&
+            db.Users.Any(u => u.UserId == ur.UserId && u.Status == UserStatus.Active), ct);
+        return activeAdminCount <= 1;
+    }
+
+    private async Task RevokeAllRefreshTokensAsync(long userId, CancellationToken ct)
+    {
+        var now = _clock.UtcNow;
+        foreach (var token in db.RefreshTokens.Where(x => x.UserId == userId && !x.IsRevoked))
+        {
+            token.IsRevoked = true;
+            token.RevokedAtUtc = now;
+        }
+
+        if (refreshTokenStore is not null)
+            await refreshTokenStore.RevokeUserAsync(userId, null, ct);
     }
 
     private Task<List<string>> GetRoleNamesAsync(long userId, CancellationToken ct) =>

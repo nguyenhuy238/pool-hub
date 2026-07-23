@@ -13,7 +13,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/orders")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
 public class OrdersController(IOrderService orderService) : ControllerBase
 {
     [HttpGet("{id:long}")]

@@ -96,7 +96,7 @@ public class SessionsControllerContractTests
             ["ReleaseTables"] = new(
                 "POST",
                 "{id:long}/release-tables",
-                "Admin,Manager,Staff,Cashier",
+                "Admin,Manager,Staff",
                 "Task<ActionResult<ApiResponse<ReleaseSessionTablesResponse>>>",
                 new[]
                 {
@@ -148,7 +148,7 @@ public class SessionsControllerContractTests
         Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
         Assert.Equal("api/sessions", controller.GetCustomAttribute<RouteAttribute>()?.Template);
         Assert.NotNull(authorize);
-        Assert.Equal("Admin,Manager,Staff,Cashier", authorize.Roles);
+        Assert.Equal("Admin,Manager,Staff", authorize.Roles);
         Assert.True(string.IsNullOrEmpty(authorize.Policy));
         Assert.Null(controller.GetCustomAttribute<AllowAnonymousAttribute>());
     }

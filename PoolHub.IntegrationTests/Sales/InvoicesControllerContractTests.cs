@@ -156,7 +156,7 @@ public class InvoicesControllerContractTests
         Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
         Assert.Equal("api/invoices", controller.GetCustomAttribute<RouteAttribute>()?.Template);
         Assert.NotNull(authorize);
-        Assert.Equal("Admin,Manager,Staff,Cashier", authorize.Roles);
+        Assert.Equal("Admin,Manager,Staff", authorize.Roles);
         Assert.True(string.IsNullOrEmpty(authorize.Policy));
         Assert.Null(controller.GetCustomAttribute<AllowAnonymousAttribute>());
     }

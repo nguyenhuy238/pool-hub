@@ -31,7 +31,7 @@
         <mxCell id="ACTrIFRIdIJLswDTFrLo-14" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Guest" vertex="1">
           <mxGeometry height="60" width="30" x="80" y="300" as="geometry" />
         </mxCell>
-        <mxCell id="ACTrIFRIdIJLswDTFrLo-15" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Cashier" vertex="1">
+        <mxCell id="ACTrIFRIdIJLswDTFrLo-15" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Staff" vertex="1">
           <mxGeometry height="60" width="30" x="80" y="500" as="geometry" />
         </mxCell>
         <mxCell id="ACTrIFRIdIJLswDTFrLo-16" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Admin" vertex="1">
@@ -199,7 +199,7 @@
             <mxPoint x="94.85999999999994" y="940" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="ACTrIFRIdIJLswDTFrLo-52" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Cashier" vertex="1">
+        <mxCell id="ACTrIFRIdIJLswDTFrLo-52" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Staff" vertex="1">
           <mxGeometry height="60" width="30" x="80" y="1020" as="geometry" />
         </mxCell>
         <mxCell id="ACTrIFRIdIJLswDTFrLo-56" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="User" vertex="1">
@@ -367,7 +367,7 @@
         <mxCell id="ACTrIFRIdIJLswDTFrLo-110" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Manager" vertex="1">
           <mxGeometry height="60" width="30" x="900" y="1020" as="geometry" />
         </mxCell>
-        <mxCell id="ACTrIFRIdIJLswDTFrLo-111" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Cashier" vertex="1">
+        <mxCell id="ACTrIFRIdIJLswDTFrLo-111" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Staff" vertex="1">
           <mxGeometry height="60" width="30" x="900" y="860" as="geometry" />
         </mxCell>
         <mxCell id="ACTrIFRIdIJLswDTFrLo-112" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=0;" value="">
@@ -513,7 +513,7 @@
             <mxPoint x="94.49999999999989" y="1384" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="ACTrIFRIdIJLswDTFrLo-153" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Cashier" vertex="1">
+        <mxCell id="ACTrIFRIdIJLswDTFrLo-153" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Staff" vertex="1">
           <mxGeometry height="60" width="30" x="80" y="1484" as="geometry" />
         </mxCell>
         <mxCell id="ACTrIFRIdIJLswDTFrLo-154" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=0;" value="">

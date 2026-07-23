@@ -31,8 +31,8 @@ public class RolesController(IRoleService roleService) : ControllerBase
     public async Task<ActionResult<ApiResponse<object>>> SetPermissions(
         long id, [FromBody] UpdateRolePermissionsRequest request, CancellationToken ct)
     {
-        await roleService.SetPermissionsAsync(id, request, User.GetUserId(), ct);
-        return Ok(ApiResponse<object>.Ok(new { }, "Role permissions updated."));
+        var result = await roleService.SetPermissionsAsync(id, request, User.GetUserId(), ct);
+        return Ok(ApiResponse<object>.Ok(result, "Role permissions updated."));
     }
 
     [HttpPost]

@@ -1223,6 +1223,104 @@ textarea:focus {
   margin-top: 16px;
 }
 
+.role-permission-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  max-height: min(76vh, 760px);
+}
+
+.permission-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.permission-toolbar label {
+  flex: 1;
+}
+
+.permission-scroll {
+  display: grid;
+  gap: 12px;
+  min-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.permission-group {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.permission-group legend {
+  padding: 0 6px;
+  font-weight: 800;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.permission-row,
+.select-all {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.permission-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.permission-row small,
+.permission-chip small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.permission-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.role-permission-actions {
+  position: sticky;
+  bottom: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+
+.permission-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.permission-chip {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #c8dff4;
+  border-radius: 8px;
+  background: #eff7ff;
+}
+
 .modal-form {
   margin: 0;
 }

@@ -12,7 +12,7 @@
 1. Bám đúng contract OpenAPI: path, method, request/response shape, status code.
 2. Response phải thống nhất envelope (`success`, `message`, `data`, `errors` nếu có).
 3. Validate input ở boundary (DTO/request model), không để business rule rơi xuống controller.
-4. Bắt buộc xử lý phân quyền theo role (Admin/Manager/Staff/Cashier).
+4. Bắt buộc xử lý phân quyền theo role (Admin/Manager/Staff).
 
 ## C. Rule Data & Transaction
 1. Không hard-code business enum; tạo enum/constants rõ nghĩa và mapping DB tường minh.
