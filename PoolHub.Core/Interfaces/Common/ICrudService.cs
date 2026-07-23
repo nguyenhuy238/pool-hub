@@ -44,11 +44,7 @@ public interface ICrudService
     Task<PricingPlanRuleDto> UpdatePricingPlanRuleAsync(long planId, long ruleId, PricingPlanRuleDto dto, CancellationToken ct);
     Task DeletePricingPlanRuleAsync(long planId, long ruleId, CancellationToken ct);
 
-    Task<PagedResult<PricingSpecialDateDto>> GetPricingSpecialDatesAsync(PaginationRequest request, CancellationToken ct);
-    Task<PricingSpecialDateDto> GetPricingSpecialDateAsync(long id, CancellationToken ct);
-    Task<PricingSpecialDateDto> CreatePricingSpecialDateAsync(PricingSpecialDateDto dto, CancellationToken ct);
-    Task<PricingSpecialDateDto> UpdatePricingSpecialDateAsync(long id, PricingSpecialDateDto dto, CancellationToken ct);
-    Task DeletePricingSpecialDateAsync(long id, CancellationToken ct);
+
 
     Task<PagedResult<ProductCategoryDto>> GetProductCategoriesAsync(PaginationRequest request, CancellationToken ct);
     Task<ProductCategoryDto> CreateProductCategoryAsync(ProductCategoryDto dto, CancellationToken ct);

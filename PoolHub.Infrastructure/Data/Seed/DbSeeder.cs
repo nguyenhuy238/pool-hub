@@ -51,7 +51,6 @@ public static class DbSeeder
 
         db.PaymentMethods.AddRange(
             new PaymentMethod { Name = "Cash", Code = "CASH" },
-            new PaymentMethod { Name = "BankTransfer", Code = "BANK", Description = DefaultBankTransferDescription },
             new PaymentMethod { Name = "EWallet", Code = "EWALLET" }
         );
 

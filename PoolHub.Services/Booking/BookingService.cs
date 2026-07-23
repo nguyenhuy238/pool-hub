@@ -1167,18 +1167,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         return ruleDayType == localDayType;
     }
 
-    private async Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
+    private Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
     {
-        var specialDate = await db.PricingSpecialDates
-            .Where(x => x.Date.Date == date.Date)
-            .FirstOrDefaultAsync(ct);
-        
-        if (specialDate != null)
-        {
-            return specialDate.DayType;
-        }
-        
-        return date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1;
+        return Task.FromResult(date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1);
     }
 
 
