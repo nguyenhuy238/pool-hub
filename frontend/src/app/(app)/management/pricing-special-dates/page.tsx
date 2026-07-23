@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { pricingSpecialDateApi } from "@/lib/api/endpoints";
-import { DataTable, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
+import { ConfirmDialog, DataTable, Modal, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { PricingSpecialDate } from "@/types";
 
@@ -17,6 +17,10 @@ export default function PricingSpecialDatesPage() {
   const [deletingItem, setDeletingItem] = useState<PricingSpecialDate | null>(null);
   const { data, loading, error, reload } = useLoad(() => pricingSpecialDateApi.list(params), [params]);
   const items = useList<PricingSpecialDate>(data);
+  const totalCount = data && !Array.isArray(data) && "totalCount" in data
+    ? Number(data.totalCount)
+    : items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / params.pageSize));
 
   async function deleteItem() {
     if (!deletingItem) return;
@@ -68,43 +72,40 @@ export default function PricingSpecialDatesPage() {
       />
 
       <Pagination 
-        pageNumber={params.pageNumber} 
-        pageSize={params.pageSize} 
-        totalCount={data && "totalCount" in data ? (data.totalCount as number) : items.length} 
-        onPageChange={p => setParams({ ...params, pageNumber: p })} 
+        pageNumber={params.pageNumber}
+        totalPages={totalPages}
+        onChange={(pageNumber) => setParams({ ...params, pageNumber })}
       />
 
       {editingItem && (
-        <SmartForm<PricingSpecialDate>
-          title="Sửa ngày đặc biệt"
-          isModal
-          initial={editingItem}
-          fields={[
-            { name: "date", label: "Ngày", type: "date", required: true },
-            { name: "dayType", label: "Loại ngày", options: DAY_TYPES.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
-            { name: "description", label: "Mô tả", required: true }
-          ]}
-          onSubmit={async (value) => {
-            await pricingSpecialDateApi.update(editingItem.pricingSpecialDateId, value);
-            toast("Đã cập nhật.", "success");
-            setEditingItem(null);
-            reload();
-          }}
-          onCancel={() => setEditingItem(null)}
-        />
+        <Modal title="Sửa ngày đặc biệt" onClose={() => setEditingItem(null)}>
+          <SmartForm<PricingSpecialDate>
+            title=""
+            initial={editingItem}
+            fields={[
+              { name: "date", label: "Ngày", type: "date", required: true },
+              { name: "dayType", label: "Loại ngày", options: DAY_TYPES.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
+              { name: "description", label: "Mô tả", required: true }
+            ]}
+            onSubmit={async (value) => {
+              await pricingSpecialDateApi.update(editingItem.pricingSpecialDateId, value);
+              toast("Đã cập nhật.", "success");
+              setEditingItem(null);
+              await reload();
+            }}
+          />
+        </Modal>
       )}
 
       {deletingItem && (
-        <SmartForm
+        <ConfirmDialog
           title="Xác nhận xóa"
-          isModal
-          initial={{}}
-          fields={[]}
-          onSubmit={deleteItem}
+          message={`Bạn có chắc chắn muốn xóa cấu hình ngày ${new Date(deletingItem.date).toLocaleDateString("vi-VN")}?`}
+          confirmLabel="Xóa"
+          danger
+          onConfirm={deleteItem}
           onCancel={() => setDeletingItem(null)}
-        >
-          <p>Bạn có chắc chắn muốn xóa cấu hình ngày <b>{new Date(deletingItem.date).toLocaleDateString("vi-VN")}</b>?</p>
-        </SmartForm>
+        />
       )}
     </>
   );
