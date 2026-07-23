@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
+import { Badge, ConfirmDialog, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { getTotalPages } from "@/lib/api/client";
 import { inventoryApi } from "@/lib/api/endpoints";
 import { productApi } from "@/lib/api/endpoints";
+import { groupInventoryTransactions } from "@/lib/inventoryGrouping";
+import { dateTime, money } from "@/lib/status";
 import { useToast } from "@/components/toast";
 import type { InventoryTransaction } from "@/types";
 
@@ -58,6 +60,9 @@ export default function InventoryPage() {
   const products = useLoad(() => productApi.list({ PageNumber: 1, PageSize: 100 }), []);
   const rows = useList(data);
   const productRows = useList(products.data);
+  const groupedRows = groupInventoryTransactions(rows);
+  const visibleProductCount = new Set(rows.map((row) => row.productId)).size;
+  const visibleNetQuantity = rows.reduce((total, row) => total + Number(row.quantity || 0), 0);
   return <>
     <PageHeader title="Quản lý tồn kho" description="Theo dõi và thực hiện nhập, xuất, điều chỉnh số lượng hàng hóa." />
     <ListControls
@@ -126,10 +131,59 @@ export default function InventoryPage() {
         setPendingAdjustment(payload);
       }} />
     <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
-    <DataTable rows={rows} columns={[
-      { key: "productName", label: "Sản phẩm" }, { key: "transactionType", label: "Loại", render: row => <Badge tone={row.transactionType === 1 ? "green" : "yellow"}>{row.transactionType === 1 ? "Nhập" : row.transactionType === 2 ? "Xuất" : row.transactionType === 3 ? "Điều chỉnh" : row.transactionType === 4 ? "Bán hàng" : "Hoàn kho"}</Badge> },
-      { key: "quantity", label: "Số lượng" }, { key: "unitCost", label: "Giá vốn" }, { key: "note", label: "Ghi chú" }, { key: "createdAtUtc", label: "Thời gian" }
-    ]} />
+    {rows.length ? (
+      <>
+        <section className="inventory-summary-grid" aria-label="Tổng quan dữ liệu tồn kho đang hiển thị">
+          <div className="card"><span>Nhóm hóa đơn / giao dịch</span><strong>{groupedRows.length}</strong></div>
+          <div className="card"><span>Sản phẩm khác nhau</span><strong>{visibleProductCount}</strong></div>
+          <div className="card"><span>Biến động ròng</span><strong className={visibleNetQuantity >= 0 ? "inventory-positive" : "inventory-negative"}>{visibleNetQuantity > 0 ? "+" : ""}{visibleNetQuantity}</strong></div>
+        </section>
+        <section className="inventory-group-list" aria-label="Giao dịch tồn kho được nhóm theo hóa đơn">
+          {groupedRows.map((group) => (
+            <article className="inventory-group-card" key={group.key}>
+              <header className="inventory-group-head">
+                <div>
+                  <div className="inventory-group-title">
+                    <h3>{group.title}</h3>
+                    <Badge tone={group.invoiceId ? "blue" : group.orderId ? "yellow" : "neutral"}>
+                      {group.invoiceId ? "Hóa đơn" : group.orderId ? "Đơn chưa xuất hóa đơn" : "Điều chỉnh"}
+                    </Badge>
+                  </div>
+                  <p>{group.transactionCount} giao dịch · Cập nhật {dateTime(group.latestAtUtc)}</p>
+                </div>
+                <strong className={group.netQuantity >= 0 ? "inventory-positive" : "inventory-negative"}>
+                  {group.netQuantity > 0 ? "+" : ""}{group.netQuantity}
+                </strong>
+              </header>
+              <div className="inventory-product-list">
+                {group.products.map((product) => (
+                  <div className="inventory-product-row" key={product.productId}>
+                    <div>
+                      <span className="inventory-product-id">ID #{product.productId}</span>
+                      <strong>{product.productName}</strong>
+                    </div>
+                    <div>
+                      <small>Số giao dịch</small>
+                      <span>{product.transactionCount}</span>
+                    </div>
+                    <div>
+                      <small>Giá vốn gần nhất</small>
+                      <span>{product.unitCost !== undefined ? money(product.unitCost) : "—"}</span>
+                    </div>
+                    <div>
+                      <small>Biến động</small>
+                      <strong className={product.quantity >= 0 ? "inventory-positive" : "inventory-negative"}>
+                        {product.quantity > 0 ? "+" : ""}{product.quantity}
+                      </strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </section>
+      </>
+    ) : null}
     <Pagination pageNumber={query.pageNumber} totalPages={getTotalPages(data, query.pageSize)} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     {pendingAdjustment ? <ConfirmDialog title="Xác nhận điều chỉnh tồn kho" message="Ghi nhận giao dịch tồn kho này? Backend sẽ kiểm tra nghiệp vụ tồn kho âm nếu có." confirmLabel="Ghi nhận" danger={pendingAdjustment.transactionType !== 1} onCancel={() => setPendingAdjustment(null)} onConfirm={async () => {
       try {
