@@ -11,6 +11,7 @@ import { parseBankTransferConfig } from "@/lib/paymentQr";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { openInvoiceDisplay } from "@/lib/invoiceDisplay";
 import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session, Discount } from "@/types";
 
 const EDIT_PRODUCT_PAGE_SIZE = 6;
@@ -376,7 +377,7 @@ export default function InvoicesPage() {
             <select value={params.paymentStatus} onChange={(e) => setParams((prev) => ({ ...prev, paymentStatus: e.target.value, pageNumber: 1 }))}>
               <option value="">Tất cả</option>
               <option value="1">Chưa thanh toán</option>
-              <option value="2">Đã thanh toán</option>
+            <option value="2">Đã thanh toán một phần</option>
             </select>
           </label>
         }
@@ -424,9 +425,18 @@ export default function InvoicesPage() {
           { key: "invoiceCode", label: "Mã" },
           { key: "sessionId", label: "Phiên chơi" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
-          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
+          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3
+            ? <span className="badge green">Đã thanh toán</span>
+            : Number(row.paymentStatus) === 2
+              ? <span className="badge blue">Đã thanh toán một phần</span>
+              : <span className="badge yellow">Chưa thanh toán</span> }
         ]}
-        actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>}
+        actions={(row) => (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>
+            <button className="secondary-btn" onClick={() => openInvoiceDisplay(Number(row.invoiceId))}>Mở màn hình khách</button>
+          </div>
+        )}
       />
       <Pagination
         pageNumber={params.pageNumber}
@@ -439,7 +449,13 @@ export default function InvoicesPage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`}</span>
-                {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN</span> : Number(invoice.status) === 3 ? <span className="badge red" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ HỦY</span> : <span className="badge yellow" style={{ fontSize: '13px', padding: '4px 10px' }}>CHƯA THANH TOÁN</span>}
+              {Number(invoice.paymentStatus) === 3
+                ? <span className="badge green" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN</span>
+                : Number(invoice.status) === 3
+                  ? <span className="badge red" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ HỦY</span>
+                  : Number(invoice.paymentStatus) === 2
+                    ? <span className="badge blue" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN MỘT PHẦN</span>
+                    : <span className="badge yellow" style={{ fontSize: '13px', padding: '4px 10px' }}>CHƯA THANH TOÁN</span>}
               </div>
               <p style={{ fontSize: '13px', color: 'var(--muted)', margin: 0 }}>Mã phiên chơi: #{invoice.sessionId}</p>
             </div>
@@ -507,6 +523,9 @@ export default function InvoicesPage() {
                   printWindow.document.close();
                 }
               }}>🖨️ In bill chi tiết</button>
+              <button className="secondary-btn" type="button" onClick={() => openInvoiceDisplay(invoice.invoiceId)}>
+                Mở màn hình khách
+              </button>
             </div>
           </div>
 
