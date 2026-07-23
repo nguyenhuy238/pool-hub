@@ -936,21 +936,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         assignment.HourlyRateSnapshot = hourlyRate;
         assignment.PricingPlanRuleId ??= pricing.PricingPlanRuleId;
         assignment.Amount = isBillable
-            ? Math.Round(((decimal)billableMinutes / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero)
+            ? CalculateActualTimeAmount(billableMinutes, hourlyRate)
             : 0;
         assignment.Note = AppendNote(assignment.Note, note);
     }
 
     private static int ApplyBillingRules(int actualMinutes, int minimumMinutes, int billingBlockMinutes)
     {
-        var billableMinutes = Math.Max(actualMinutes, minimumMinutes);
-        if (billingBlockMinutes <= 0)
-        {
-            return billableMinutes;
-        }
-
-        var remainder = billableMinutes % billingBlockMinutes;
-        return remainder == 0 ? billableMinutes : billableMinutes + billingBlockMinutes - remainder;
+        return Math.Max(0, actualMinutes);
     }
 
     private static string? AppendNote(string? currentNote, string? note)
@@ -1556,32 +1549,10 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             });
         }
 
-        var chains = BuildContinuousAssignmentChains(lines);
-        foreach (var chain in chains)
+        foreach (var line in lines.Where(x => x.IsBillable))
         {
-            var billableLines = chain.Where(x => x.IsBillable).ToList();
-            if (billableLines.Count == 0)
-            {
-                continue;
-            }
-
-            var chainRuleLine = billableLines[0];
-            var actualBillableMinutes = billableLines.Sum(x => x.ActualDurationMinutes);
-            var chainBillableMinutes = ApplyBillingRules(actualBillableMinutes, chainRuleLine.MinimumMinutes, chainRuleLine.BillingBlockMinutes);
-            var assignedBillableMinutes = 0;
-
-            for (var i = 0; i < billableLines.Count; i++)
-            {
-                var line = billableLines[i];
-                var isLast = i == billableLines.Count - 1;
-                var lineBillableMinutes = isLast
-                    ? Math.Max(0, chainBillableMinutes - assignedBillableMinutes)
-                    : line.ActualDurationMinutes;
-
-                line.BillableDurationMinutes = lineBillableMinutes;
-                line.Amount = Math.Round(((decimal)lineBillableMinutes / 60m) * line.HourlyRate, 2, MidpointRounding.AwayFromZero);
-                assignedBillableMinutes += lineBillableMinutes;
-            }
+            line.BillableDurationMinutes = line.ActualDurationMinutes;
+            line.Amount = CalculateActualTimeAmount(line.ActualDurationMinutes, line.HourlyRate);
         }
 
         foreach (var line in lines)
@@ -1612,7 +1583,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             MinimumMinutes = ruleLine?.MinimumMinutes ?? 0,
             BillingBlockMinutes = ruleLine?.BillingBlockMinutes ?? 0,
             SubtotalAmount = lines.Sum(x => x.Amount),
-            Note = "Minimum/block applies once per continuous table slot. Transfers do not create a new minimum charge.",
+            Note = "Billable time equals actual time. Minimum and billing block settings are kept for legacy configuration only.",
             Lines = lines
         };
     }
@@ -1900,7 +1871,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         // Set table status back to 1 (Available)
         table.OperationalStatus = 1; 
 
-        var durationMinutes = (int)Math.Ceiling((endedAtUtc - assignment.StartedAtUtc).TotalMinutes);
+        var durationMinutes = GetDurationMinutes(assignment.StartedAtUtc, endedAtUtc);
         if (durationMinutes < 0) durationMinutes = 0;
         assignment.DurationMinutes = durationMinutes;
 
@@ -1910,20 +1881,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
             assignment.HourlyRateSnapshot = rule.HourlyRate;
 
-            var billableMinutes = durationMinutes;
-            if (billableMinutes < rule.MinimumMinutes)
-            {
-                billableMinutes = rule.MinimumMinutes;
-            }
-            if (rule.BillingBlockMinutes > 0)
-            {
-                var remainder = billableMinutes % rule.BillingBlockMinutes;
-                if (remainder > 0)
-                {
-                    billableMinutes += (rule.BillingBlockMinutes - remainder);
-                }
-            }
-            assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+            assignment.Amount = CalculateActualTimeAmount(durationMinutes, rule.HourlyRate);
         }
         else
         {
@@ -1939,20 +1897,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thá»i Ä‘iá»ƒm báº¯t Ä‘áº§u gĂ¡n bĂ n");
         }
 
-        var billableMinutes = durationMinutes;
-        if (billableMinutes < rule.MinimumMinutes)
-        {
-            billableMinutes = rule.MinimumMinutes;
-        }
-
-        if (rule.BillingBlockMinutes > 0)
-        {
-            var remainder = billableMinutes % rule.BillingBlockMinutes;
-            if (remainder > 0)
-            {
-                billableMinutes += rule.BillingBlockMinutes - remainder;
-            }
-        }
+        var billableMinutes = Math.Max(0, durationMinutes);
 
         var pricingPlanName = await db.PricingPlans.AsNoTracking()
             .Where(x => x.PricingPlanId == rule.PricingPlanId)
@@ -1961,7 +1906,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         return new PricingCharge(
             billableMinutes,
-            ((decimal)billableMinutes / 60m) * rule.HourlyRate,
+            CalculateActualTimeAmount(billableMinutes, rule.HourlyRate),
             rule.PricingPlanRuleId,
             rule.HourlyRate,
             rule.MinimumMinutes,
@@ -1976,14 +1921,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             return Math.Max(0, storedDurationMinutes.Value);
         }
 
-        return Math.Max(0, (int)Math.Ceiling((endedAtUtc - startedAtUtc).TotalMinutes));
+        return Math.Max(0, (int)Math.Floor((endedAtUtc - startedAtUtc).TotalMinutes));
     }
+
+    private static decimal CalculateActualTimeAmount(int actualMinutes, decimal hourlyRate) =>
+        Math.Round(((decimal)Math.Max(0, actualMinutes) / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
 
     private async Task CalculateAssignmentAmountStrictAsync(SessionTableAssignment assignment, VenueTable table, DateTime endedAtUtc, CancellationToken ct)
     {
         assignment.EndedAtUtc = endedAtUtc;
 
-        var durationMinutes = (int)Math.Ceiling((endedAtUtc - assignment.StartedAtUtc).TotalMinutes);
+        var durationMinutes = GetDurationMinutes(assignment.StartedAtUtc, endedAtUtc);
         if (durationMinutes <= 0)
         {
             throw new ValidationException("Assignment duration must be greater than zero.");
@@ -1997,22 +1945,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
         assignment.HourlyRateSnapshot = rule.HourlyRate;
 
-        var billableMinutes = durationMinutes;
-        if (billableMinutes < rule.MinimumMinutes)
-        {
-            billableMinutes = rule.MinimumMinutes;
-        }
-
-        if (rule.BillingBlockMinutes > 0)
-        {
-            var remainder = billableMinutes % rule.BillingBlockMinutes;
-            if (remainder > 0)
-            {
-                billableMinutes += rule.BillingBlockMinutes - remainder;
-            }
-        }
-
-        assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+        assignment.Amount = CalculateActualTimeAmount(durationMinutes, rule.HourlyRate);
     }
 
     private async Task ApplyBookingDepositToInvoiceAsync(EntitySession session, EntityInvoice invoice, CancellationToken ct)
