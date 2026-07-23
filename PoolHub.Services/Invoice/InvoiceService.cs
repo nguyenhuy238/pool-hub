@@ -27,9 +27,11 @@ public class InvoiceService(
     IHttpClientFactory? httpClientFactory = null, 
     IPosNotificationService? posNotificationService = null,
     ICustomerReviewService? customerReviewService = null,
-    IClock? clock = null) : IInvoiceService
+    IClock? clock = null,
+    IBookingDepositRefundService? refundService = null) : IInvoiceService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
+    private IBookingDepositRefundService RefundService => refundService ?? new PoolHub.Services.Booking.BookingDepositRefundService(db, null, _clock);
 
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
@@ -1254,66 +1256,10 @@ public class InvoiceService(
 
     private async Task ApplyBookingDepositToInvoiceAsync(PoolHub.Core.Entities.Session session, EntityInvoice invoice, CancellationToken ct)
     {
-        if (!session.BookingId.HasValue) return;
-
-        var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x =>
-            x.BookingId == session.BookingId.Value &&
-            x.Status == BookingDepositStatuses.Paid &&
-            x.PaidAmount > 0, ct);
-        if (deposit is null) return;
-
-        var appliedAmount = Math.Min(deposit.PaidAmount, invoice.GrandTotalAmount);
-        if (appliedAmount <= 0) return;
-
-        var paymentMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "DEPOSIT", ct);
-        if (paymentMethod is null)
+        var result = await RefundService.ApplyDepositToInvoiceAsync(session, invoice, ct);
+        if (result.PaymentCreated && invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
         {
-            paymentMethod = new PaymentMethod
-            {
-                Code = "DEPOSIT",
-                Name = "Deposit Applied",
-                Description = "System payment method used when applying booking deposits to invoices.",
-                IsActive = true
-            };
-            db.PaymentMethods.Add(paymentMethod);
-            await db.SaveChangesAsync(ct);
-        }
-
-        if (await db.Payments.AnyAsync(x => x.InvoiceId == invoice.InvoiceId && x.PaymentMethodId == paymentMethod.PaymentMethodId, ct))
-            return;
-
-        db.Payments.Add(new Payment
-        {
-            InvoiceId = invoice.InvoiceId,
-            PaymentMethodId = paymentMethod.PaymentMethodId,
-            Amount = appliedAmount,
-            PaymentStatus = PaymentStatuses.Completed,
-            TransactionCode = $"DEPAPP{_clock.UtcNow:HHmmssddMMyyyy}",
-            PaidAtUtc = _clock.UtcNow,
-            Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
-        });
-
-        invoice.PaidAmount += appliedAmount;
-        invoice.PaymentStatus = invoice.PaidAmount >= invoice.GrandTotalAmount
-            ? InvoicePaymentStatuses.Paid
-            : InvoicePaymentStatuses.PartiallyPaid;
-        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
-        {
-            invoice.Status = 2;
             await ProcessInvoicePaidRewardsAsync(invoice, ct);
-        }
-
-        deposit.AppliedAmount = appliedAmount;
-        deposit.AppliedToInvoiceId = invoice.InvoiceId;
-        if (deposit.PaidAmount > invoice.GrandTotalAmount)
-        {
-            deposit.RefundedAmount = deposit.PaidAmount - invoice.GrandTotalAmount;
-            deposit.RefundedAtUtc = _clock.UtcNow;
-            deposit.Status = BookingDepositStatuses.PartiallyRefunded;
-        }
-        else
-        {
-            deposit.Status = BookingDepositStatuses.AppliedToInvoice;
         }
     }
 

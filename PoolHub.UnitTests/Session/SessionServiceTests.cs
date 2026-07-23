@@ -398,8 +398,12 @@ public class SessionServiceTests
         Assert.Equal(150000, invoice.PaidAmount);
         Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
         Assert.Equal(150000, deposit.AppliedAmount);
-        Assert.Equal(50000, deposit.RefundedAmount);
-        Assert.Equal(BookingDepositStatuses.PartiallyRefunded, deposit.Status);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(BookingDepositStatuses.AppliedToInvoice, deposit.Status);
+        var refund = await db.BookingDepositRefunds.SingleAsync();
+        Assert.Equal(50000, refund.Amount);
+        Assert.Equal(BookingDepositRefundReasons.DepositExcess, refund.Reason);
+        Assert.Equal(BookingDepositRefundStatuses.PendingCustomerInfo, refund.Status);
     }
 
     [Fact]
@@ -420,6 +424,26 @@ public class SessionServiceTests
         Assert.Equal(200000, deposit.AppliedAmount);
         Assert.Equal(0, deposit.RefundedAmount);
         Assert.Equal(BookingDepositStatuses.AppliedToInvoice, deposit.Status);
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenDepositEqualsGrandTotal_MarksInvoicePaidWithoutRefund()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 200, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+
+        await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(200), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(200000, invoice.GrandTotalAmount);
+        Assert.Equal(200000, invoice.PaidAmount);
+        Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
+        Assert.Equal(200000, deposit.AppliedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
     }
 
     [Fact]
@@ -455,6 +479,28 @@ public class SessionServiceTests
         var invoice = await db.Invoices.SingleAsync();
         Assert.Equal(30000, invoice.PaidAmount);
         Assert.Equal(1, await db.Payments.CountAsync());
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenCalledTwiceWithExcessDeposit_DoesNotCreateDuplicateRefund()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 150, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+        var service = new SessionService(db);
+
+        await service.CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(150), GenerateInvoice = true }, CancellationToken.None);
+        await service.CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(150), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(150000, invoice.PaidAmount);
+        Assert.Equal(150000, deposit.AppliedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(1, await db.Payments.CountAsync());
+        Assert.Equal(1, await db.BookingDepositRefunds.CountAsync());
     }
 
     [Fact]
