@@ -523,7 +523,9 @@ export type Discount = {
 };
 export type InventoryTransaction = {
   inventoryTransactionId: number; productId: number; productName: string; transactionType: number;
-  quantity: number; unitCost?: number; note?: string; createdAtUtc: string;
+  quantity: number; unitCost?: number; referenceType?: string; referenceId?: number;
+  orderId?: number; invoiceId?: number; invoiceCode?: string;
+  note?: string; createdAtUtc: string;
 };
 export type Payment = {
   paymentId: number; invoiceId: number; invoiceCode?: string; paymentMethodId: number; paymentMethodName?: string; amount: number;
