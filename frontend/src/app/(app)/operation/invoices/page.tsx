@@ -926,53 +926,95 @@ export default function InvoicesPage() {
                   />
                 </div>
                 <button className="primary-btn" type="button" style={{ height: '38px' }} onClick={addProductToEdit}>
-                  Thêm vào list
+                  Thêm món
                 </button>
               </div>
             </div>
 
-            <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--line)', borderRadius: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                <thead style={{ background: 'var(--soft)', borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
-                  <tr>
-                    <th style={{ padding: '10px 14px' }}>Tên sản phẩm</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Đơn giá</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Số lượng</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Thành tiền</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Hành động</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {editProducts.length > 0 ? editProducts.map((p) => (
-                    <tr key={p.productId} style={{ borderBottom: '1px solid var(--line)' }}>
-                      <td style={{ padding: '10px 14px', fontWeight: 500 }}>{p.name}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>{money(p.unitPrice)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                          <button className="ghost-btn compact" type="button" style={{ padding: '2px 8px', fontSize: '14px', minWidth: '24px' }} onClick={() => updateEditQty(p.productId, p.quantity - 1)}>-</button>
-                          <input
-                            type="number"
-                            min={1}
-                            style={{ width: '60px', textAlign: 'center', padding: '2px 4px', border: '1px solid var(--line)', borderRadius: '4px' }}
-                            value={p.quantity}
-                            onChange={(e) => updateEditQty(p.productId, Math.max(1, Number(e.target.value)))}
-                          />
-                          <button className="ghost-btn compact" type="button" style={{ padding: '2px 8px', fontSize: '14px', minWidth: '24px' }} onClick={() => updateEditQty(p.productId, p.quantity + 1)}>+</button>
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>{money(p.quantity * p.unitPrice)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <button className="ghost-btn" type="button" style={{ color: 'var(--danger)', padding: '2px 8px' }} onClick={() => removeProductFromEdit(p.productId)}>🗑️ Xóa</button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>Không có sản phẩm nào. Vui lòng thêm sản phẩm bên dưới.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <section className="invoice-editor-list" aria-label="Danh sách món trong hóa đơn">
+              <header className="invoice-editor-toolbar">
+                <div>
+                  <div className="invoice-editor-title">
+                    <h5>Danh sách món</h5>
+                    <span className="badge blue">{editProducts.length} sản phẩm</span>
+                  </div>
+                  <p>{editProductTotalQuantity} món · {money(editProductTotalAmount)}</p>
+                </div>
+                <label className="invoice-editor-search">
+                  <span>Tìm trong danh sách</span>
+                  <input
+                    type="search"
+                    placeholder="Tên hoặc ID sản phẩm"
+                    value={editProductSearch}
+                    onChange={(event) => {
+                      setEditProductSearch(event.target.value);
+                      setEditProductPage(1);
+                    }}
+                  />
+                </label>
+              </header>
+
+              <div className="invoice-editor-items">
+                {visibleEditProducts.length ? visibleEditProducts.map((product) => (
+                  <article className="invoice-editor-item" key={product.productId}>
+                    <div className="invoice-editor-product">
+                      <small>ID #{product.productId}</small>
+                      <strong>{product.name}</strong>
+                      <span>{money(product.unitPrice)} / món</span>
+                    </div>
+                    <div className="invoice-editor-quantity">
+                      <button
+                        className="ghost-btn compact"
+                        type="button"
+                        aria-label={`Giảm số lượng ${product.name}`}
+                        onClick={() => updateEditQty(product.productId, product.quantity - 1)}
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        aria-label={`Số lượng ${product.name}`}
+                        value={product.quantity}
+                        onChange={(event) => updateEditQty(product.productId, Math.max(1, Number(event.target.value)))}
+                      />
+                      <button
+                        className="ghost-btn compact"
+                        type="button"
+                        aria-label={`Tăng số lượng ${product.name}`}
+                        onClick={() => updateEditQty(product.productId, product.quantity + 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="invoice-editor-line-total">
+                      <small>Thành tiền</small>
+                      <strong>{money(product.quantity * product.unitPrice)}</strong>
+                    </div>
+                    <button
+                      className="ghost-btn invoice-editor-remove"
+                      type="button"
+                      aria-label={`Xóa ${product.name}`}
+                      onClick={() => removeProductFromEdit(product.productId)}
+                    >
+                      🗑️ Xóa
+                    </button>
+                  </article>
+                )) : (
+                  <div className="invoice-editor-empty">
+                    {editProducts.length ? "Không tìm thấy món phù hợp." : "Chưa có món nào trong hóa đơn."}
+                  </div>
+                )}
+              </div>
+
+              {editProductTotalPages > 1 ? (
+                <nav className="invoice-editor-pagination" aria-label="Phân trang danh sách món">
+                  <button className="ghost-btn compact" type="button" disabled={editProductPage <= 1} onClick={() => setEditProductPage((page) => page - 1)}>Trước</button>
+                  <span>Trang {editProductPage}/{editProductTotalPages}</span>
+                  <button className="ghost-btn compact" type="button" disabled={editProductPage >= editProductTotalPages} onClick={() => setEditProductPage((page) => page + 1)}>Sau</button>
+                </nav>
+              ) : null}
+            </section>
 
             <div className="modal-actions" style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button className="ghost-btn" onClick={() => setEditModalOpen(false)}>Hủy</button>
