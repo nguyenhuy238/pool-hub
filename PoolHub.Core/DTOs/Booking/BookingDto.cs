@@ -1,4 +1,5 @@
 using PoolHub.Core.DTOs.Landing;
+using PoolHub.Core.DTOs.BookingDepositRefund;
 
 namespace PoolHub.Core.DTOs.Booking;
 
@@ -26,6 +27,7 @@ public class BookingDto
     public DateTime? NoShowAtUtc { get; set; }
     public string? Source { get; set; }
     public BookingDepositDto? Deposit { get; set; }
+    public DepositRefundSummaryDto? DepositRefundSummary { get; set; }
     public DepositPaymentInstructionDto? DepositPaymentInstruction { get; set; }
     public string StatusText { get; set; } = string.Empty;
     public string? DepositStatusText { get; set; }

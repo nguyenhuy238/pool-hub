@@ -752,6 +752,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var tableIds = await GetBookingTableIdsAsync(booking, ct);
         var deposit = await db.BookingDeposits.AsNoTracking().FirstOrDefaultAsync(x => x.BookingId == booking.BookingId, ct);
         var instruction = deposit is null ? null : await BuildDepositPaymentInstructionAsync(booking, customer?.PhoneNumber ?? string.Empty, deposit, ct);
+        var refundSummary = deposit is null ? null : await RefundService.GetSummaryForBookingAsync(booking.BookingId, ct);
         return new BookingDto
         {
             BookingId = booking.BookingId,
@@ -778,6 +779,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             StatusText = GetBookingStatusText(booking.Status),
             DepositStatusText = deposit is null ? null : GetDepositStatusText(deposit.Status),
             DepositPaymentInstruction = instruction,
+            DepositRefundSummary = refundSummary,
             Deposit = deposit is null ? null : new BookingDepositDto
             {
                 BookingDepositId = deposit.BookingDepositId,

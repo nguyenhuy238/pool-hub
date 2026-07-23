@@ -1,3 +1,5 @@
+using PoolHub.Core.DTOs.BookingDepositRefund;
+
 namespace PoolHub.Core.DTOs.Session;
 
 public class SessionSummaryResponse
@@ -21,6 +23,7 @@ public class SessionSummaryResponse
     public string? InvoiceCode { get; set; }
     public int? InvoiceStatus { get; set; }
     public decimal DepositAmount { get; set; }
+    public DepositRefundSummaryDto? DepositRefundSummary { get; set; }
     public SessionSummaryTableDto? CurrentTable { get; set; }
     public SessionTimeChargeSummaryDto? TimeCharge { get; set; }
     public List<SessionSummaryAssignmentDto> Assignments { get; set; } = [];

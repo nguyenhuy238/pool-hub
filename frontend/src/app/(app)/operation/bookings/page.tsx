@@ -12,6 +12,7 @@ import { compactBookingTablesLabel, getBookingTables, normalizeTableIds } from "
 import { getGuestCapacityError, getSelectedTablesCapacity } from "@/lib/bookingCapacity";
 import type { Booking } from "@/types";
 import { BookingModal } from "./BookingModal";
+import { DepositRefundSummaryPanel } from "@/components/refunds/DepositRefundSummaryPanel";
 
 const BOOKING_PENDING = 1;
 const BOOKING_CONFIRMED = 2;
@@ -238,6 +239,7 @@ export default function BookingsPage() {
             return <Badge tone={statusValue === BOOKING_CANCELLED || statusValue === BOOKING_NO_SHOW || statusValue === BOOKING_EXPIRED ? "red" : statusValue === BOOKING_CONFIRMED ? "green" : statusValue === BOOKING_COMPLETED || statusValue === BOOKING_IN_PROGRESS ? "blue" : "yellow"}>{label(bookingStatus, statusValue)}</Badge>;
           } },
           { key: "deposit", label: "Cọc", render: (row) => {
+            const booking = row as Booking;
             const deposit = row.deposit as { requiredAmount?: number; paidAmount?: number; appliedAmount?: number; refundedAmount?: number; forfeitedAmount?: number; status?: number } | undefined;
             return (
               <div style={{ display: "grid", gap: 3, fontSize: 13 }}>
@@ -245,7 +247,7 @@ export default function BookingsPage() {
                 <span>Cần cọc: <strong>{money(deposit?.requiredAmount)}</strong></span>
                 <span>Đã cọc: <strong>{money(deposit?.paidAmount)}</strong></span>
                 <span>Đã trừ HĐ: <strong>{money(deposit?.appliedAmount)}</strong></span>
-                <span>Hoàn / mất: <strong>{money(deposit?.refundedAmount)} / {money(deposit?.forfeitedAmount)}</strong></span>
+                <DepositRefundSummaryPanel summary={booking.depositRefundSummary} compact />
                 <span>Trạng thái cọc: {getDepositFlowLabel(Number(row.status), deposit?.status)}</span>
               </div>
             );

@@ -164,6 +164,7 @@ export type Booking = {
   noShowAtUtc?: string;
   source?: string;
   deposit?: BookingDeposit;
+  depositRefundSummary?: DepositRefundSummary;
   depositPaymentInstruction?: DepositPaymentInstruction;
   statusText?: string;
   depositStatusText?: string;
@@ -192,6 +193,28 @@ export type BookingDeposit = {
   status: number;
   dueAtUtc: string;
   paidAtUtc?: string;
+};
+
+export type DepositRefundRequestSummary = {
+  bookingDepositRefundId: number;
+  publicId?: string;
+  refundCode: string;
+  amount: number;
+  reason: DepositRefundReason | string;
+  refundMethod?: DepositRefundMethod | null;
+  status: DepositRefundStatus;
+  createdAtUtc: string;
+  succeededAtUtc?: string | null;
+};
+
+export type DepositRefundSummary = {
+  paidAmount: number;
+  appliedAmount: number;
+  forfeitedAmount: number;
+  pendingRefundAmount: number;
+  refundedAmount: number;
+  refundableBalance: number;
+  refundRequests: DepositRefundRequestSummary[];
 };
 
 export type DepositPaymentInstruction = {
@@ -263,6 +286,7 @@ export type Session = {
   durationMinutes?: number;
   note?: string;
   assignments?: SessionTableAssignment[];
+  depositRefundSummary?: DepositRefundSummary;
 };
 
 export type SessionActiveTable = {
@@ -321,6 +345,7 @@ export type ReleaseSessionTablesResponse = {
   timeSubtotalAmount: number;
   invoiceId?: number;
   invoiceCode?: string;
+  depositRefundSummary?: DepositRefundSummary;
   message?: string;
 };
 
@@ -407,6 +432,7 @@ export type Invoice = {
   paidAmount?: number;
   depositAppliedAmount?: number;
   depositRefundAmount?: number;
+  depositRefundSummary?: DepositRefundSummary;
   remainingAmount?: number;
   paymentStatus?: number;
   status?: number;

@@ -1,3 +1,5 @@
+using PoolHub.Core.DTOs.BookingDepositRefund;
+
 namespace PoolHub.Core.DTOs.Session;
 
 public class CloseSessionResponse
@@ -16,4 +18,5 @@ public class CloseSessionResponse
     public long? InvoiceId { get; set; }
     public string? InvoiceCode { get; set; }
     public bool InvoiceGenerated { get; set; }
+    public DepositRefundSummaryDto? DepositRefundSummary { get; set; }
 }

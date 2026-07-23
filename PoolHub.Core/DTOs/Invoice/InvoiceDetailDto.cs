@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PoolHub.Core.DTOs.BookingDepositRefund;
 
 namespace PoolHub.Core.DTOs.Invoice;
 
@@ -20,6 +21,7 @@ public class InvoiceDetailDto
     public decimal PaidAmount { get; set; }
     public decimal DepositAppliedAmount { get; set; }
     public decimal DepositRefundAmount { get; set; }
+    public DepositRefundSummaryDto? DepositRefundSummary { get; set; }
     public decimal RemainingAmount { get; set; }
     public int PaymentStatus { get; set; }
     public int Status { get; set; }

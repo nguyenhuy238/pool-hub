@@ -9,6 +9,7 @@ import { money, dateTime } from "@/lib/status";
 import { formatDateTimeLocal } from "@/lib/dateTime";
 import { parseBankTransferConfig } from "@/lib/paymentQr";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
+import { DepositRefundSummaryPanel } from "@/components/refunds/DepositRefundSummaryPanel";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { openInvoiceDisplay } from "@/lib/invoiceDisplay";
@@ -607,6 +608,7 @@ export default function InvoicesPage() {
                 <span style={{ fontWeight: 600, color: '#7c3aed' }}>{money(invoice.depositRefundAmount || 0)}</span>
               </div>
             ) : null}
+            <DepositRefundSummaryPanel summary={invoice.depositRefundSummary} />
             <div style={{ borderTop: '1px dashed var(--line)', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '16px', fontWeight: 'bold' }}>TỔNG THANH TOÁN:</span>
               <span style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--brand)' }}>{money(invoice.grandTotalAmount || 0)}</span>

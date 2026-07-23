@@ -69,10 +69,16 @@ public class InvoiceService(
                 SessionId = x.SessionId,
                 InvoiceCode = x.InvoiceCode,
                 GrandTotalAmount = x.GrandTotalAmount,
+                PaidAmount = x.PaidAmount,
+                RemainingAmount = Math.Max(0, x.GrandTotalAmount - x.PaidAmount),
                 PaymentStatus = x.PaymentStatus,
                 Status = x.Status
             })
             .ToListAsync(ct);
+        foreach (var item in items)
+        {
+            await PopulateInvoiceDepositSummaryAsync(item, ct);
+        }
 
         return new PagedResult<InvoiceDto>
         {
@@ -88,7 +94,7 @@ public class InvoiceService(
         var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.Status != 3, ct);
         if (exists is not null) 
         {
-            return MapInvoiceDto(exists);
+            return await MapInvoiceDtoAsync(exists, ct);
         }
 
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
@@ -169,7 +175,7 @@ public class InvoiceService(
         await ApplyBookingDepositToInvoiceAsync(session, invoice, ct);
 
         await db.SaveChangesAsync(ct);
-        return MapInvoiceDto(invoice);
+        return await MapInvoiceDtoAsync(invoice, ct);
     }
 
     public async Task<CreatePaymentResponse> CreatePaymentAsync(CreatePaymentRequest request, long? receivedByUserId, CancellationToken ct)
@@ -419,6 +425,7 @@ public class InvoiceService(
                 .FirstOrDefaultAsync(ct)
             : null;
 
+        var depositSummary = await RefundService.GetSummaryForInvoiceAsync(invoice.InvoiceId, ct);
         return new InvoiceDetailDto
         {
             InvoiceId = invoice.InvoiceId,
@@ -436,6 +443,7 @@ public class InvoiceService(
             PaidAmount = invoice.PaidAmount,
             DepositAppliedAmount = await db.BookingDeposits.AsNoTracking().Where(x => x.AppliedToInvoiceId == invoice.InvoiceId).SumAsync(x => x.AppliedAmount, ct),
             DepositRefundAmount = await db.BookingDeposits.AsNoTracking().Where(x => x.AppliedToInvoiceId == invoice.InvoiceId).SumAsync(x => x.RefundedAmount, ct),
+            DepositRefundSummary = depositSummary,
             RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount),
             PaymentStatus = invoice.PaymentStatus,
             Status = invoice.Status,
@@ -1214,7 +1222,7 @@ public class InvoiceService(
             await posNotificationService.NotifySessionUpdateAsync((int)invoice.SessionId, ct);
         }
 
-        return MapInvoiceDto(invoice);
+        return await MapInvoiceDtoAsync(invoice, ct);
     }
 
     public async Task<InvoiceDetailDto> UpdateInvoiceCustomerAsync(long id, UpdateInvoiceCustomerRequest request, long? userId, CancellationToken ct)
@@ -1296,17 +1304,33 @@ public class InvoiceService(
         }
     }
 
-    private static InvoiceDto MapInvoiceDto(EntityInvoice invoice) => new()
+    private async Task<InvoiceDto> MapInvoiceDtoAsync(EntityInvoice invoice, CancellationToken ct)
     {
-        InvoiceId = invoice.InvoiceId,
-        SessionId = invoice.SessionId,
-        InvoiceCode = invoice.InvoiceCode,
-        GrandTotalAmount = invoice.GrandTotalAmount,
-        PaymentStatus = invoice.PaymentStatus,
-        Status = invoice.Status,
-        PaidAmount = invoice.PaidAmount,
-        RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount)
-    };
+        var dto = new InvoiceDto
+        {
+            InvoiceId = invoice.InvoiceId,
+            SessionId = invoice.SessionId,
+            InvoiceCode = invoice.InvoiceCode,
+            GrandTotalAmount = invoice.GrandTotalAmount,
+            PaymentStatus = invoice.PaymentStatus,
+            Status = invoice.Status,
+            PaidAmount = invoice.PaidAmount,
+            RemainingAmount = Math.Max(0, invoice.GrandTotalAmount - invoice.PaidAmount)
+        };
+        await PopulateInvoiceDepositSummaryAsync(dto, ct);
+        return dto;
+    }
+
+    private async Task PopulateInvoiceDepositSummaryAsync(InvoiceDto dto, CancellationToken ct)
+    {
+        dto.DepositAppliedAmount = await db.BookingDeposits.AsNoTracking()
+            .Where(x => x.AppliedToInvoiceId == dto.InvoiceId)
+            .SumAsync(x => x.AppliedAmount, ct);
+        dto.DepositRefundAmount = await db.BookingDeposits.AsNoTracking()
+            .Where(x => x.AppliedToInvoiceId == dto.InvoiceId)
+            .SumAsync(x => x.RefundedAmount, ct);
+        dto.DepositRefundSummary = await RefundService.GetSummaryForInvoiceAsync(dto.InvoiceId, ct);
+    }
 
     private async Task ProcessInvoicePaidRewardsAsync(EntityInvoice invoice, CancellationToken ct)
     {

@@ -31,7 +31,21 @@ import type {
   CustomerPointHistory,
   CustomerPortalProfile,
   PagedResult,
-  Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport
+  Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport,
+  PublicDepositRefund,
+  VerifyRefundRequest,
+  SubmitRefundMethodRequest,
+  DepositRefundListItem,
+  DepositRefundDetail,
+  DepositRefundBankInfo,
+  DepositRefundStatus,
+  DepositRefundMethod,
+  DepositRefundReason,
+  RejectRefundRequest,
+  RequestCustomerRefundUpdateRequest,
+  CompleteBankTransferRequest,
+  MarkRefundFailedRequest,
+  CompleteCashPickupRequest
 } from "@/types";
 
 type UpdateCustomerPayload = Pick<CustomerDto, "fullName" | "status"> & {

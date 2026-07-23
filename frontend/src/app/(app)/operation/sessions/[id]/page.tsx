@@ -7,6 +7,7 @@ import { dateTime, label, money, sessionStatus } from "@/lib/status";
 import { formatElapsedDuration } from "@/lib/sessionDuration";
 import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
 import { Badge, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
+import { DepositRefundSummaryPanel } from "@/components/refunds/DepositRefundSummaryPanel";
 import { useToast } from "@/components/toast";
 import type { BookingCalendarItem, Order, Product, Session, SessionTableAssignment, VenueTable } from "@/types";
 
@@ -241,6 +242,9 @@ export default function SessionDetailPage() {
                 <Info label="Tiền đơn hàng" value={money(Number(productAmount))} />
                 <Info label="Giảm giá" value={`-${money(Number(discountAmount))}`} />
                 <Info label="Tổng tiền" value={money(Number(grandTotal))} strong />
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <DepositRefundSummaryPanel summary={summary?.depositRefundSummary || session.depositRefundSummary} />
               </div>
             </div>
 

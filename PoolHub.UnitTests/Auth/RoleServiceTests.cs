@@ -19,7 +19,7 @@ public class RoleServiceTests
         var service = CreateService(db);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.CreateAsync(new CreateRoleRequest { Name = " cashier " }, 1, CancellationToken.None));
+            service.CreateAsync(new CreateRoleRequest { Name = " legacycashier " }, 1, CancellationToken.None));
     }
 
     [Fact]

@@ -39,6 +39,15 @@ public class BookingDepositRefundService(
         BookingDepositRefundStatuses.Succeeded
     ];
 
+    private static readonly int[] PendingRefundStatuses =
+    [
+        BookingDepositRefundStatuses.PendingCustomerInfo,
+        BookingDepositRefundStatuses.PendingApproval,
+        BookingDepositRefundStatuses.Approved,
+        BookingDepositRefundStatuses.Processing,
+        BookingDepositRefundStatuses.ReadyForCashPickup
+    ];
+
     public async Task<decimal> CalculateRefundableBalanceAsync(long bookingDepositId, CancellationToken ct)
     {
         var deposit = await db.BookingDeposits.AsNoTracking().FirstOrDefaultAsync(x => x.BookingDepositId == bookingDepositId, ct)
@@ -48,6 +57,80 @@ public class BookingDepositRefundService(
             .SumAsync(x => x.Amount, ct);
 
         return Math.Max(0, deposit.PaidAmount - deposit.AppliedAmount - deposit.ForfeitedAmount - reserved);
+    }
+
+    public async Task<DepositRefundSummaryDto?> GetSummaryForBookingAsync(long bookingId, CancellationToken ct)
+    {
+        var deposit = await db.BookingDeposits.AsNoTracking()
+            .Where(x => x.BookingId == bookingId)
+            .OrderByDescending(x => x.BookingDepositId)
+            .FirstOrDefaultAsync(ct);
+
+        return deposit is null ? null : await BuildSummaryAsync(deposit, ct);
+    }
+
+    public async Task<DepositRefundSummaryDto?> GetSummaryForInvoiceAsync(long invoiceId, CancellationToken ct)
+    {
+        var deposit = await db.BookingDeposits.AsNoTracking()
+            .Where(x => x.AppliedToInvoiceId == invoiceId)
+            .OrderByDescending(x => x.BookingDepositId)
+            .FirstOrDefaultAsync(ct);
+
+        return deposit is null ? null : await BuildSummaryAsync(deposit, ct);
+    }
+
+    public async Task<DepositRefundSummaryDto?> GetSummaryForSessionAsync(long sessionId, CancellationToken ct)
+    {
+        var session = await db.Sessions.AsNoTracking()
+            .Where(x => x.SessionId == sessionId)
+            .Select(x => new { x.BookingId })
+            .FirstOrDefaultAsync(ct);
+
+        if (session?.BookingId is null) return null;
+        return await GetSummaryForBookingAsync(session.BookingId.Value, ct);
+    }
+
+    private async Task<DepositRefundSummaryDto> BuildSummaryAsync(BookingDeposit deposit, CancellationToken ct)
+    {
+        var refundRows = await db.BookingDepositRefunds.AsNoTracking()
+            .Where(x => x.BookingDepositId == deposit.BookingDepositId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Select(x => new DepositRefundRequestSummaryDto
+            {
+                BookingDepositRefundId = x.BookingDepositRefundId,
+                PublicId = x.PublicId,
+                RefundCode = x.RefundCode,
+                Amount = x.Amount,
+                Reason = x.Reason,
+                RefundMethod = x.RefundMethod,
+                Status = x.Status,
+                CreatedAtUtc = x.CreatedAtUtc,
+                SucceededAtUtc = x.SucceededAtUtc
+            })
+            .ToListAsync(ct);
+
+        var pendingRefundAmount = refundRows
+            .Where(x => PendingRefundStatuses.Contains(x.Status))
+            .Sum(x => x.Amount);
+
+        var refundableBalance = Math.Max(
+            0,
+            deposit.PaidAmount
+            - deposit.AppliedAmount
+            - deposit.ForfeitedAmount
+            - pendingRefundAmount
+            - deposit.RefundedAmount);
+
+        return new DepositRefundSummaryDto
+        {
+            PaidAmount = deposit.PaidAmount,
+            AppliedAmount = deposit.AppliedAmount,
+            ForfeitedAmount = deposit.ForfeitedAmount,
+            PendingRefundAmount = pendingRefundAmount,
+            RefundedAmount = deposit.RefundedAmount,
+            RefundableBalance = refundableBalance,
+            RefundRequests = refundRows
+        };
     }
 
     private async Task<decimal> CalculateRefundableBalanceExcludingRefundAsync(long bookingDepositId, long refundId, CancellationToken ct)
@@ -247,6 +330,11 @@ public class BookingDepositRefundService(
             return Map(refund);
         }
         EnsureTransition(refund.Status, BookingDepositRefundStatuses.Succeeded);
+        var balance = await CalculateRefundableBalanceExcludingRefundAsync(refund.BookingDepositId, refund.BookingDepositRefundId, ct);
+        if (refund.Amount > balance)
+        {
+            throw new BusinessRuleException("Refund amount exceeds remaining refundable balance.");
+        }
 
         var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingDepositId == refund.BookingDepositId, ct)
             ?? throw new NotFoundException("Booking deposit not found.");
