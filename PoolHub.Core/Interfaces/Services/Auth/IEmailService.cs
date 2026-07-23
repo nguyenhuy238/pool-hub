@@ -5,11 +5,19 @@ public interface IEmailService
     void EnsureConfigured();
     Task SendPasswordResetAsync(string email, string resetToken, CancellationToken cancellationToken);
 
-    /// <summary>Gửi email xác nhận đặt bàn thành công cho khách.</summary>
     Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode,
         string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct);
 
-    /// <summary>Gửi email thông báo đặt bàn bị hủy cho khách.</summary>
     Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode,
         string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct);
+
+    Task SendDepositRefundNotificationAsync(
+        string email,
+        string subject,
+        string title,
+        string message,
+        IReadOnlyDictionary<string, string> details,
+        string? actionUrl,
+        string? actionText,
+        CancellationToken ct);
 }

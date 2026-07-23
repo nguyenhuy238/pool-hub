@@ -18,6 +18,12 @@ public class BookingDepositRefund : BaseEntity
     public string? CustomerPhoneSnapshot { get; set; }
     public string? CustomerTokenHash { get; set; }
     public DateTime? CustomerTokenExpiresAtUtc { get; set; }
+    public DateTime? CustomerTokenGeneratedAtUtc { get; set; }
+    public string? VerificationCodeHash { get; set; }
+    public DateTime? VerificationCodeExpiresAtUtc { get; set; }
+    public DateTime? VerificationCodeSentAtUtc { get; set; }
+    public int VerificationFailedAttempts { get; set; }
+    public DateTime? CustomerVerifiedAtUtc { get; set; }
     public DateTime? CustomerInfoSubmittedAtUtc { get; set; }
     public string? CustomerBankCode { get; set; }
     public string? CustomerBankName { get; set; }
@@ -26,6 +32,9 @@ public class BookingDepositRefund : BaseEntity
     public string? CustomerBankAccountNameEncrypted { get; set; }
     public string? ManualTransferCode { get; set; }
     public string? CashReceiptCode { get; set; }
+    public string? CashPickupCodeHash { get; set; }
+    public DateTime? CashPickupCodeExpiresAtUtc { get; set; }
+    public DateTime? CashPickupCodeUsedAtUtc { get; set; }
     public long? ProofMediaAssetId { get; set; }
     public string? Note { get; set; }
     public long? RequestedByUserId { get; set; }

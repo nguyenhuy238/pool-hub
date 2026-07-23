@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PoolHub.Infrastructure.Data;
 
 #nullable disable
 
-namespace PoolHub.Infrastructure.Migrations
+namespace PoolHub.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(PoolHubDbContext))]
-    partial class PoolHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723183839_AddDepositRefundPublicWorkflowFields")]
+    partial class AddDepositRefundPublicWorkflowFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

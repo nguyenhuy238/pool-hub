@@ -46,6 +46,7 @@ public static partial class ServiceCollectionExtensions
         services.AddScoped<IAuthCookieService, AuthCookieService>();
         services.AddScoped<IRefreshTokenStore, RedisRefreshTokenStore>();
         services.AddScoped<IEmailService, SmtpEmailService>();
+        services.AddScoped<ISensitiveDataProtector, SensitiveDataProtector>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IRoleService, RoleService>();
