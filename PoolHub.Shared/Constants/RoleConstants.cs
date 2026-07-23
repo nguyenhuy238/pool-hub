@@ -10,5 +10,5 @@ public static class RoleConstants
     public const string Operation = Admin + "," + Manager + "," + Staff;
     public static readonly string[] All = [Admin, Manager, Staff, Customer, Guest];
     public static readonly string[] SystemInternal = [Admin, Manager, Staff];
-    public static readonly string[] Retired = ["Cashier"];
+    public static readonly string[] Retired = ["Cashier", "LegacyCashier"];
 }

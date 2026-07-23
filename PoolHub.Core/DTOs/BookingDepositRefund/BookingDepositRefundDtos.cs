@@ -40,6 +40,30 @@ public class DepositApplicationResult
     public BookingDepositRefundDto? ExcessRefund { get; set; }
 }
 
+public class DepositRefundSummaryDto
+{
+    public decimal PaidAmount { get; set; }
+    public decimal AppliedAmount { get; set; }
+    public decimal ForfeitedAmount { get; set; }
+    public decimal PendingRefundAmount { get; set; }
+    public decimal RefundedAmount { get; set; }
+    public decimal RefundableBalance { get; set; }
+    public List<DepositRefundRequestSummaryDto> RefundRequests { get; set; } = [];
+}
+
+public class DepositRefundRequestSummaryDto
+{
+    public long BookingDepositRefundId { get; set; }
+    public Guid PublicId { get; set; }
+    public string RefundCode { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public int? RefundMethod { get; set; }
+    public int Status { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? SucceededAtUtc { get; set; }
+}
+
 public class PublicDepositRefundDto
 {
     public string RefundCode { get; set; } = string.Empty;
@@ -89,6 +113,8 @@ public class DepositRefundManagementDto : BookingDepositRefundDto
 {
     public string? BookingCode { get; set; }
     public string? CustomerName { get; set; }
+    public string? CustomerEmail { get; set; }
+    public string? CustomerPhone { get; set; }
     public string? CustomerEmailMasked { get; set; }
     public string? CustomerPhoneMasked { get; set; }
     public string? BankCode { get; set; }

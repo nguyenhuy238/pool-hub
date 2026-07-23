@@ -17,6 +17,9 @@ public interface IBookingDepositRefundService
     Task<BookingDepositRefundDto> MarkFailedAsync(long refundId, long processedByUserId, string reason, CancellationToken ct);
     Task<BookingDepositRefundDto> CompleteAsync(long refundId, long processedByUserId, string? transferCode, CancellationToken ct);
     Task<DepositApplicationResult> ApplyDepositToInvoiceAsync(Session session, Invoice invoice, CancellationToken ct);
+    Task<DepositRefundSummaryDto?> GetSummaryForBookingAsync(long bookingId, CancellationToken ct);
+    Task<DepositRefundSummaryDto?> GetSummaryForInvoiceAsync(long invoiceId, CancellationToken ct);
+    Task<DepositRefundSummaryDto?> GetSummaryForSessionAsync(long sessionId, CancellationToken ct);
     Task<PublicDepositRefundDto> GetPublicAsync(string token, CancellationToken ct);
     Task SendVerificationCodeAsync(string token, CancellationToken ct);
     Task<PublicDepositRefundDto> VerifyCustomerAsync(string token, VerifyDepositRefundRequest request, CancellationToken ct);

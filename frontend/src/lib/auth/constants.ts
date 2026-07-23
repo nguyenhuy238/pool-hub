@@ -4,7 +4,6 @@ export const ROLES = {
   ADMIN: "Admin",
   MANAGER: "Manager",
   STAFF: "Staff",
-  CASHIER: "Cashier",
   CUSTOMER: "Customer",
   GUEST: "Guest"
 } as const satisfies Record<string, RoleName>;
@@ -26,7 +25,7 @@ export const PERMISSIONS = {
 
 export const ADMIN_ROLES: RoleName[] = [ROLES.ADMIN];
 export const MANAGEMENT_READ_ROLES: RoleName[] = [ROLES.ADMIN, ROLES.MANAGER];
-export const OPERATION_ROLES: RoleName[] = [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF, ROLES.CASHIER];
+export const OPERATION_ROLES: RoleName[] = [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF];
 export const INTERNAL_LOGIN_ROLES: RoleName[] = [...OPERATION_ROLES];
 export const CUSTOMER_LOGIN_ROLES: RoleName[] = [ROLES.CUSTOMER];
 export const DASHBOARD_ROLES: RoleName[] = [...OPERATION_ROLES];

@@ -55,6 +55,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             {
                 x.SessionId,
                 x.SessionCode,
+                x.BookingId,
                 x.Status,
                 x.StartedAtUtc,
                 x.EndedAtUtc,
@@ -79,6 +80,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 ? (int)Math.Max(0, Math.Ceiling((now - x.StartedAtUtc).TotalMinutes))
                 : (x.EndedAtUtc.HasValue ? (int)Math.Max(0, Math.Ceiling((x.EndedAtUtc.Value - x.StartedAtUtc).TotalMinutes)) : 0)
         }).ToList();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var bookingId = rawItems[i].BookingId;
+            if (bookingId.HasValue)
+            {
+                items[i].DepositRefundSummary = await RefundService.GetSummaryForBookingAsync(bookingId.Value, ct);
+            }
+        }
 
         return new PagedResult<SessionDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
     }
@@ -293,6 +302,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             OpenedByUserId = session.OpenedByUserId,
             ClosedByUserId = session.ClosedByUserId,
             Note = session.Note,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct),
             Assignments = assignments
         };
     }
@@ -349,6 +359,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             InvoiceCode = existingInvoice?.InvoiceCode,
             InvoiceStatus = existingInvoice?.Status,
             DepositAmount = depositAmount,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct),
             CurrentTable = currentAssignment is null
                 ? null
                 : new SessionSummaryTableDto
@@ -797,6 +808,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             DurationMinutes = session.Status == 1
                 ? GetDurationMinutes(session.StartedAtUtc, now)
                 : session.EndedAtUtc.HasValue ? GetDurationMinutes(session.StartedAtUtc, session.EndedAtUtc.Value) : 0,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct),
             Assignments = assignments
         };
     }
@@ -1046,7 +1058,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             GrandTotalAmount = invoice?.GrandTotalAmount ?? timeSubtotal + productSubtotal,
             InvoiceId = invoice?.InvoiceId,
             InvoiceCode = invoice?.InvoiceCode,
-            InvoiceGenerated = invoice is not null
+            InvoiceGenerated = invoice is not null,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct)
         };
     }
 
@@ -1079,7 +1092,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             GrandTotalAmount = invoice?.GrandTotalAmount ?? subtotal,
             InvoiceId = invoice?.InvoiceId,
             InvoiceCode = invoice?.InvoiceCode,
-            InvoiceGenerated = invoiceGenerated || invoice is not null
+            InvoiceGenerated = invoiceGenerated || invoice is not null,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct)
         };
     }
 
@@ -1301,7 +1315,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             SessionCode = session.SessionCode,
             StartedAtUtc = session.StartedAtUtc,
             EndedAtUtc = session.EndedAtUtc,
-            Status = session.Status
+            Status = session.Status,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct)
         };
     }
 

@@ -382,7 +382,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task CloseWithSummaryAsync_WhenDepositExceedsGrandTotal_MarksInvoicePaidAndTracksRefundableExcess()
+    public async Task CloseWithSummaryAsync_WhenDepositExceedsGrandTotal_MarksInvoicePaidAndForfeitsExcessAfterSessionStarted()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -398,12 +398,14 @@ public class SessionServiceTests
         Assert.Equal(150000, invoice.PaidAmount);
         Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
         Assert.Equal(150000, deposit.AppliedAmount);
+        Assert.Equal(50000, deposit.ForfeitedAmount);
         Assert.Equal(0, deposit.RefundedAmount);
         Assert.Equal(BookingDepositStatuses.AppliedToInvoice, deposit.Status);
-        var refund = await db.BookingDepositRefunds.SingleAsync();
-        Assert.Equal(50000, refund.Amount);
-        Assert.Equal(BookingDepositRefundReasons.DepositExcess, refund.Reason);
-        Assert.Equal(BookingDepositRefundStatuses.PendingCustomerInfo, refund.Status);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+        Assert.NotNull(response.DepositRefundSummary);
+        Assert.Equal(50000, response.DepositRefundSummary!.ForfeitedAmount);
+        Assert.Equal(0, response.DepositRefundSummary.PendingRefundAmount);
+        Assert.Equal(0, response.DepositRefundSummary.RefundableBalance);
     }
 
     [Fact]
@@ -483,7 +485,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task CloseWithSummaryAsync_WhenCalledTwiceWithExcessDeposit_DoesNotCreateDuplicateRefund()
+    public async Task CloseWithSummaryAsync_WhenCalledTwiceWithExcessDeposit_DoesNotDuplicatePaymentOrForfeitedAmount()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -498,9 +500,10 @@ public class SessionServiceTests
         var deposit = await db.BookingDeposits.SingleAsync();
         Assert.Equal(150000, invoice.PaidAmount);
         Assert.Equal(150000, deposit.AppliedAmount);
+        Assert.Equal(50000, deposit.ForfeitedAmount);
         Assert.Equal(0, deposit.RefundedAmount);
         Assert.Equal(1, await db.Payments.CountAsync());
-        Assert.Equal(1, await db.BookingDepositRefunds.CountAsync());
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
     }
 
     [Fact]

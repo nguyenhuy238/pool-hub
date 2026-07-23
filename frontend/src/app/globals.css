@@ -3799,3 +3799,87 @@ textarea:focus {
     display: none;
   }
 }
+
+.deposit-refund-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.deposit-refund-summary.compact {
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  gap: 2px;
+}
+
+.deposit-refund-summary.compact span {
+  display: block;
+}
+
+.deposit-refund-summary.bill {
+  border-top: 1px dashed var(--line, #e2e8f0);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.deposit-refund-bill-row {
+  align-items: center;
+  color: var(--muted, #64748b);
+  display: flex;
+  font-size: 14px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.deposit-refund-bill-row strong {
+  color: var(--text, #0f172a);
+}
+
+.deposit-refund-note {
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+
+.deposit-refund-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.deposit-refund-metric {
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.deposit-refund-metric span,
+.deposit-refund-request span {
+  display: block;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+}
+
+.deposit-refund-metric strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.deposit-refund-requests h4 {
+  margin: 0 0 8px;
+}
+
+.deposit-refund-request-list {
+  display: grid;
+  gap: 8px;
+}
+
+.deposit-refund-request {
+  align-items: flex-start;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}

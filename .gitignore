@@ -19,6 +19,7 @@ x86/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+.artifacts/
 
 # Node / Next.js frontend
 node_modules/
@@ -45,6 +46,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+outputs/
+_temp_*/
+**/test-results/
+**/playwright-report/
+
+# Generated reports / local audit output
+docs/reports/
 
 # Local environment files
 .env

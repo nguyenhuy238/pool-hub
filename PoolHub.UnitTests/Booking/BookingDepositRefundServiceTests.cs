@@ -205,6 +205,82 @@ public class BookingDepositRefundServiceTests
         }, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ApplyDepositToInvoice_WhenDepositIsLessThanInvoice_PartiallyPaysWithoutRefundOrForfeit()
+    {
+        await using var db = CreateDb();
+        SeedPaidDeposit(db, paidAmount: 50000);
+        var (session, invoice) = SeedSessionAndInvoice(db, grandTotal: 100000);
+        await db.SaveChangesAsync();
+
+        var result = await new BookingDepositRefundService(db).ApplyDepositToInvoiceAsync(session, invoice, CancellationToken.None);
+
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(50000, result.AppliedAmount);
+        Assert.Equal(0, result.ExcessAmount);
+        Assert.Equal(50000, deposit.AppliedAmount);
+        Assert.Equal(0, deposit.ForfeitedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(InvoicePaymentStatuses.PartiallyPaid, invoice.PaymentStatus);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ApplyDepositToInvoice_WhenDepositEqualsInvoice_PaysWithoutRefundOrForfeit()
+    {
+        await using var db = CreateDb();
+        SeedPaidDeposit(db, paidAmount: 50000);
+        var (session, invoice) = SeedSessionAndInvoice(db, grandTotal: 50000);
+        await db.SaveChangesAsync();
+
+        var result = await new BookingDepositRefundService(db).ApplyDepositToInvoiceAsync(session, invoice, CancellationToken.None);
+
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(50000, result.AppliedAmount);
+        Assert.Equal(0, result.ExcessAmount);
+        Assert.Equal(50000, deposit.AppliedAmount);
+        Assert.Equal(0, deposit.ForfeitedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ApplyDepositToInvoice_WhenDepositExceedsInvoice_ForfeitsExcessWithoutRefund()
+    {
+        await using var db = CreateDb();
+        SeedPaidDeposit(db, paidAmount: 50000);
+        var (session, invoice) = SeedSessionAndInvoice(db, grandTotal: 2667);
+        await db.SaveChangesAsync();
+
+        var service = new BookingDepositRefundService(db);
+        var result = await service.ApplyDepositToInvoiceAsync(session, invoice, CancellationToken.None);
+        await service.ApplyDepositToInvoiceAsync(session, invoice, CancellationToken.None);
+
+        var deposit = await db.BookingDeposits.SingleAsync();
+        var payment = await db.Payments.SingleAsync();
+        var summary = await service.GetSummaryForInvoiceAsync(invoice.InvoiceId, CancellationToken.None);
+
+        Assert.Equal(2667, result.AppliedAmount);
+        Assert.Equal(47333, result.ExcessAmount);
+        Assert.Null(result.ExcessRefund);
+        Assert.Equal(2667, deposit.AppliedAmount);
+        Assert.Equal(47333, deposit.ForfeitedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(2667, payment.Amount);
+        Assert.Equal(2667, invoice.PaidAmount);
+        Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+        Assert.NotNull(summary);
+        Assert.Equal(50000, summary!.PaidAmount);
+        Assert.Equal(2667, summary.AppliedAmount);
+        Assert.Equal(47333, summary.ForfeitedAmount);
+        Assert.Equal(0, summary.PendingRefundAmount);
+        Assert.Equal(0, summary.RefundedAmount);
+        Assert.Equal(0, summary.RefundableBalance);
+        Assert.Empty(summary.RefundRequests);
+    }
+
     private static CreateBookingDepositRefundRequest NewRequest(decimal amount, string key) => new()
     {
         BookingDepositId = 1,
@@ -245,6 +321,33 @@ public class BookingDepositRefundServiceTests
         });
     }
 
+    private static (Session session, Invoice invoice) SeedSessionAndInvoice(PoolHubDbContext db, decimal grandTotal)
+    {
+        var session = new Session
+        {
+            SessionId = 1,
+            SessionCode = "S1",
+            BookingId = 1,
+            CustomerId = 1,
+            OpenedByUserId = 99,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            Status = 1
+        };
+        var invoice = new Invoice
+        {
+            InvoiceId = 1,
+            InvoiceCode = "INV1",
+            SessionId = session.SessionId,
+            CustomerId = 1,
+            GrandTotalAmount = grandTotal,
+            PaymentStatus = InvoicePaymentStatuses.Unpaid,
+            Status = 1
+        };
+        db.Sessions.Add(session);
+        db.Invoices.Add(invoice);
+        return (session, invoice);
+    }
+
     private static PoolHubDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<PoolHubDbContext>()
@@ -270,7 +373,7 @@ public class BookingDepositRefundServiceTests
         public string? ActionUrl { get; private set; }
         public string? LastCode { get; private set; }
         public void EnsureConfigured() { }
-        public Task SendPasswordResetAsync(string email, string resetToken, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendPasswordResetOtpAsync(string email, string otp, int expirationMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct) => Task.CompletedTask;
         public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) => Task.CompletedTask;
         public Task SendDepositRefundNotificationAsync(string email, string subject, string title, string message, IReadOnlyDictionary<string, string> details, string? actionUrl, string? actionText, CancellationToken ct)

@@ -1,3 +1,5 @@
+using PoolHub.Core.DTOs.BookingDepositRefund;
+
 namespace PoolHub.Core.DTOs.Session;
 
 public class SessionDto
@@ -9,5 +11,6 @@ public class SessionDto
     public DateTime? EndedAtUtc { get; set; }
     public string TableName { get; set; } = string.Empty;
     public int DurationMinutes { get; set; }
+    public DepositRefundSummaryDto? DepositRefundSummary { get; set; }
     public List<SessionTableAssignmentDto> Assignments { get; set; } = [];
 }

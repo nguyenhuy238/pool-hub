@@ -39,6 +39,15 @@ public class BookingDepositRefundService(
         BookingDepositRefundStatuses.Succeeded
     ];
 
+    private static readonly int[] PendingRefundStatuses =
+    [
+        BookingDepositRefundStatuses.PendingCustomerInfo,
+        BookingDepositRefundStatuses.PendingApproval,
+        BookingDepositRefundStatuses.Approved,
+        BookingDepositRefundStatuses.Processing,
+        BookingDepositRefundStatuses.ReadyForCashPickup
+    ];
+
     public async Task<decimal> CalculateRefundableBalanceAsync(long bookingDepositId, CancellationToken ct)
     {
         var deposit = await db.BookingDeposits.AsNoTracking().FirstOrDefaultAsync(x => x.BookingDepositId == bookingDepositId, ct)
@@ -48,6 +57,80 @@ public class BookingDepositRefundService(
             .SumAsync(x => x.Amount, ct);
 
         return Math.Max(0, deposit.PaidAmount - deposit.AppliedAmount - deposit.ForfeitedAmount - reserved);
+    }
+
+    public async Task<DepositRefundSummaryDto?> GetSummaryForBookingAsync(long bookingId, CancellationToken ct)
+    {
+        var deposit = await db.BookingDeposits.AsNoTracking()
+            .Where(x => x.BookingId == bookingId)
+            .OrderByDescending(x => x.BookingDepositId)
+            .FirstOrDefaultAsync(ct);
+
+        return deposit is null ? null : await BuildSummaryAsync(deposit, ct);
+    }
+
+    public async Task<DepositRefundSummaryDto?> GetSummaryForInvoiceAsync(long invoiceId, CancellationToken ct)
+    {
+        var deposit = await db.BookingDeposits.AsNoTracking()
+            .Where(x => x.AppliedToInvoiceId == invoiceId)
+            .OrderByDescending(x => x.BookingDepositId)
+            .FirstOrDefaultAsync(ct);
+
+        return deposit is null ? null : await BuildSummaryAsync(deposit, ct);
+    }
+
+    public async Task<DepositRefundSummaryDto?> GetSummaryForSessionAsync(long sessionId, CancellationToken ct)
+    {
+        var session = await db.Sessions.AsNoTracking()
+            .Where(x => x.SessionId == sessionId)
+            .Select(x => new { x.BookingId })
+            .FirstOrDefaultAsync(ct);
+
+        if (session?.BookingId is null) return null;
+        return await GetSummaryForBookingAsync(session.BookingId.Value, ct);
+    }
+
+    private async Task<DepositRefundSummaryDto> BuildSummaryAsync(BookingDeposit deposit, CancellationToken ct)
+    {
+        var refundRows = await db.BookingDepositRefunds.AsNoTracking()
+            .Where(x => x.BookingDepositId == deposit.BookingDepositId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Select(x => new DepositRefundRequestSummaryDto
+            {
+                BookingDepositRefundId = x.BookingDepositRefundId,
+                PublicId = x.PublicId,
+                RefundCode = x.RefundCode,
+                Amount = x.Amount,
+                Reason = x.Reason,
+                RefundMethod = x.RefundMethod,
+                Status = x.Status,
+                CreatedAtUtc = x.CreatedAtUtc,
+                SucceededAtUtc = x.SucceededAtUtc
+            })
+            .ToListAsync(ct);
+
+        var pendingRefundAmount = refundRows
+            .Where(x => PendingRefundStatuses.Contains(x.Status))
+            .Sum(x => x.Amount);
+
+        var refundableBalance = Math.Max(
+            0,
+            deposit.PaidAmount
+            - deposit.AppliedAmount
+            - deposit.ForfeitedAmount
+            - pendingRefundAmount
+            - deposit.RefundedAmount);
+
+        return new DepositRefundSummaryDto
+        {
+            PaidAmount = deposit.PaidAmount,
+            AppliedAmount = deposit.AppliedAmount,
+            ForfeitedAmount = deposit.ForfeitedAmount,
+            PendingRefundAmount = pendingRefundAmount,
+            RefundedAmount = deposit.RefundedAmount,
+            RefundableBalance = refundableBalance,
+            RefundRequests = refundRows
+        };
     }
 
     private async Task<decimal> CalculateRefundableBalanceExcludingRefundAsync(long bookingDepositId, long refundId, CancellationToken ct)
@@ -114,12 +197,23 @@ public class BookingDepositRefundService(
         var rawToken = GenerateToken();
         SetCustomerToken(refund, rawToken);
         db.BookingDepositRefunds.Add(refund);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            if (transaction is not null) await transaction.RollbackAsync(ct);
+            var duplicated = await db.BookingDepositRefunds.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey.Trim(), ct);
+            if (duplicated is not null) return Map(duplicated);
+            throw;
+        }
         await LogAsync(request.RequestedByUserId, AuditActions.BookingDepositRefundCreated, refund, ct);
         await LogAsync(request.RequestedByUserId, AuditActions.RefundTokenGenerated, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Yeu cau thong tin hoan coc", "Cung cap thong tin nhan hoan coc",
-            "PoolHub can ban xac minh va chon hinh thuc nhan tien hoan coc.",
-            BuildPublicRefundUrl(rawToken), "Mo trang hoan coc", ct);
+        await TrySendRefundEmailAsync(refund, "Yêu cầu cung cấp thông tin hoàn cọc", "Cung cấp thông tin nhận hoàn cọc",
+            "PoolHub cần bạn xác minh và chọn hình thức nhận tiền hoàn cọc.",
+            BuildPublicRefundUrl(rawToken), "Mở trang hoàn cọc", ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         return Map(refund);
     }
@@ -185,8 +279,8 @@ public class BookingDepositRefundService(
         refund.ApprovedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(approvedByUserId, AuditActions.BookingDepositRefundApproved, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Hoan coc da duoc duyet", "Hoan coc da duoc duyet",
-            "Yeu cau hoan coc cua ban da duoc quan ly duyet va dang cho thu ngan xu ly.", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Hoàn cọc đã được duyệt", "Hoàn cọc đã được duyệt",
+            "Yêu cầu hoàn cọc của bạn đã được quản lý duyệt và đang chờ thu ngân xử lý.", null, null, ct);
         return Map(refund);
     }
 
@@ -200,8 +294,8 @@ public class BookingDepositRefundService(
         refund.RejectedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(rejectedByUserId, AuditActions.BookingDepositRefundRejected, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Yeu cau hoan coc bi tu choi", "Yeu cau hoan coc bi tu choi",
-            $"Ly do: {refund.RejectReason}", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Yêu cầu hoàn cọc bị từ chối", "Yêu cầu hoàn cọc bị từ chối",
+            $"Lý do: {refund.RejectReason}", null, null, ct);
         return Map(refund);
     }
 
@@ -216,8 +310,8 @@ public class BookingDepositRefundService(
         refund.ProcessingAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(processedByUserId, AuditActions.BookingDepositRefundProcessing, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Hoan coc dang xu ly", "Hoan coc dang xu ly",
-            "Thu ngan dang thuc hien chuyen khoan hoan coc.", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Hoàn cọc đang xử lý", "Hoàn cọc đang xử lý",
+            "Thu ngân đang thực hiện chuyển khoản hoàn cọc.", null, null, ct);
         return Map(refund);
     }
 
@@ -232,8 +326,8 @@ public class BookingDepositRefundService(
         refund.FailedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(processedByUserId, AuditActions.BookingDepositRefundFailed, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Hoan coc that bai", "Hoan coc that bai",
-            $"Ly do: {refund.FailureReason}", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Hoàn cọc thất bại", "Hoàn cọc thất bại",
+            $"Lý do: {refund.FailureReason}", null, null, ct);
         return Map(refund);
     }
 
@@ -247,6 +341,11 @@ public class BookingDepositRefundService(
             return Map(refund);
         }
         EnsureTransition(refund.Status, BookingDepositRefundStatuses.Succeeded);
+        var balance = await CalculateRefundableBalanceExcludingRefundAsync(refund.BookingDepositId, refund.BookingDepositRefundId, ct);
+        if (refund.Amount > balance)
+        {
+            throw new BusinessRuleException("Refund amount exceeds remaining refundable balance.");
+        }
 
         var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x => x.BookingDepositId == refund.BookingDepositId, ct)
             ?? throw new NotFoundException("Booking deposit not found.");
@@ -287,8 +386,8 @@ public class BookingDepositRefundService(
         refund.CustomerVerifiedAtUtc = null;
         await db.SaveChangesAsync(ct);
         await LogAsync(null, AuditActions.RefundVerificationCodeSent, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Ma xac minh hoan coc", "Ma xac minh hoan coc",
-            $"Ma xac minh cua ban la {code}. Ma het han sau {GetVerificationMinutes()} phut.",
+        await TrySendRefundEmailAsync(refund, "Mã xác minh hoàn cọc", "Mã xác minh hoàn cọc",
+            $"Mã xác minh của bạn là {code}. Mã hết hạn sau {GetVerificationMinutes()} phút.",
             null, null, ct);
     }
 
@@ -349,8 +448,8 @@ public class BookingDepositRefundService(
         refund.CustomerInfoSubmittedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
         await LogAsync(null, AuditActions.CustomerRefundInfoSubmitted, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Da nhan thong tin hoan coc", "Da nhan thong tin hoan coc",
-            "Thong tin nhan hoan coc cua ban da duoc gui den quan ly de duyet.", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Đã nhận thông tin hoàn cọc", "Đã nhận thông tin hoàn cọc",
+            "Thông tin nhận hoàn cọc của bạn đã được gửi đến quản lý để duyệt.", null, null, ct);
         return await MapPublicAsync(refund, ct);
     }
 
@@ -435,8 +534,8 @@ public class BookingDepositRefundService(
         SetCustomerToken(refund, rawToken);
         await db.SaveChangesAsync(ct);
         await LogAsync(actorUserId, AuditActions.DepositRefundCustomerUpdateRequested, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Can cap nhat thong tin hoan coc", "Can cap nhat thong tin hoan coc",
-            "Quan ly can ban cap nhat lai thong tin nhan hoan coc.", BuildPublicRefundUrl(rawToken), "Cap nhat thong tin", ct);
+        await TrySendRefundEmailAsync(refund, "Cần cập nhật thông tin hoàn cọc", "Cần cập nhật thông tin hoàn cọc",
+            "Quản lý cần bạn cập nhật lại thông tin nhận hoàn cọc.", BuildPublicRefundUrl(rawToken), "Cập nhật thông tin", ct);
         return Map(refund);
     }
 
@@ -455,8 +554,8 @@ public class BookingDepositRefundService(
         refund.ProcessedByUserId = processedByUserId;
         await db.SaveChangesAsync(ct);
         await LogAsync(processedByUserId, AuditActions.CashRefundPrepared, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Tien mat san sang nhan", "Tien mat san sang nhan",
-            $"Ma nhan tien mat cua ban la {code}. Vui long mang ma nay den quay thu ngan.",
+        await TrySendRefundEmailAsync(refund, "Tiền mặt đã sẵn sàng nhận", "Tiền mặt đã sẵn sàng nhận",
+            $"Mã nhận tiền mặt của bạn là {code}. Vui lòng mang mã này đến quầy thu ngân.",
             null, null, ct);
         return Map(refund);
     }
@@ -472,8 +571,8 @@ public class BookingDepositRefundService(
         refund.ProofMediaAssetId = request.ProofMediaAssetId;
         refund.Note = NormalizeOptional(request.Note);
         var result = await CompleteAsync(refundId, processedByUserId, transferCode, ct);
-        await TrySendRefundEmailAsync(refund, "Da chuyen khoan hoan coc", "Da chuyen khoan hoan coc",
-            "PoolHub da hoan coc bang chuyen khoan ngan hang.", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Đã chuyển khoản hoàn cọc", "Đã chuyển khoản hoàn cọc",
+            "PoolHub đã hoàn cọc bằng chuyển khoản ngân hàng.", null, null, ct);
         return result;
     }
 
@@ -500,8 +599,8 @@ public class BookingDepositRefundService(
         refund.Note = NormalizeOptional(request.Note);
         var result = await CompleteAsync(refundId, processedByUserId, refund.CashReceiptCode, ct);
         await LogAsync(processedByUserId, AuditActions.CashRefundPickedUp, refund, ct);
-        await TrySendRefundEmailAsync(refund, "Da hoan tien mat", "Da hoan tien mat",
-            "PoolHub da xac nhan ban da nhan tien mat hoan coc.", null, null, ct);
+        await TrySendRefundEmailAsync(refund, "Đã hoàn tiền mặt", "Đã hoàn tiền mặt",
+            "PoolHub đã xác nhận bạn đã nhận tiền mặt hoàn cọc.", null, null, ct);
         return result;
     }
 
@@ -549,20 +648,22 @@ public class BookingDepositRefundService(
             deposit.Status = BookingDepositStatuses.AppliedToInvoice;
         }
 
+        var excess = Math.Max(0, deposit.PaidAmount - appliedAmount);
+        if (excess > 0)
+        {
+            deposit.ForfeitedAmount = excess;
+            deposit.ForfeitedAtUtc ??= _clock.UtcNow;
+        }
+
         await db.SaveChangesAsync(ct);
         await RecalculateInvoicePaymentStatusAsync(invoice, ct);
-
-        var excess = Math.Max(0, deposit.PaidAmount - appliedAmount);
-        var excessRefund = excess > 0
-            ? await CreateDepositExcessRefundAsync(deposit.BookingDepositId, invoice.InvoiceId, excess, ct)
-            : null;
 
         return new DepositApplicationResult
         {
             AppliedAmount = appliedAmount,
             ExcessAmount = excess,
             PaymentCreated = paymentCreated,
-            ExcessRefund = excessRefund
+            ExcessRefund = null
         };
     }
 
@@ -629,7 +730,12 @@ public class BookingDepositRefundService(
         join booking in db.Bookings.AsNoTracking() on refund.BookingId equals booking.BookingId
         join customer in db.Customers.AsNoTracking() on refund.CustomerId equals customer.CustomerId into customers
         from customer in customers.DefaultIfEmpty()
-        select new RefundManagementRow(refund, booking, customer);
+        select new RefundManagementRow
+        {
+            Refund = refund,
+            Booking = booking,
+            Customer = customer
+        };
 
     private static bool HasUsablePaidDeposit(BookingDeposit deposit) =>
         deposit.PaidAmount > 0 &&
@@ -723,6 +829,8 @@ public class BookingDepositRefundService(
         {
             BookingCode = booking.BookingCode,
             CustomerName = customer?.FullName,
+            CustomerEmail = refund.CustomerEmailSnapshot ?? customer?.Email,
+            CustomerPhone = refund.CustomerPhoneSnapshot ?? customer?.PhoneNumber,
             CustomerEmailMasked = MaskEmail(refund.CustomerEmailSnapshot ?? customer?.Email),
             CustomerPhoneMasked = MaskPhone(refund.CustomerPhoneSnapshot ?? customer?.PhoneNumber),
             BankCode = refund.CustomerBankCode,
@@ -766,10 +874,10 @@ public class BookingDepositRefundService(
             await emailService.SendDepositRefundNotificationAsync(refund.CustomerEmailSnapshot, subject, title, message,
                 new Dictionary<string, string>
                 {
-                    ["Ma hoan coc"] = refund.RefundCode,
-                    ["Ma booking"] = bookingCode,
-                    ["So tien"] = $"{refund.Amount:N0} VND",
-                    ["Ly do"] = refund.Reason
+                    ["Mã hoàn cọc"] = refund.RefundCode,
+                    ["Mã booking"] = bookingCode,
+                    ["Số tiền"] = $"{refund.Amount:N0} VND",
+                    ["Lý do"] = GetRefundReasonDisplay(refund.Reason)
                 },
                 actionUrl, actionText, ct);
         }
@@ -782,7 +890,7 @@ public class BookingDepositRefundService(
     private string BuildPublicRefundUrl(string token)
     {
         var baseUrl = config?["EmailSettings:FrontendBaseUrl"] ?? "http://localhost:3000";
-        return $"{baseUrl.TrimEnd('/')}/deposit-refunds/{Uri.EscapeDataString(token)}";
+        return $"{baseUrl.TrimEnd('/')}/refunds/{Uri.EscapeDataString(token)}";
     }
 
     private int GetTokenHours() => ReadInt("Refunds:CustomerTokenHours", 48, 1, 168);
@@ -824,6 +932,19 @@ public class BookingDepositRefundService(
 
     private static string Last4(string value) => value.Length <= 4 ? value : value[^4..];
 
+    private static string GetRefundReasonDisplay(string reason) => reason switch
+    {
+        BookingDepositRefundReasons.CustomerCancelledInTime => "Khách hủy đúng hạn",
+        BookingDepositRefundReasons.CustomerCancelledLate => "Khách hủy sát giờ",
+        BookingDepositRefundReasons.VenueFault => "Quán hủy do lỗi phía quán",
+        BookingDepositRefundReasons.BookingRejected => "Booking bị từ chối",
+        BookingDepositRefundReasons.DuplicateDeposit => "Thanh toán cọc trùng",
+        BookingDepositRefundReasons.DepositExcess => "Cọc dư",
+        BookingDepositRefundReasons.ManualAdjustment => "Điều chỉnh thủ công",
+        BookingDepositRefundReasons.Other => "Khác",
+        _ => reason
+    };
+
     private static bool PhoneLast4Matches(string? phone, string? last4)
     {
         if (string.IsNullOrWhiteSpace(last4)) return false;
@@ -842,8 +963,9 @@ public class BookingDepositRefundService(
     private static string? MaskPhone(string? phone)
     {
         var normalized = PhoneNumberNormalizer.Normalize(phone);
-        if (normalized.Length < 4) return string.IsNullOrWhiteSpace(normalized) ? null : "***";
-        return $"***{normalized[^4..]}";
+        if (string.IsNullOrWhiteSpace(normalized)) return null;
+        if (normalized.Length == 1) return $"{normalized[0]}***";
+        return $"{normalized[0]}***{normalized[^1]}";
     }
 
     private string GetPublicNextStep(BookingDepositRefund refund) => refund.Status switch
@@ -851,7 +973,7 @@ public class BookingDepositRefundService(
         BookingDepositRefundStatuses.PendingCustomerInfo when refund.CustomerVerifiedAtUtc is null => "Verify email code and phone last 4 digits.",
         BookingDepositRefundStatuses.PendingCustomerInfo => "Choose refund method.",
         BookingDepositRefundStatuses.PendingApproval => "Waiting for manager approval.",
-        BookingDepositRefundStatuses.Approved => "Waiting for cashier processing.",
+        BookingDepositRefundStatuses.Approved => "Waiting for staff processing.",
         BookingDepositRefundStatuses.Processing => "Bank transfer is being processed.",
         BookingDepositRefundStatuses.ReadyForCashPickup => "Cash is ready for pickup at the venue.",
         BookingDepositRefundStatuses.Succeeded => "Refund completed.",
@@ -891,5 +1013,10 @@ public class BookingDepositRefundService(
         }
     }
 
-    private sealed record RefundManagementRow(BookingDepositRefund Refund, EntityBooking Booking, EntityCustomer? Customer);
+    private sealed class RefundManagementRow
+    {
+        public BookingDepositRefund Refund { get; init; } = null!;
+        public EntityBooking Booking { get; init; } = null!;
+        public EntityCustomer? Customer { get; init; }
+    }
 }
