@@ -540,7 +540,7 @@ export type VenueLayoutResponse = {
 
 export type PricingPlan = { pricingPlanId: number; name: string; isDefault?: boolean; isActive?: boolean };
 export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayType?: number; dayOfWeek?: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
-export type PricingSpecialDate = { pricingSpecialDateId: number; date: string; dayType: number; description: string };
+
 export type Notification = { notificationId: number; title?: string; message?: string; isRead?: boolean; createdAtUtc?: string };
 export type Discount = {
   discountId: number; discountCode: string; name: string; discountType: string; value: number;
