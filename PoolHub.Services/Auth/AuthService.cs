@@ -142,6 +142,8 @@ public class AuthService(
         }
 
         if (!validation.IsValid || validation.Record is null)
+            
+            
             throw new UnauthorizedException("Invalid refresh token.");
 
         var user = await db.Users.FindAsync([validation.Record.UserId], ct)

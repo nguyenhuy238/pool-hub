@@ -261,7 +261,7 @@ public class BookingServiceTests
     }
 
     [Fact]
-    public async Task CreatePublicAsync_ForLargeBooking_CreatesPendingApproval()
+    public async Task CreatePublicAsync_ForLargeBooking_CreatesPendingDepositWithoutApproval()
     {
         await using var db = CreateDb();
         await SeedBookingBasicsAsync(db, tableCount: 5);
@@ -271,8 +271,9 @@ public class BookingServiceTests
 
         var booking = await service.CreatePublicAsync(request, CancellationToken.None);
 
-        Assert.Equal(BookingStatuses.PendingApproval, booking.Status);
-        Assert.True(booking.RequiresApproval);
+        Assert.Equal(BookingStatuses.PendingDeposit, booking.Status);
+        Assert.False(booking.RequiresApproval);
+        Assert.NotNull(booking.HoldExpiresAtUtc);
     }
 
     [Fact]
@@ -421,7 +422,7 @@ public class BookingServiceTests
     }
 
     [Fact]
-    public async Task CreatePublicAsync_WhenAllVenueTablesAvailable_CreatesPendingApprovalWithoutTableLimit()
+    public async Task CreatePublicAsync_WhenAllVenueTablesAvailable_CreatesPendingDepositWithoutApproval()
     {
         await using var db = CreateDb();
         await SeedBookingBasicsAsync(db, tableCount: 5);
@@ -430,8 +431,9 @@ public class BookingServiceTests
 
         var booking = await CreateService(db).CreatePublicAsync(request, CancellationToken.None);
 
-        Assert.Equal(BookingStatuses.PendingApproval, booking.Status);
-        Assert.True(booking.RequiresApproval);
+        Assert.Equal(BookingStatuses.PendingDeposit, booking.Status);
+        Assert.False(booking.RequiresApproval);
+        Assert.NotNull(booking.HoldExpiresAtUtc);
         Assert.Equal([1, 2, 3, 4, 5], booking.TableIds.OrderBy(x => x).ToList());
     }
 
@@ -440,12 +442,13 @@ public class BookingServiceTests
     {
         await using var db = CreateDb();
         await SeedBookingBasicsAsync(db, tableCount: 5);
-        var service = CreateService(db);
-        var request = NewCreateRequest(tableId: 1);
-        request.TableIds = [1, 2, 3, 4];
-        var booking = await service.CreatePublicAsync(request, CancellationToken.None);
+        var booking = NewBooking(1, BookingStatuses.PendingApproval, DateTime.UtcNow.Date.AddDays(1).AddHours(10), DateTime.UtcNow.Date.AddDays(1).AddHours(11));
+        booking.RequiresApproval = true;
+        booking.EstimatedAmount = 200000;
+        db.Bookings.Add(booking);
+        await db.SaveChangesAsync();
 
-        var approved = await service.ApproveAsync(booking.BookingId, 1, CancellationToken.None);
+        var approved = await CreateService(db).ApproveAsync(booking.BookingId, 1, CancellationToken.None);
 
         Assert.Equal(BookingStatuses.PendingDeposit, approved.Status);
         Assert.False(approved.RequiresApproval);

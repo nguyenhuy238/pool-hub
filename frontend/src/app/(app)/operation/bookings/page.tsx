@@ -138,6 +138,17 @@ export default function BookingsPage() {
     reload();
   }
 
+  async function startBookingSession(booking: Booking) {
+    try {
+      await bookingApi.startSession(Number(booking.bookingId));
+      toast("Đã nhận bàn và mở phiên chơi thành công.", "success");
+    } catch (err) {
+      toast(getStartBookingSessionErrorMessage(err), "error");
+    } finally {
+      reload();
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -403,10 +414,7 @@ export default function BookingsPage() {
               setStartingSession(null);
               return;
             }
-            await action(
-              bookingApi.startSession(Number(startingSession.bookingId)),
-              "Đã nhận bàn và mở phiên chơi thành công."
-            );
+            await startBookingSession(startingSession);
             setStartingSession(null);
           }}
         />
@@ -628,4 +636,30 @@ function BookingEditField({ label, full, children }: { label: string; full?: boo
       {children}
     </label>
   );
+}
+
+function getStartBookingSessionErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("another booking before this booking starts") ||
+    normalized.includes("khung giờ hiện tại đã có người booking")
+  ) {
+    return "Khung giờ hiện tại đã có người booking bàn này, không thể mở bàn.";
+  }
+
+  if (normalized.includes("table already has an active session") || normalized.includes("active session")) {
+    return "Bàn này đang có phiên chơi hoạt động, không thể mở thêm phiên mới.";
+  }
+
+  if (normalized.includes("maintenance") || normalized.includes("inactive") || normalized.includes("not available")) {
+    return "Bàn đang bảo trì hoặc không khả dụng, không thể mở bàn.";
+  }
+
+  if (normalized.includes("already has a session")) {
+    return "Booking này đã được nhận bàn và có phiên chơi.";
+  }
+
+  return message || "Không thể nhận bàn. Vui lòng kiểm tra lại lịch đặt và trạng thái bàn.";
 }

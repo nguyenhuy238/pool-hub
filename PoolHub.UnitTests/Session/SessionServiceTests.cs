@@ -89,7 +89,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_WhenConfirmedBookingIsBeforeEarlyCheckInWindow_ThrowsBusinessRuleException()
+    public async Task StartAsync_WhenConfirmedBookingIsBeforeEarlyCheckInWindowAndTableIsFree_StartsSession()
     {
         using var db = CreateSessionStartDb();
         var now = DateTime.UtcNow;
@@ -98,8 +98,39 @@ public class SessionServiceTests
 
         var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
 
-        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+        var result = await service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None);
+
+        var booking = await db.Bookings.FindAsync(1L);
+        Assert.Equal(BookingStatuses.InProgress, booking!.Status);
+        Assert.True(result.StartedAtUtc >= now);
+        Assert.True(result.StartedAtUtc < now.AddSeconds(10));
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenEarlyStartWouldOverlapAnotherBooking_ThrowsConflictException()
+    {
+        using var db = CreateSessionStartDb();
+        var now = DateTime.UtcNow;
+        SeedSessionStartData(db, now.AddMinutes(30), now.AddMinutes(90));
+        db.Bookings.Add(new Booking
+        {
+            BookingId = 2,
+            BookingCode = "BK2",
+            CustomerId = 1,
+            TableId = 1,
+            StartTimeUtc = DateTime.SpecifyKind(now.AddMinutes(10), DateTimeKind.Utc),
+            EndTimeUtc = DateTime.SpecifyKind(now.AddMinutes(20), DateTimeKind.Utc),
+            NumberOfGuests = 2,
+            Status = BookingStatuses.Confirmed
+        });
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
             service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None));
+
+        Assert.Equal("Khung giờ hiện tại đã có người booking bàn này, không thể mở bàn sớm.", exception.Message);
     }
 
     [Fact]

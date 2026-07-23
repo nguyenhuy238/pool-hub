@@ -19,7 +19,6 @@ namespace PoolHub.Services.Session;
 
 public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null, IClock? clock = null) : ISessionService
 {
-    private const int DefaultEarlyCheckInMinutes = 15;
     private readonly IClock _clock = clock ?? SystemClock.Instance;
 
     public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null, null)
@@ -450,17 +449,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new BusinessRuleException("Only confirmed bookings can start a session.");
             }
 
-            var earliestStartUtc = bookingStartUtc.AddMinutes(-GetEarlyCheckInMinutes());
-            if (nowUtc < earliestStartUtc)
-            {
-                throw new BusinessRuleException("Booking cannot start before the early check-in window.");
-            }
         }
 
         var tableId = request.TableId > 0
             ? request.TableId
             : booking?.TableId ?? throw new BusinessRuleException("A table is required to start a session.");
         var customerId = booking?.CustomerId ?? request.CustomerId;
+
+        if (booking is not null)
+        {
+            await EnsureNoOtherBookingBlocksEarlyStartAsync([tableId], booking, _clock.UtcNow, ct);
+        }
 
         await EnsureCustomerCanStartSessionAsync(customerId, null, ct);
         await EnsureTableHasNoActiveSessionAsync(tableId, "Table already has an active session.", ct);
@@ -558,12 +557,6 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw new BusinessRuleException("Only confirmed bookings can start a session.");
         }
 
-        var earliestStartUtc = bookingStartUtc.AddMinutes(-GetEarlyCheckInMinutes());
-        if (nowUtc < earliestStartUtc)
-        {
-            throw new BusinessRuleException("Booking cannot start before the early check-in window.");
-        }
-
         var tableIds = await GetBookingTableIdsAsync(booking, ct);
         if (tableId.HasValue && tableId.Value > 0 && !tableIds.Contains(tableId.Value))
         {
@@ -575,6 +568,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         {
             throw new BusinessRuleException("Booking has no table to start a session.");
         }
+
+        await EnsureNoOtherBookingBlocksEarlyStartAsync(tableIds, booking, nowUtc, ct);
 
         var tables = await db.VenueTables.Where(x => tableIds.Contains(x.TableId)).ToListAsync(ct);
         var missing = tableIds.Except(tables.Select(x => x.TableId)).ToList();
@@ -665,10 +660,33 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     private static string AppendAutomaticBookingNote(string? note, string reason) =>
         string.IsNullOrWhiteSpace(note) ? reason : $"{note.Trim()} | {reason}";
 
-    private int GetEarlyCheckInMinutes()
+    private async Task EnsureNoOtherBookingBlocksEarlyStartAsync(IReadOnlyCollection<long> tableIds, EntityBooking booking, DateTime nowUtc, CancellationToken ct)
     {
-        var configured = config?.GetValue<int?>("BookingRules:EarlyCheckInMinutes") ?? DefaultEarlyCheckInMinutes;
-        return Math.Clamp(configured, 0, 240);
+        if (tableIds.Count == 0) return;
+        var bookingStartUtc = NormalizeUtc(booking.StartTimeUtc);
+        if (nowUtc >= bookingStartUtc) return;
+
+        var activeBlockingStatuses = new[]
+        {
+            BookingStatuses.Confirmed,
+            BookingStatuses.PendingApproval,
+            BookingStatuses.InProgress
+        };
+
+        var hasBlockingBooking = await db.Bookings.AsNoTracking().AnyAsync(other =>
+            other.BookingId != booking.BookingId &&
+            (tableIds.Contains(other.TableId ?? 0) ||
+             db.BookingTables.Any(bt => bt.BookingId == other.BookingId && tableIds.Contains(bt.TableId))) &&
+            (activeBlockingStatuses.Contains(other.Status) ||
+             (other.Status == BookingStatuses.PendingDeposit &&
+              (other.HoldExpiresAtUtc == null || other.HoldExpiresAtUtc > nowUtc))) &&
+            other.StartTimeUtc < bookingStartUtc &&
+            other.EndTimeUtc > nowUtc, ct);
+
+        if (hasBlockingBooking)
+        {
+            throw new ConflictException("Khung giờ hiện tại đã có người booking bàn này, không thể mở bàn sớm.");
+        }
     }
 
     private async Task EnsureCustomerCanStartSessionAsync(long? customerId, long? bookingId, CancellationToken ct)

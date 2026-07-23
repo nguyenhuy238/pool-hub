@@ -28,8 +28,6 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private const decimal MinimumDepositAmount = 50000m;
     private const int DepositHoldMinutes = 10;
     private const int NoShowGraceMinutes = 15;
-    private const int LargeBookingTableThreshold = 3;
-    private const int FullBookingPercentThreshold = 70;
     private const int CancellationRefundHours = 2;
     private const int MaxActiveBookingsPerPhonePerDay = 2;
 
@@ -403,9 +401,6 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
 
         var requestedTableIds = NormalizeTableIds(request.TableIds, request.TableId);
-        var totalActiveTables = await db.VenueTables.CountAsync(x => x.IsActive && x.OperationalStatus != 4 && x.OperationalStatus != 5, ct);
-        var selectedCount = requestedTableIds.Count > 0 ? requestedTableIds.Count : 1;
-        var requiresApproval = RequiresApproval(selectedCount, totalActiveTables);
         var activeSessionTableIds = await GetActiveSessionTableIdsAsync(requestedTableIds, ct);
 
         var query = from table in db.VenueTables.AsNoTracking()
@@ -437,7 +432,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                     EstimatedAmount = estimated,
                     DepositRequiredAmount = CalculateDepositRequiredAmount(estimated),
                     DepositPercent = BookingDepositPercent,
-                    RequiresApproval = requiresApproval
+                    RequiresApproval = false
                 });
             }
         }
@@ -539,12 +534,10 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         await EnsureTablesCanBeBookedAsync(tableIds, 0, request.StartTimeUtc, request.EndTimeUtc, ct);
 
         var estimated = await EstimateAmountAsync(tableIds, request.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
-        var totalActiveTables = await db.VenueTables.CountAsync(x => x.IsActive && x.OperationalStatus != 4 && x.OperationalStatus != 5, ct);
-        var requiresApproval = forceApprovalForLargeBooking && RequiresApproval(tableIds.Count, totalActiveTables);
         var now = _clock.UtcNow;
-        var status = requiresApproval ? BookingStatuses.PendingApproval : BookingStatuses.PendingDeposit;
-        var holdExpiresAtUtc = status == BookingStatuses.PendingDeposit ? now.AddMinutes(DepositHoldMinutes) : (DateTime?)null;
-        if (source == "Public" && status == BookingStatuses.PendingDeposit)
+        var status = BookingStatuses.PendingDeposit;
+        var holdExpiresAtUtc = now.AddMinutes(DepositHoldMinutes);
+        if (source == "Public")
         {
             _ = await GetBankTransferQrConfigAsync(required: true, ct);
         }
@@ -561,7 +554,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             NumberOfGuests = request.NumberOfGuests,
             Status = status,
             EstimatedAmount = estimated,
-            RequiresApproval = requiresApproval,
+            RequiresApproval = false,
             HoldExpiresAtUtc = holdExpiresAtUtc,
             Source = source,
             Note = request.Note?.Trim()
@@ -569,7 +562,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         db.Bookings.Add(entity);
         await db.SaveChangesAsync(ct);
         db.BookingTables.AddRange(tableIds.Select(tableId => new PoolHub.Core.Entities.BookingTable { BookingId = entity.BookingId, TableId = tableId }));
-        db.BookingDeposits.Add(NewDeposit(entity.BookingId, estimated, holdExpiresAtUtc ?? now.AddMinutes(DepositHoldMinutes)));
+        db.BookingDeposits.Add(NewDeposit(entity.BookingId, estimated, holdExpiresAtUtc));
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
 
@@ -975,7 +968,11 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                             payosError = descEl.GetString() ?? payosError;
                         }
                     }
-                    throw new BusinessRuleException($"Không thể tạo mã QR thanh toán cọc PayOS. Vui lòng kiểm tra lại cấu hình PayOS. Lỗi từ PayOS: {payosError}");
+                    logger.LogWarning("PayOS did not return a QR for deposit #{DepositId}. Falling back to bank transfer QR. Error: {PayOsError}", deposit.BookingDepositId, payosError);
+                    if (settings.CanBuildDynamicQr)
+                    {
+                        vietQrUrl = BankTransferQrHelper.BuildVietQrUrl(settings, deposit.RequiredAmount, transferContent);
+                    }
                 }
             }
             catch (BusinessRuleException)
@@ -985,7 +982,10 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Error creating PayOS payment request for deposit #{DepositId}", deposit.BookingDepositId);
-                throw new BusinessRuleException("Lỗi kết nối tới cổng thanh toán PayOS. Vui lòng thử lại sau.");
+                if (settings.CanBuildDynamicQr)
+                {
+                    vietQrUrl = BankTransferQrHelper.BuildVietQrUrl(settings, deposit.RequiredAmount, transferContent);
+                }
             }
         }
         else if (settings.CanBuildDynamicQr)
@@ -1145,13 +1145,6 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var result = (tableIds ?? []).Where(x => x > 0).Distinct().ToList();
         if (tableId.HasValue && tableId.Value > 0 && !result.Contains(tableId.Value)) result.Insert(0, tableId.Value);
         return result;
-    }
-
-    private static bool RequiresApproval(int selectedTableCount, int totalActiveTableCount)
-    {
-        if (selectedTableCount > LargeBookingTableThreshold) return true;
-        if (totalActiveTableCount <= 0) return false;
-        return selectedTableCount * 100m / totalActiveTableCount >= FullBookingPercentThreshold;
     }
 
     private static bool IsAlignedToThirtyMinutes(DateTime value) =>
