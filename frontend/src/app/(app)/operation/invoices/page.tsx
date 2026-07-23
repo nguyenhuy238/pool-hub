@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { customerApi, invoiceApi, sessionApi, productApi, discountApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
@@ -12,6 +12,8 @@ import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session, Discount } from "@/types";
+
+const EDIT_PRODUCT_PAGE_SIZE = 6;
 
 export default function InvoicesPage() {
   const toast = useToast();
@@ -34,6 +36,8 @@ export default function InvoicesPage() {
   const [loadingDiscounts, setLoadingDiscounts] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editProducts, setEditProducts] = useState<{ productId: number; name: string; quantity: number; unitPrice: number }[]>([]);
+  const [editProductSearch, setEditProductSearch] = useState("");
+  const [editProductPage, setEditProductPage] = useState(1);
   const [allProductsList, setAllProductsList] = useState<Product[]>([]);
   const [selectedAddProductId, setSelectedAddProductId] = useState("");
   const [addQty, setAddQty] = useState(1);
@@ -55,6 +59,21 @@ export default function InvoicesPage() {
   const methods = (data?.methods || []) as PaymentMethod[];
   const sessions = useList<Session>(data?.sessions);
   const allInvoices = useList<Invoice>(data?.allInvoices);
+  const filteredEditProducts = useMemo(() => {
+    const keyword = editProductSearch.trim().toLocaleLowerCase("vi");
+    if (!keyword) return editProducts;
+    return editProducts.filter((product) =>
+      product.name.toLocaleLowerCase("vi").includes(keyword) ||
+      String(product.productId).includes(keyword)
+    );
+  }, [editProductSearch, editProducts]);
+  const editProductTotalPages = Math.max(1, Math.ceil(filteredEditProducts.length / EDIT_PRODUCT_PAGE_SIZE));
+  const visibleEditProducts = filteredEditProducts.slice(
+    (editProductPage - 1) * EDIT_PRODUCT_PAGE_SIZE,
+    editProductPage * EDIT_PRODUCT_PAGE_SIZE
+  );
+  const editProductTotalQuantity = editProducts.reduce((total, product) => total + product.quantity, 0);
+  const editProductTotalAmount = editProducts.reduce((total, product) => total + product.quantity * product.unitPrice, 0);
 
   const paidSessionIds = new Set(
     allInvoices
@@ -261,6 +280,10 @@ export default function InvoicesPage() {
     }
   }, [editModalOpen, toast]);
 
+  useEffect(() => {
+    setEditProductPage((current) => Math.min(current, editProductTotalPages));
+  }, [editProductTotalPages]);
+
   const updateEditQty = (productId: number, qty: number) => {
     if (qty < 0) qty = 0;
 
@@ -435,6 +458,8 @@ export default function InvoicesPage() {
                         unitPrice: Number(l.unitPrice)
                       }));
                     setEditProducts(initialProducts);
+                    setEditProductSearch("");
+                    setEditProductPage(1);
                     setEditModalOpen(true);
                   }}
                 >
