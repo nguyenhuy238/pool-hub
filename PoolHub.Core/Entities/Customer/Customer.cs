@@ -3,6 +3,11 @@ namespace PoolHub.Core.Entities;
 public class Customer : BaseEntity
 {
     public long CustomerId { get; set; }
+    /// <summary>
+    /// Optional link to the authenticated customer account. Guest customers created
+    /// at the counter can remain unlinked.
+    /// </summary>
+    public long? UserId { get; set; }
     public Guid PublicId { get; set; } = Guid.NewGuid();
     public string FullName { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;

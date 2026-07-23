@@ -18,7 +18,7 @@ export function canViewReports(roles: RoleName[], permissions: string[]) {
 }
 
 export function canViewPayments(roles: RoleName[], permissions: string[]) {
-  return hasAnyRole(roles, [ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER]) || hasPermission(permissions, PERMISSIONS.PAYMENTS_MANAGE);
+  return hasAnyRole(roles, [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF]) || hasPermission(permissions, PERMISSIONS.PAYMENTS_MANAGE);
 }
 
 export function canViewInventory(roles: RoleName[], permissions: string[]) {

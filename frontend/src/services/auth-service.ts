@@ -10,8 +10,8 @@ import type {
 } from "@/types";
 
 export const authService = {
-  login: (payload: LoginRequest) =>
-    apiFetch<AuthResponse>("/api/auth/login", {
+  login: (payload: LoginRequest, portal: "customer" | "admin" = "customer") =>
+    apiFetch<AuthResponse>(portal === "admin" ? "/api/auth/admin/login" : "/api/auth/customer/login", {
       method: "POST",
       body: JSON.stringify(payload),
       skipAuth: true,

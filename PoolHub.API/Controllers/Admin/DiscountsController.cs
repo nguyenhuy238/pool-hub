@@ -9,7 +9,7 @@ using PoolHub.Shared.Extensions;
 namespace PoolHub.API.Controllers;
 
 [ApiController, Route("api/discounts")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier, Policy = PermissionConstants.DiscountsManage)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff, Policy = PermissionConstants.DiscountsManage)]
 public class DiscountsController(IAdminManagementService service) : ControllerBase
 {
     [HttpGet] public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] DiscountQueryRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await service.GetDiscountsAsync(request, ct)));

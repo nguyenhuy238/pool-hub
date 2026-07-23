@@ -328,8 +328,240 @@ public class CustomerService(PoolHubDbContext db, IAuditService auditService, IC
         return Page(items, request, total);
     }
 
+    public async Task<CustomerPortalProfileDto> GetPortalProfileAsync(long userId, CancellationToken ct)
+    {
+        var customer = await GetPortalCustomerAsync(userId, ct);
+        var account = await db.Users.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new { x.Email, x.PhoneNumber, x.FullName })
+            .FirstOrDefaultAsync(ct);
+        return new CustomerPortalProfileDto
+        {
+            CustomerId = customer.CustomerId,
+            PublicId = customer.PublicId,
+            FullName = string.IsNullOrWhiteSpace(customer.FullName)
+                ? account?.FullName ?? string.Empty
+                : customer.FullName,
+            PhoneNumber = string.IsNullOrWhiteSpace(customer.PhoneNumber)
+                ? account?.PhoneNumber ?? string.Empty
+                : customer.PhoneNumber,
+            Email = string.IsNullOrWhiteSpace(customer.Email)
+                ? account?.Email
+                : customer.Email,
+            LoyaltyPoints = customer.LoyaltyPoints,
+            TotalPointsEarned = customer.TotalPointsEarned,
+            CreatedAtUtc = customer.CreatedAtUtc
+        };
+    }
+
+    public async Task<CustomerPortalProfileDto> UpdatePortalProfileAsync(
+        long userId, UpdateCustomerPortalProfileRequest request, CancellationToken ct)
+    {
+        var customer = await GetPortalCustomerAsync(userId, ct);
+        var user = await db.Users.FindAsync([userId], ct)
+            ?? throw new NotFoundException("User account not found.");
+        var phone = PhoneNumberNormalizer.Normalize(request.PhoneNumber);
+        if (string.IsNullOrWhiteSpace(phone))
+            throw new ValidationException("Phone number is required.");
+        if (await db.Customers.AnyAsync(
+                x => x.CustomerId != customer.CustomerId && x.PhoneNumber == phone, ct))
+            throw new ConflictException("Customer phone number already exists.");
+        if (await db.Users.AnyAsync(
+                x => x.UserId != userId && x.PhoneNumber == phone, ct))
+            throw new ConflictException("Phone number is already used by another account.");
+
+        var fullName = request.FullName.Trim();
+        var oldValues = new { customer.FullName, customer.PhoneNumber };
+        customer.FullName = fullName;
+        customer.PhoneNumber = phone;
+        customer.UpdatedAtUtc = _clock.UtcNow;
+        user.FullName = fullName;
+        user.PhoneNumber = phone;
+        user.UpdatedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        await auditService.LogAsync(userId, AuditActions.CustomerUpdated, nameof(CustomerEntity),
+            customer.CustomerId, customer.PublicId, oldValues,
+            new { customer.FullName, customer.PhoneNumber },
+            "Customer updated their profile.", ct);
+        return await GetPortalProfileAsync(userId, ct);
+    }
+
+    public async Task<IReadOnlyList<PoolHub.Core.DTOs.Admin.DiscountDto>> GetPortalVoucherTemplatesAsync(
+        long userId, CancellationToken ct)
+    {
+        await ResolvePortalCustomerIdAsync(userId, ct);
+        var now = _clock.UtcNow;
+        return await db.Discounts.AsNoTracking()
+            .Where(x => x.CustomerId == null && x.IsVoucher && x.IsActive &&
+                        x.PointsRequired > 0 && x.StartsAtUtc <= now &&
+                        (x.EndsAtUtc == null || x.EndsAtUtc > now))
+            .OrderBy(x => x.PointsRequired)
+            .ThenBy(x => x.Name)
+            .Select(x => new PoolHub.Core.DTOs.Admin.DiscountDto
+            {
+                DiscountId = x.DiscountId,
+                DiscountCode = x.DiscountCode,
+                Name = x.Name,
+                DiscountType = x.DiscountType,
+                Value = x.Value,
+                MaxAmount = x.MaxAmount,
+                MinTimeSubtotal = x.MinTimeSubtotal,
+                AppliesTo = x.AppliesTo,
+                StartsAtUtc = x.StartsAtUtc,
+                EndsAtUtc = x.EndsAtUtc,
+                IsActive = x.IsActive,
+                IsVoucher = x.IsVoucher,
+                PointsRequired = x.PointsRequired,
+                MaxUsage = x.MaxUsage,
+                UsageCount = x.UsageCount
+            })
+            .ToListAsync(ct);
+    }
+
+    public async Task<PoolHub.Core.DTOs.Admin.DiscountDto> ExchangePortalVoucherAsync(
+        long userId, long voucherTemplateId, CancellationToken ct) =>
+        await ExchangeVoucherAsync(
+            await ResolvePortalCustomerIdAsync(userId, ct),
+            voucherTemplateId,
+            userId,
+            ct);
+
+    public async Task<PagedResult<CustomerBookingHistoryDto>> GetPortalBookingHistoryAsync(
+        long userId, PaginationRequest request, CancellationToken ct) =>
+        await GetBookingHistoryAsync(await ResolvePortalCustomerIdAsync(userId, ct), request, ct);
+
+    public async Task<PagedResult<CustomerSessionHistoryDto>> GetPortalSessionHistoryAsync(
+        long userId, PaginationRequest request, CancellationToken ct) =>
+        await GetSessionHistoryAsync(await ResolvePortalCustomerIdAsync(userId, ct), request, ct);
+
+    public async Task<PagedResult<CustomerInvoiceHistoryDto>> GetPortalInvoiceHistoryAsync(
+        long userId, PaginationRequest request, CancellationToken ct) =>
+        await GetInvoiceHistoryAsync(await ResolvePortalCustomerIdAsync(userId, ct), request, ct);
+
+    public async Task<PagedResult<PoolHub.Core.DTOs.Admin.DiscountDto>> GetPortalVouchersAsync(
+        long userId, PaginationRequest request, CancellationToken ct)
+    {
+        var customerId = await ResolvePortalCustomerIdAsync(userId, ct);
+        NormalizePagination(request);
+        var query = db.Discounts.AsNoTracking()
+            // A customer id marks a personal voucher. Redeemed vouchers created
+            // by older data may have a null points-required value, so do not
+            // hide them by requiring the newer zero sentinel.
+            .Where(x => x.CustomerId == customerId && x.IsVoucher);
+        var total = await query.CountAsync(ct);
+        var customerName = await db.Customers.AsNoTracking()
+            .Where(x => x.CustomerId == customerId)
+            .Select(x => x.FullName)
+            .FirstOrDefaultAsync(ct);
+        var items = await query
+            .OrderByDescending(x => x.DiscountId)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(x => new PoolHub.Core.DTOs.Admin.DiscountDto
+            {
+                DiscountId = x.DiscountId,
+                DiscountCode = x.DiscountCode,
+                Name = x.Name,
+                DiscountType = x.DiscountType,
+                Value = x.Value,
+                MaxAmount = x.MaxAmount,
+                MinTimeSubtotal = x.MinTimeSubtotal,
+                AppliesTo = x.AppliesTo,
+                StartsAtUtc = x.StartsAtUtc,
+                EndsAtUtc = x.EndsAtUtc,
+                IsActive = x.IsActive,
+                IsVoucher = x.IsVoucher,
+                PointsRequired = x.PointsRequired,
+                CustomerId = x.CustomerId,
+                CustomerName = customerName,
+                MaxUsage = x.MaxUsage,
+                UsageCount = x.UsageCount
+            })
+            .ToListAsync(ct);
+        return Page(items, request, total);
+    }
+
+    public async Task<PagedResult<CustomerPointHistoryDto>> GetPortalPointHistoryAsync(
+        long userId, PaginationRequest request, CancellationToken ct) =>
+        await GetPointHistoryAsync(await ResolvePortalCustomerIdAsync(userId, ct), request, ct);
+
+    public async Task<long> ResolvePortalCustomerIdAsync(long userId, CancellationToken ct) =>
+        (await GetPortalCustomerAsync(userId, ct)).CustomerId;
+
     private Task<bool> CustomerExistsAsync(long id, CancellationToken ct) =>
         db.Customers.AsNoTracking().AnyAsync(x => x.CustomerId == id, ct);
+
+    private async Task<CustomerEntity> GetPortalCustomerAsync(long userId, CancellationToken ct)
+    {
+        var user = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.UserId == userId, ct)
+            ?? throw new NotFoundException("User account not found.");
+
+        var customer = await db.Customers
+            .FirstOrDefaultAsync(x => x.UserId == userId, ct);
+        if (customer is null)
+        {
+            var normalizedPhone = PhoneNumberNormalizer.Normalize(user.PhoneNumber);
+            var normalizedEmail = NormalizeEmail(user.Email);
+            var byEmail = string.IsNullOrWhiteSpace(normalizedEmail)
+                ? null
+                : await db.Customers.FirstOrDefaultAsync(
+                    x => x.Email != null && x.Email.ToLower() == normalizedEmail,
+                    ct);
+            var byPhone = string.IsNullOrWhiteSpace(normalizedPhone)
+                ? null
+                : await db.Customers.FirstOrDefaultAsync(x => x.PhoneNumber == normalizedPhone, ct);
+
+            if (byEmail is not null && byPhone is not null && byEmail.CustomerId != byPhone.CustomerId)
+                throw new ConflictException("Customer profile matching this account is ambiguous.");
+
+            customer = byEmail ?? byPhone;
+            if (customer is null)
+            {
+                if (string.IsNullOrWhiteSpace(normalizedPhone))
+                    throw new NotFoundException("Customer profile is not linked to this account yet.");
+
+                customer = new CustomerEntity
+                {
+                    FullName = user.FullName,
+                    PhoneNumber = normalizedPhone,
+                    Email = user.Email,
+                    Status = true,
+                    UserId = userId
+                };
+                db.Customers.Add(customer);
+            }
+            else
+            {
+                if (!customer.Status)
+                    throw new ForbiddenException("Customer profile is inactive.");
+                if (customer.UserId.HasValue && customer.UserId.Value != userId)
+                    throw new ConflictException("Customer profile is linked to another account.");
+                if (!string.IsNullOrWhiteSpace(customer.Email) &&
+                    !string.Equals(customer.Email, user.Email, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ConflictException("Customer profile matching this account is ambiguous.");
+                }
+                if (!string.IsNullOrWhiteSpace(customer.PhoneNumber) &&
+                    !string.IsNullOrWhiteSpace(normalizedPhone) &&
+                    !string.Equals(
+                        PhoneNumberNormalizer.Normalize(customer.PhoneNumber),
+                        normalizedPhone,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ConflictException("Customer profile matching this account is ambiguous.");
+                }
+                customer.UserId = userId;
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (!customer.Status)
+            throw new ForbiddenException("Customer profile is inactive.");
+        return customer;
+    }
 
     private async Task EnsureCustomerExistsAsync(long id, CancellationToken ct)
     {

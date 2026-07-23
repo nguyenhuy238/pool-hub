@@ -448,6 +448,32 @@ public class InvoiceService(
         };
     }
 
+    public async Task<InvoiceDetailDto> GetInvoiceDetailForCustomerAsync(
+        long id, long customerId, CancellationToken ct)
+    {
+        var ownsInvoice = await db.Invoices
+            .AsNoTracking()
+            .AnyAsync(x => x.InvoiceId == id && x.CustomerId == customerId, ct);
+        if (!ownsInvoice)
+            throw new NotFoundException("Invoice not found.");
+
+        var detail = await GetInvoiceDetailAsync(id, ct);
+
+        // Keep the customer portal contract free of internal operator/user
+        // identifiers and staff-only notes while retaining receipt data.
+        detail.IssuedByUserId = null;
+        detail.Note = null;
+        foreach (var discount in detail.Discounts)
+            discount.AppliedByUserId = null;
+        foreach (var payment in detail.Payments)
+        {
+            payment.ReceivedByUserId = null;
+            payment.Note = null;
+        }
+
+        return detail;
+    }
+
     public async Task ApplyDiscountAsync(long invoiceId, ApplyDiscountRequest request, long userId, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
@@ -681,6 +707,12 @@ public class InvoiceService(
     public async Task<string> GetVietQrUrlAsync(long invoiceId, CancellationToken ct)
     {
         var invoice = await db.Invoices.FindAsync([invoiceId], ct) ?? throw new NotFoundException("Invoice not found.");
+        if (invoice.Status == 3)
+            throw new BusinessRuleException("Cannot create a payment QR code for a cancelled invoice.");
+        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid
+            || invoice.PaidAmount >= invoice.GrandTotalAmount)
+            throw new BusinessRuleException("This invoice has already been paid in full.");
+
         var bankMethod = await db.PaymentMethods
             .AsNoTracking()
             .Where(x => x.IsActive)
@@ -690,7 +722,8 @@ public class InvoiceService(
             .FirstOrDefault(x => x is not null && x.CanBuildDynamicQr);
             
         var amount = (long)(invoice.GrandTotalAmount - invoice.PaidAmount);
-        if (amount <= 0) amount = (long)invoice.GrandTotalAmount;
+        if (amount <= 0)
+            throw new BusinessRuleException("The invoice has no remaining balance.");
         var addInfo = $"HD{invoiceId}";
 
         var clientId = config?["PayOSSettings:ClientId"];

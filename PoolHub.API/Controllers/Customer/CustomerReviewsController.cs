@@ -39,7 +39,7 @@ public class CustomerReviewsController(ICustomerReviewService service) : Control
         => Ok(ApiResponse<object>.Ok(await service.GetReviewsAsync(request, ct)));
 
     [HttpGet("api/customer-reviews/{publicId:guid}")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<object>>> GetReview(Guid publicId, CancellationToken ct)
         => Ok(ApiResponse<object>.Ok(await service.GetReviewAsync(publicId, ct)));
 
@@ -72,7 +72,7 @@ public class CustomerReviewsController(ICustomerReviewService service) : Control
     }
 
     [HttpPost("api/customer-reviews/invitations/invoice/{invoiceId:long}")]
-    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Cashier)]
+    [Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
     public async Task<ActionResult<ApiResponse<ReviewInvitationLinkDto>>> CreateInvitationForInvoice(long invoiceId, CancellationToken ct)
         => Ok(ApiResponse<ReviewInvitationLinkDto>.Ok(await service.CreateInvitationForInvoiceAsync(invoiceId, User.GetUserId(), ct), "Review invitation created."));
 }

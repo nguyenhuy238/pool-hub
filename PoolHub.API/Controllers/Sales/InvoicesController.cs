@@ -7,7 +7,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/invoices")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff)]
 public partial class InvoicesController : ControllerBase
 {
     private readonly IInvoiceService _invoiceService;

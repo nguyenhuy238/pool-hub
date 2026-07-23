@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { pricingSpecialDateApi } from "@/lib/api/endpoints";
-import { ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SmartForm, StateBlock, useList, useLoad } from "@/components/ui";
+import { ConfirmDialog, DataTable, Modal, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { PricingSpecialDate } from "@/types";
 
@@ -18,7 +18,10 @@ export default function PricingSpecialDatesPage() {
   const [deletingItem, setDeletingItem] = useState<PricingSpecialDate | null>(null);
   const { data, loading, error, reload } = useLoad(() => pricingSpecialDateApi.list(params), [params]);
   const items = useList<PricingSpecialDate>(data);
-  const totalItems = data && typeof data === "object" && "totalCount" in data ? Number(data.totalCount) : items.length;
+  const totalCount = data && !Array.isArray(data) && "totalCount" in data
+    ? Number(data.totalCount)
+    : items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / params.pageSize));
 
   async function deleteItem() {
     if (!deletingItem) return;
@@ -73,38 +76,42 @@ export default function PricingSpecialDatesPage() {
         }}
       />
 
-      <Pagination
+      <Pagination 
         pageNumber={params.pageNumber}
-        totalPages={Math.max(1, Math.ceil(totalItems / params.pageSize))}
+        totalPages={totalPages}
         onChange={(pageNumber) => setParams({ ...params, pageNumber })}
       />
 
-      {editingItem ? (
-        <Modal title="Sua ngay dac biet" onClose={() => setEditingItem(null)}>
+      {editingItem && (
+        <Modal title="Sửa ngày đặc biệt" onClose={() => setEditingItem(null)}>
           <SmartForm<PricingSpecialDate>
             title=""
             initial={editingItem}
-            fields={fields}
+            fields={[
+              { name: "date", label: "Ngày", type: "date", required: true },
+              { name: "dayType", label: "Loại ngày", options: DAY_TYPES.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
+              { name: "description", label: "Mô tả", required: true }
+            ]}
             onSubmit={async (value) => {
               await pricingSpecialDateApi.update(editingItem.pricingSpecialDateId, value);
-              toast("Da cap nhat.", "success");
+              toast("Đã cập nhật.", "success");
               setEditingItem(null);
               await reload();
             }}
           />
         </Modal>
-      ) : null}
+      )}
 
-      {deletingItem ? (
+      {deletingItem && (
         <ConfirmDialog
-          title="Xac nhan xoa"
-          message={`Ban co chac chan muon xoa cau hinh ngay ${new Date(deletingItem.date).toLocaleDateString("vi-VN")}?`}
+          title="Xác nhận xóa"
+          message={`Bạn có chắc chắn muốn xóa cấu hình ngày ${new Date(deletingItem.date).toLocaleDateString("vi-VN")}?`}
+          confirmLabel="Xóa"
           danger
-          confirmLabel="Xoa"
           onConfirm={deleteItem}
           onCancel={() => setDeletingItem(null)}
         />
-      ) : null}
+      )}
     </>
   );
 }

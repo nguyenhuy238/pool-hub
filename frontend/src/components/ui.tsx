@@ -111,13 +111,18 @@ export function SearchFilterBar({ children }: { children: React.ReactNode }) {
   return <div className="card filter-grid">{children}</div>;
 }
 
-export function Pagination({ pageNumber, totalPages = 1, onChange }: {
+export function Pagination({ pageNumber, totalPages, pageSize, totalCount, onChange, onPageChange }: {
   pageNumber: number;
   totalPages?: number;
-  onChange: (page: number) => void;
+  pageSize?: number;
+  totalCount?: number;
+  onChange?: (page: number) => void;
+  onPageChange?: (page: number) => void;
 }) {
+  totalPages = totalPages ?? (totalCount && pageSize ? Math.ceil(totalCount / pageSize) : 1);
   totalPages = Math.max(1, Math.floor(Number(totalPages) || 1));
   pageNumber = Math.min(Math.max(1, pageNumber), totalPages);
+  const change = onChange ?? onPageChange ?? (() => undefined);
   if (totalPages <= 1) return null;
 
   const getPageNumbers = () => {
@@ -141,7 +146,7 @@ export function Pagination({ pageNumber, totalPages = 1, onChange }: {
       <button 
         style={{ padding: '6px 12px', border: '1px solid #dce7e2', borderRadius: '4px', background: 'white', cursor: pageNumber === 1 ? 'not-allowed' : 'pointer', color: pageNumber === 1 ? '#aaa' : '#333' }}
         disabled={pageNumber === 1} 
-        onClick={() => onChange(pageNumber - 1)}
+        onClick={() => change(pageNumber - 1)}
       >
         &lt;
       </button>
@@ -158,7 +163,7 @@ export function Pagination({ pageNumber, totalPages = 1, onChange }: {
             fontWeight: p === pageNumber ? 'bold' : 'normal'
           }}
           disabled={p === '...'}
-          onClick={() => typeof p === 'number' && onChange(p)}
+          onClick={() => typeof p === 'number' && change(p)}
         >
           {p}
         </button>
@@ -166,7 +171,7 @@ export function Pagination({ pageNumber, totalPages = 1, onChange }: {
       <button 
         style={{ padding: '6px 12px', border: '1px solid #dce7e2', borderRadius: '4px', background: 'white', cursor: pageNumber === totalPages ? 'not-allowed' : 'pointer', color: pageNumber === totalPages ? '#aaa' : '#333' }}
         disabled={pageNumber === totalPages} 
-        onClick={() => onChange(pageNumber + 1)}
+        onClick={() => change(pageNumber + 1)}
       >
         &gt;
       </button>
@@ -232,12 +237,15 @@ export function useDebouncedValue<T>(value: T, delayMs = 350) {
   return debounced;
 }
 
-export function SmartForm<T extends Record<string, unknown>>({ title, fields, initial, submitLabel = "Lưu", onSubmit }: {
+export function SmartForm<T extends Record<string, unknown>>({ title, fields, initial, submitLabel = "Lưu", onSubmit, isModal: _isModal, onCancel, children }: {
   title: string;
   fields: { name: keyof T; label: string; type?: string; options?: SelectOption[]; required?: boolean; step?: string | number; colSpan?: number }[];
   initial: Partial<T>;
   submitLabel?: string;
   onSubmit: (value: Partial<T>) => Promise<void>;
+  isModal?: boolean;
+  onCancel?: () => void;
+  children?: React.ReactNode;
 }) {
   const toast = useToast();
   const [value, setValue] = useState<Partial<T>>(initial);
@@ -293,7 +301,9 @@ export function SmartForm<T extends Record<string, unknown>>({ title, fields, in
           </label>
         );
       })}
+      {children ? <div style={{ gridColumn: "1 / -1" }}>{children}</div> : null}
       <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px", paddingTop: "14px", borderTop: fields.length > 2 ? "1px solid var(--line)" : "none" }}>
+        {onCancel ? <button type="button" className="ghost-btn" onClick={onCancel} disabled={saving}>Hủy</button> : null}
         <button type="submit" className="primary-btn" style={{ minWidth: "130px" }} disabled={saving}>{saving ? "Đang lưu..." : submitLabel}</button>
       </div>
     </form>

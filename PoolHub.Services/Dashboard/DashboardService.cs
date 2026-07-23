@@ -17,9 +17,9 @@ public class DashboardService(PoolHubDbContext db, IClock? clock = null) : IDash
         var now = _clock.UtcNow;
         var hasRole = (string role) => roles.Contains(role, StringComparer.OrdinalIgnoreCase);
         var hasPermission = (string permission) => permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
-        var isInternal = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Staff) || hasRole(RoleConstants.Cashier);
-        var canViewRevenue = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Cashier) || hasPermission(PermissionConstants.ReportsView);
-        var canViewPayments = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Cashier) || hasPermission(PermissionConstants.PaymentsManage);
+        var isInternal = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Staff);
+        var canViewRevenue = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasPermission(PermissionConstants.ReportsView);
+        var canViewPayments = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasRole(RoleConstants.Staff) || hasPermission(PermissionConstants.PaymentsManage);
         var canViewInventory = hasRole(RoleConstants.Admin) || hasRole(RoleConstants.Manager) || hasPermission(PermissionConstants.InventoryManage);
         var canViewAudit = hasRole(RoleConstants.Admin) || hasPermission(PermissionConstants.AuditView);
 

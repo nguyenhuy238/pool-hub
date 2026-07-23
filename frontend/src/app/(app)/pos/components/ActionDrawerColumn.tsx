@@ -9,6 +9,7 @@ import { sessionApi, productApi, orderApi, invoiceApi } from '@/lib/api/endpoint
 import type { Session, Product, Order, Invoice, PaymentMethod } from '@/types';
 import { Modal } from '@/components/ui';
 import { utcTimestampMs } from '@/lib/dateTime';
+import { openInvoiceDisplay } from '@/lib/invoiceDisplay';
 
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -96,7 +97,10 @@ export function ActionDrawerColumn() {
     if (checkoutModalOpen && generatedInvoiceId && !paymentSuccess) {
       invoiceApi.detail(generatedInvoiceId).then(inv => {
         setInvoiceData(inv);
-        if (inv.paymentStatus === 2) {
+        const remaining = Number(inv.remainingAmount ?? ((inv.grandTotalAmount || 0) - (inv.paidAmount || 0)));
+        // Invoice payment statuses are 1=unpaid, 2=partially paid,
+        // 3=fully paid. Do not close the checkout UI on a partial payment.
+        if (Number(inv.paymentStatus) === 3 || (remaining <= 0 && Number(inv.status) !== 3)) {
           setPaymentSuccess(true);
           setTimeout(() => {
             setCheckoutModalOpen(false);
@@ -186,6 +190,9 @@ export function ActionDrawerColumn() {
 
   const handleCheckout = async () => {
     if (!generatedInvoiceId) return;
+    // Open synchronously from the cashier's click so browser popup blockers do
+    // not prevent the customer-facing receipt screen.
+    openInvoiceDisplay(generatedInvoiceId);
     try {
       setProcessingPayment(true);
       

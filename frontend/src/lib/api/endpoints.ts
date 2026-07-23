@@ -28,18 +28,10 @@ import type {
   CustomerBookingHistory,
   CustomerSessionHistory,
   CustomerInvoiceHistory,
-  PublicDepositRefund,
-  VerifyRefundRequest,
-  SubmitRefundMethodRequest,
-  DepositRefundListItem,
-  DepositRefundDetail,
-  DepositRefundBankInfo,
-  RejectRefundRequest,
-  RequestCustomerRefundUpdateRequest,
-  CompleteBankTransferRequest,
-  MarkRefundFailedRequest,
-  CompleteCashPickupRequest
-  , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport
+  CustomerPointHistory,
+  CustomerPortalProfile,
+  PagedResult,
+  Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport
 } from "@/types";
 
 type UpdateCustomerPayload = Pick<CustomerDto, "fullName" | "status"> & {
@@ -106,6 +98,26 @@ export const customerApi = {
   invoiceHistory: (id: number) => apiFetch<{ items?: CustomerInvoiceHistory[] }>(`/api/customers/${id}/invoices`),
   exchangeVoucher: (id: number, templateId: number) => apiFetch(`/api/customers/${id}/exchange-voucher/${templateId}`, { method: "POST" }),
   pointHistory: (id: number) => apiFetch<{ items?: any[] }>(`/api/customers/${id}/point-history`)
+};
+
+export const customerPortalApi = {
+  profile: () => apiFetch<CustomerPortalProfile>("/api/customer-portal/me"),
+  updateProfile: (body: { fullName: string; phoneNumber: string }) =>
+    apiFetch<CustomerPortalProfile>("/api/customer-portal/me", { method: "PUT", body: JSON.stringify(body) }),
+  bookings: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerBookingHistory>>(`/api/customer-portal/me/bookings${toQuery(params)}`),
+  sessions: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerSessionHistory>>(`/api/customer-portal/me/sessions${toQuery(params)}`),
+  invoices: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerInvoiceHistory>>(`/api/customer-portal/me/invoices${toQuery(params)}`),
+  invoiceDetail: (id: number) => apiFetch<Invoice>(`/api/customer-portal/me/invoices/${id}`),
+  vouchers: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<Discount>>(`/api/customer-portal/me/vouchers${toQuery(params)}`),
+  voucherTemplates: () => apiFetch<Discount[]>("/api/customer-portal/me/voucher-templates"),
+  exchangeVoucher: (templateId: number) =>
+    apiFetch<Discount>(`/api/customer-portal/me/vouchers/${templateId}/exchange`, { method: "POST" }),
+  points: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerPointHistory>>(`/api/customer-portal/me/point-history${toQuery(params)}`)
 };
 
 export const sessionApi = {
