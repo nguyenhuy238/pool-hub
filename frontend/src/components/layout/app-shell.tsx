@@ -45,10 +45,11 @@ const nav: NavItem[] = [
   { href: "/admin/inventory", label: "Tồn kho", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   {
     label: "Thanh toán",
-    roles: [ROLES.ADMIN, ROLES.CASHIER],
+    roles: [ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER],
     children: [
       { href: "/admin/payments/methods", label: "Phương thức thanh toán", roles: [ROLES.ADMIN, ROLES.CASHIER] },
       { href: "/admin/payments/history", label: "Lịch sử giao dịch", roles: [ROLES.ADMIN, ROLES.CASHIER] },
+      { href: "/management/deposit-refunds", label: "Hoan coc", roles: [ROLES.ADMIN, ROLES.MANAGER, ROLES.CASHIER] },
     ]
   },
   { href: "/admin/analytics", label: "Phân tích", roles: [ROLES.ADMIN, ROLES.MANAGER], permissions: [PERMISSIONS.REPORTS_VIEW] },

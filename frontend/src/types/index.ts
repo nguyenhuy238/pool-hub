@@ -513,7 +513,7 @@ export type VenueLayoutResponse = {
 };
 
 export type PricingPlan = { pricingPlanId: number; name: string; isDefault?: boolean; isActive?: boolean };
-export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayType: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
+export type PricingPlanRule = { pricingPlanRuleId: number; pricingPlanId: number; tableTypeId: number; dayType?: number; dayOfWeek?: number; hourlyRate: number; startTime?: string; endTime?: string; minimumMinutes?: number; billingBlockMinutes?: number; isActive?: boolean };
 export type PricingSpecialDate = { pricingSpecialDateId: number; date: string; dayType: number; description: string };
 export type Notification = { notificationId: number; title?: string; message?: string; isRead?: boolean; createdAtUtc?: string };
 export type Discount = {
@@ -606,3 +606,95 @@ export type CustomerPointHistory = {
 };
 
 export type SelectOption = { value: string; label: string };
+
+export type DepositRefundStatus = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type DepositRefundMethod = 1 | 2;
+export type DepositRefundReason =
+  | "CustomerCancelledInTime"
+  | "CustomerCancelledLate"
+  | "VenueFault"
+  | "BookingRejected"
+  | "DuplicateDeposit"
+  | "DepositExcess"
+  | "ManualAdjustment"
+  | "Other";
+
+export type PublicDepositRefund = {
+  refundCode: string;
+  bookingCode?: string;
+  amount: number;
+  reason: DepositRefundReason | string;
+  status: DepositRefundStatus;
+  tokenExpiresAtUtc?: string;
+  customerEmailMasked?: string;
+  customerPhoneMasked?: string;
+  refundMethod?: DepositRefundMethod | null;
+  bankCode?: string;
+  bankName?: string;
+  bankAccountLast4?: string;
+  isVerified: boolean;
+  nextStep?: string;
+};
+
+export type VerifyRefundRequest = {
+  verificationCode: string;
+  phoneLast4: string;
+};
+
+export type SubmitRefundMethodRequest = {
+  refundMethod: "BankTransfer" | "CashAtVenue";
+  bankCode?: string;
+  bankName?: string;
+  accountNumber?: string;
+  confirmAccountNumber?: string;
+  accountHolderName?: string;
+};
+
+export type DepositRefundListItem = {
+  bookingDepositRefundId: number;
+  publicId?: string;
+  bookingDepositId: number;
+  bookingId: number;
+  invoiceId?: number | null;
+  customerId?: number | null;
+  refundCode: string;
+  amount: number;
+  status: DepositRefundStatus;
+  reason: DepositRefundReason | string;
+  refundMethod?: DepositRefundMethod | null;
+  reasonDetail?: string | null;
+  idempotencyKey?: string | null;
+  createdAtUtc: string;
+  bookingCode?: string;
+  customerName?: string;
+  customerEmailMasked?: string;
+  customerPhoneMasked?: string;
+  bankCode?: string;
+  bankName?: string;
+  bankAccountLast4?: string;
+  manualTransferCode?: string;
+  failureReason?: string;
+  rejectReason?: string;
+  note?: string;
+  approvedAtUtc?: string;
+  processingAtUtc?: string;
+  succeededAtUtc?: string;
+};
+
+export type DepositRefundDetail = DepositRefundListItem;
+
+export type DepositRefundBankInfo = {
+  bookingDepositRefundId: number;
+  refundCode: string;
+  bankCode?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountHolderName?: string;
+  accountLast4?: string;
+};
+
+export type RejectRefundRequest = { reason: string };
+export type RequestCustomerRefundUpdateRequest = { reason?: string };
+export type CompleteBankTransferRequest = { manualTransferCode: string; proofMediaAssetId?: number; note?: string };
+export type MarkRefundFailedRequest = { reason: string };
+export type CompleteCashPickupRequest = { cashPickupCode: string; bookingCode: string; phoneLast4: string; note?: string };

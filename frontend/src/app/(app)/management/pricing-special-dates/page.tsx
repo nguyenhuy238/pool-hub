@@ -1,13 +1,14 @@
 "use client";
+
 import { useState } from "react";
 import { pricingSpecialDateApi } from "@/lib/api/endpoints";
-import { DataTable, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
+import { ConfirmDialog, DataTable, Modal, PageHeader, Pagination, SmartForm, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import type { PricingSpecialDate } from "@/types";
 
 const DAY_TYPES = [
-  { value: 3, label: "Ngày lễ" },
-  { value: 4, label: "Ngày đặc biệt" }
+  { value: 3, label: "Ngay le" },
+  { value: 4, label: "Ngay dac biet" }
 ];
 
 export default function PricingSpecialDatesPage() {
@@ -17,95 +18,93 @@ export default function PricingSpecialDatesPage() {
   const [deletingItem, setDeletingItem] = useState<PricingSpecialDate | null>(null);
   const { data, loading, error, reload } = useLoad(() => pricingSpecialDateApi.list(params), [params]);
   const items = useList<PricingSpecialDate>(data);
+  const totalItems = data && typeof data === "object" && "totalCount" in data ? Number(data.totalCount) : items.length;
 
   async function deleteItem() {
     if (!deletingItem) return;
     try {
       await pricingSpecialDateApi.delete(deletingItem.pricingSpecialDateId);
-      toast("Đã xóa ngày đặc biệt.", "success");
+      toast("Da xoa ngay dac biet.", "success");
       setDeletingItem(null);
       await reload();
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Không thể xóa.", "error");
+      toast(err instanceof Error ? err.message : "Khong the xoa.", "error");
     }
   }
 
+  const fields = [
+    { name: "date" as const, label: "Ngay", type: "date", required: true },
+    { name: "dayType" as const, label: "Loai ngay", options: DAY_TYPES.map((day) => ({ value: day.value.toString(), label: day.label })), required: true },
+    { name: "description" as const, label: "Mo ta", required: true }
+  ];
+
   return (
     <>
-      <PageHeader title="Cấu hình ngày đặc biệt" description="Quản lý ngày lễ, ngày đặc biệt để áp dụng giá khác." />
+      <PageHeader title="Cau hinh ngay dac biet" description="Quan ly ngay le va ngay dac biet de ap dung gia khac." />
 
       <SmartForm<PricingSpecialDate>
-        title="Thêm ngày đặc biệt"
-        initial={{ dayType: 3 } as any}
-        fields={[
-          { name: "date", label: "Ngày", type: "date", required: true },
-          { name: "dayType", label: "Loại ngày", options: DAY_TYPES.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
-          { name: "description", label: "Mô tả", required: true }
-        ]}
+        title="Them ngay dac biet"
+        initial={{ dayType: 3 } as Partial<PricingSpecialDate>}
+        fields={fields}
         onSubmit={async (value) => {
           await pricingSpecialDateApi.create(value);
-          toast("Đã thêm thành công.", "success");
-          reload();
+          toast("Da them thanh cong.", "success");
+          await reload();
         }}
       />
 
       <StateBlock loading={loading} error={error} empty={!loading && !items.length} />
 
       <DataTable
-        rows={items.map(p => ({ ...p, id: p.pricingSpecialDateId })) as unknown as Record<string, unknown>[]}
+        rows={items.map((item) => ({ ...item, id: item.pricingSpecialDateId })) as unknown as Record<string, unknown>[]}
         columns={[
-          { key: "date", label: "Ngày", render: (row) => new Date(String(row.date)).toLocaleDateString("vi-VN") },
-          { key: "dayType", label: "Loại ngày", render: (row) => DAY_TYPES.find(d => d.value === Number(row.dayType))?.label || String(row.dayType) },
-          { key: "description", label: "Mô tả" }
+          { key: "date", label: "Ngay", render: (row) => new Date(String(row.date)).toLocaleDateString("vi-VN") },
+          { key: "dayType", label: "Loai ngay", render: (row) => DAY_TYPES.find((day) => day.value === Number(row.dayType))?.label || String(row.dayType) },
+          { key: "description", label: "Mo ta" }
         ]}
         actions={(row) => {
           const item = row as unknown as PricingSpecialDate;
-          return <div className="action-group">
-            <button className="ghost-btn compact" onClick={() => setEditingItem(item)}>Sửa</button>
-            <button className="danger-btn compact" onClick={() => setDeletingItem(item)}>Xóa</button>
-          </div>;
+          return (
+            <div className="action-group">
+              <button className="ghost-btn compact" onClick={() => setEditingItem(item)}>Sua</button>
+              <button className="danger-btn compact" onClick={() => setDeletingItem(item)}>Xoa</button>
+            </div>
+          );
         }}
       />
 
-      <Pagination 
-        pageNumber={params.pageNumber} 
-        pageSize={params.pageSize} 
-        totalCount={data && "totalCount" in data ? (data.totalCount as number) : items.length} 
-        onPageChange={p => setParams({ ...params, pageNumber: p })} 
+      <Pagination
+        pageNumber={params.pageNumber}
+        totalPages={Math.max(1, Math.ceil(totalItems / params.pageSize))}
+        onChange={(pageNumber) => setParams({ ...params, pageNumber })}
       />
 
-      {editingItem && (
-        <SmartForm<PricingSpecialDate>
-          title="Sửa ngày đặc biệt"
-          isModal
-          initial={editingItem}
-          fields={[
-            { name: "date", label: "Ngày", type: "date", required: true },
-            { name: "dayType", label: "Loại ngày", options: DAY_TYPES.map(d => ({ value: d.value.toString(), label: d.label })), required: true },
-            { name: "description", label: "Mô tả", required: true }
-          ]}
-          onSubmit={async (value) => {
-            await pricingSpecialDateApi.update(editingItem.pricingSpecialDateId, value);
-            toast("Đã cập nhật.", "success");
-            setEditingItem(null);
-            reload();
-          }}
-          onCancel={() => setEditingItem(null)}
-        />
-      )}
+      {editingItem ? (
+        <Modal title="Sua ngay dac biet" onClose={() => setEditingItem(null)}>
+          <SmartForm<PricingSpecialDate>
+            title=""
+            initial={editingItem}
+            fields={fields}
+            onSubmit={async (value) => {
+              await pricingSpecialDateApi.update(editingItem.pricingSpecialDateId, value);
+              toast("Da cap nhat.", "success");
+              setEditingItem(null);
+              await reload();
+            }}
+          />
+        </Modal>
+      ) : null}
 
-      {deletingItem && (
-        <SmartForm
-          title="Xác nhận xóa"
-          isModal
-          initial={{}}
-          fields={[]}
-          onSubmit={deleteItem}
+      {deletingItem ? (
+        <ConfirmDialog
+          title="Xac nhan xoa"
+          message={`Ban co chac chan muon xoa cau hinh ngay ${new Date(deletingItem.date).toLocaleDateString("vi-VN")}?`}
+          danger
+          confirmLabel="Xoa"
+          onConfirm={deleteItem}
           onCancel={() => setDeletingItem(null)}
-        >
-          <p>Bạn có chắc chắn muốn xóa cấu hình ngày <b>{new Date(deletingItem.date).toLocaleDateString("vi-VN")}</b>?</p>
-        </SmartForm>
-      )}
+        />
+      ) : null}
     </>
   );
 }

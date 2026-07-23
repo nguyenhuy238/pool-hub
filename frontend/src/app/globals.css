@@ -1133,6 +1133,125 @@ textarea:focus {
   border: 1px solid #f4dda0;
 }
 
+.refund-public-page {
+  padding: clamp(24px, 5vw, 60px) 18px;
+}
+
+.refund-public-card {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+
+.refund-public-head,
+.refund-detail-head,
+.refund-modal-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.refund-public-head h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 42px);
+}
+
+.refund-public-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.refund-public-grid,
+.refund-detail-grid,
+.refund-action-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.refund-public-grid {
+  grid-template-columns: minmax(260px, .9fr) minmax(280px, 1.1fr);
+  align-items: start;
+}
+
+.refund-summary {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.refund-info-row {
+  display: grid;
+  grid-template-columns: minmax(120px, .8fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.refund-info-row span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.refund-info-row b,
+.refund-info-row strong {
+  overflow-wrap: anywhere;
+}
+
+.refund-info-row strong {
+  color: var(--brand);
+  font-size: 20px;
+}
+
+.refund-method-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.refund-action-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.refund-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.refund-timeline {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.refund-timeline div {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.refund-timeline i {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+@media (max-width: 760px) {
+  .refund-public-grid,
+  .refund-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(130px, .7fr));
