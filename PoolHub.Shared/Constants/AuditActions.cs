@@ -31,4 +31,10 @@ public static class AuditActions
     public const string CustomerReviewInvitationUsed = "CUSTOMER_REVIEW_INVITATION_USED";
     public const string CustomerVoucherExchanged = "CUSTOMER_VOUCHER_EXCHANGED";
     public const string CustomerPointsEarned = "CUSTOMER_POINTS_EARNED";
+    public const string BookingDepositRefundCreated = "BOOKING_DEPOSIT_REFUND_CREATED";
+    public const string BookingDepositRefundApproved = "BOOKING_DEPOSIT_REFUND_APPROVED";
+    public const string BookingDepositRefundRejected = "BOOKING_DEPOSIT_REFUND_REJECTED";
+    public const string BookingDepositRefundProcessing = "BOOKING_DEPOSIT_REFUND_PROCESSING";
+    public const string BookingDepositRefundFailed = "BOOKING_DEPOSIT_REFUND_FAILED";
+    public const string BookingDepositRefundCompleted = "BOOKING_DEPOSIT_REFUND_COMPLETED";
 }

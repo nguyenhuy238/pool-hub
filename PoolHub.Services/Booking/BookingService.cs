@@ -21,9 +21,10 @@ using EntityCustomer = PoolHub.Core.Entities.Customer;
 namespace PoolHub.Services.Booking;
 
 [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
-public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IClock? clock = null, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IBookingService
+public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IBookingDepositRefundService? refundService = null, IClock? clock = null, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IBookingService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
+    private IBookingDepositRefundService RefundService => refundService ?? new BookingDepositRefundService(db, null, _clock);
     private const int BookingDepositPercent = 30;
     private const decimal MinimumDepositAmount = 50000m;
     private const int DepositHoldMinutes = 10;
@@ -32,7 +33,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
     private const int MaxActiveBookingsPerPhonePerDay = 2;
 
     public BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger)
-        : this(db, emailService, logger, new NoOpPosNotificationService(), null, null, null)
+        : this(db, emailService, logger, new NoOpPosNotificationService(), null, null, null, null)
     {
     }
 
@@ -337,9 +338,14 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             var refund = request.CancelledByVenue || booking.StartTimeUtc - now >= TimeSpan.FromHours(CancellationRefundHours);
             if (refund)
             {
-                deposit.Status = BookingDepositStatuses.Refunded;
-                deposit.RefundedAmount = deposit.PaidAmount;
-                deposit.RefundedAtUtc = now;
+                if (request.CancelledByVenue)
+                {
+                    await RefundService.CreateVenueFaultRefundAsync(deposit.BookingDepositId, null, ct);
+                }
+                else
+                {
+                    await RefundService.CreateEligibleCancellationRefundAsync(deposit.BookingDepositId, null, ct);
+                }
             }
             else
             {

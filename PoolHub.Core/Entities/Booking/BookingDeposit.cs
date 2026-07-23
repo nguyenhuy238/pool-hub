@@ -17,4 +17,5 @@ public class BookingDeposit : BaseEntity
     public DateTime? RefundedAtUtc { get; set; }
     public DateTime? ForfeitedAtUtc { get; set; }
     public DateTime DueAtUtc { get; set; }
+    public ICollection<BookingDepositRefund> Refunds { get; set; } = new List<BookingDepositRefund>();
 }

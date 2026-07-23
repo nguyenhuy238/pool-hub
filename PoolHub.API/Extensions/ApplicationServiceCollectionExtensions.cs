@@ -53,6 +53,7 @@ public static partial class ServiceCollectionExtensions
         services.AddScoped<ICustomerReviewService, CustomerReviewService>();
         services.AddScoped<IVenueService, VenueService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<IBookingDepositRefundService, BookingDepositRefundService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IOrderService, OrderService>();
