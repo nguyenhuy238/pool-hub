@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { isInternalPath } from "@/lib/auth/routes";
 import type { RoleName } from "@/types";
 
 function hasAccess(userRoles: RoleName[], userPermissions: string[], roles: RoleName[], permissions: string[]) {
@@ -11,20 +12,25 @@ function hasAccess(userRoles: RoleName[], userPermissions: string[], roles: Role
   return roleAllowed && permissionAllowed;
 }
 
-export function ProtectedRoute({ children, roles = [], permissions = [] }: {
+export function ProtectedRoute({ children, roles = [], permissions = [], loginPath: explicitLoginPath }: {
   children: React.ReactNode;
   roles?: RoleName[];
   permissions?: string[];
+  loginPath?: string;
 }) {
   const { isAuthenticated, isLoading, roles: userRoles, user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname() || "";
+  const loginPath = explicitLoginPath;
   const allowed = hasAccess(userRoles, user?.permissions ?? [], roles, permissions);
 
   useEffect(() => {
     if (isLoading) return;
-    if (!isAuthenticated) router.replace("/login");
+    if (!isAuthenticated) {
+      router.replace(loginPath || (isInternalPath(pathname) ? "/admin/login" : "/"));
+    }
     else if (!allowed) router.replace("/403");
-  }, [allowed, isAuthenticated, isLoading, router]);
+  }, [allowed, isAuthenticated, isLoading, loginPath, pathname, router]);
 
   if (isLoading) return <div className="state-card">Đang kiểm tra phiên đăng nhập...</div>;
   if (!isAuthenticated || !allowed) return null;

@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { ResetPasswordForm } from "./reset-password-form";
+import { permanentRedirect } from "next/navigation";
 
 export default function ResetPasswordPage() {
-  return (
-    <Suspense fallback={<div className="auth-wrap"><div className="state-card">Đang tải biểu mẫu...</div></div>}>
-      <ResetPasswordForm />
-    </Suspense>
-  );
+  permanentRedirect("/forgot-password");
 }

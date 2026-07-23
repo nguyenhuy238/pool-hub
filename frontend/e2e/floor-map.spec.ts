@@ -7,7 +7,7 @@ const staffAccount = {
 };
 
 async function login(request: APIRequestContext, page: Page) {
-  const response = await request.post(`${apiBaseUrl}/api/auth/login`, {
+  const response = await request.post(`${apiBaseUrl}/api/auth/admin/login`, {
     data: staffAccount
   });
   expect(response.status()).toBe(200);

@@ -539,7 +539,7 @@ public class BookingServiceTests
     private sealed class TestEmailService : PoolHub.Core.Interfaces.Services.IEmailService
     {
         public void EnsureConfigured() { }
-        public Task SendPasswordResetAsync(string email, string resetToken, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendPasswordResetOtpAsync(string email, string otp, int expirationMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct) => Task.CompletedTask;
         public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) => Task.CompletedTask;
     }

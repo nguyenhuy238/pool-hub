@@ -45,7 +45,7 @@ export type RegisterRequest = {
 export type ForgotPasswordRequest = { email: string };
 export type ResetPasswordRequest = {
   email: string;
-  token: string;
+  otp: string;
   newPassword: string;
   confirmPassword: string;
 };
@@ -519,7 +519,7 @@ export type Notification = { notificationId: number; title?: string; message?: s
 export type Discount = {
   discountId: number; discountCode: string; name: string; discountType: string; value: number;
   maxAmount?: number; minTimeSubtotal?: number; appliesTo: "TIME"; startsAtUtc: string; endsAtUtc?: string; isActive: boolean;
-  isVoucher?: boolean; pointsRequired?: number; customerId?: number; maxUsage?: number; usageCount?: number;
+  isVoucher?: boolean; pointsRequired?: number; customerId?: number; customerName?: string; maxUsage?: number; usageCount?: number;
 };
 export type InventoryTransaction = {
   inventoryTransactionId: number; productId: number; productName: string; transactionType: number;
@@ -565,6 +565,17 @@ export type CustomerDto = {
   totalBookings: number;
   loyaltyPoints?: number;
   totalPointsEarned?: number;
+};
+
+export type CustomerPortalProfile = {
+  customerId: number;
+  publicId?: string;
+  fullName: string;
+  phoneNumber: string;
+  email?: string;
+  loyaltyPoints: number;
+  totalPointsEarned: number;
+  createdAtUtc: string;
 };
 
 export type CustomerBookingHistory = {

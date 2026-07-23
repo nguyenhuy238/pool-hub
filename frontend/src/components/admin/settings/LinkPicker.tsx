@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import type { LinkType } from "@/lib/api/landingSettingsApi";
 
 const sectionOptions = ["#hero", "#about", "#services", "#pricing", "#booking", "#reviews", "#gallery", "#contact"];
-const routeOptions = ["/", "/booking", "/login"];
+const routeOptions = ["/", "/booking"];
 
 export function validateLink(type: LinkType, value: string) {
   if (!value) return "Link không được để trống.";

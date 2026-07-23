@@ -92,11 +92,121 @@ public class AuthServiceTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task ForgotPassword_SendsSixDigitOtpAndStoresOnlyItsHash()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var db = new PoolHubDbContext(options);
+        db.Users.Add(new User
+        {
+            UserId = 1,
+            FullName = "Customer",
+            Email = "customer@poolhub.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPassword@123", 12),
+            Status = UserStatus.Active
+        });
+        await db.SaveChangesAsync();
+
+        var emailService = new TestEmailService();
+        var tokenService = CreateTokenService();
+        var service = CreateAuthService(db, tokenService, emailService);
+
+        await service.ForgotPasswordAsync(
+            new ForgotPasswordRequest { Email = " CUSTOMER@POOLHUB.COM " },
+            CancellationToken.None);
+
+        Assert.Equal("customer@poolhub.com", emailService.LastPasswordResetEmail);
+        Assert.Matches(@"^\d{6}$", emailService.LastPasswordResetOtp!);
+        Assert.Equal(30, emailService.LastPasswordResetExpirationMinutes);
+        var storedToken = Assert.Single(db.PasswordResetTokens);
+        Assert.NotEqual(emailService.LastPasswordResetOtp, storedToken.TokenHash);
+        Assert.Equal(tokenService.HashToken($"1:{emailService.LastPasswordResetOtp}"), storedToken.TokenHash);
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithValidOtp_ChangesPasswordAndConsumesOtp()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var db = new PoolHubDbContext(options);
+        var user = new User
+        {
+            UserId = 1,
+            FullName = "Customer",
+            Email = "customer@poolhub.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPassword@123", 12),
+            Status = UserStatus.Active
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var emailService = new TestEmailService();
+        var service = CreateAuthService(db, CreateTokenService(), emailService);
+        await service.ForgotPasswordAsync(
+            new ForgotPasswordRequest { Email = user.Email },
+            CancellationToken.None);
+
+        await service.ResetPasswordAsync(new ResetPasswordRequest
+        {
+            Email = user.Email,
+            Otp = emailService.LastPasswordResetOtp!,
+            NewPassword = "NewPassword@123",
+            ConfirmPassword = "NewPassword@123"
+        }, CancellationToken.None);
+
+        Assert.True(BCrypt.Net.BCrypt.Verify("NewPassword@123", user.PasswordHash));
+        Assert.NotNull(Assert.Single(db.PasswordResetTokens).UsedAtUtc);
+    }
+
+    private static ITokenService CreateTokenService() =>
+        new TokenService(Options.Create(new JwtSettings
+        {
+            SecretKey = "UNIT_TEST_SECRET_KEY_12345678901234567890",
+            Issuer = "PoolHub.API",
+            Audience = "PoolHub.Client",
+            AccessTokenExpirationMinutes = 480
+        }));
+
+    private static AuthService CreateAuthService(
+        PoolHubDbContext db,
+        ITokenService tokenService,
+        IEmailService emailService)
+    {
+        var accessor = new HttpContextAccessor();
+        return new AuthService(
+            db,
+            tokenService,
+            new TestRefreshTokenStore(),
+            new AuditService(db, accessor),
+            emailService,
+            Options.Create(new EmailSettings
+            {
+                SmtpHost = "smtp.test.local",
+                FromEmail = "noreply@poolhub.test",
+                FrontendBaseUrl = "http://localhost:3000",
+                PasswordResetExpirationMinutes = 30
+            }),
+            accessor,
+            NullLogger<AuthService>.Instance);
+    }
+
     private sealed class TestEmailService : IEmailService
     {
+        public string? LastPasswordResetEmail { get; private set; }
+        public string? LastPasswordResetOtp { get; private set; }
+        public int? LastPasswordResetExpirationMinutes { get; private set; }
+
         public void EnsureConfigured() { }
-        public Task SendPasswordResetAsync(string email, string resetToken, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task SendPasswordResetOtpAsync(string email, string otp, int expirationMinutes, CancellationToken cancellationToken)
+        {
+            LastPasswordResetEmail = email;
+            LastPasswordResetOtp = otp;
+            LastPasswordResetExpirationMinutes = expirationMinutes;
+            return Task.CompletedTask;
+        }
         public Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, CancellationToken ct) =>
             Task.CompletedTask;
         public Task SendBookingCancelledAsync(string email, string customerName, string phoneNumber, string bookingCode, string tableName, DateTime startTimeUtc, DateTime endTimeUtc, int numberOfGuests, string reason, CancellationToken ct) =>

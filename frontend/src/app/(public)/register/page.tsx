@@ -17,6 +17,7 @@ export default function RegisterPage() {
     event.preventDefault();
     const validationError = !form.fullName.trim() ? "Vui lòng nhập họ tên."
       : validateEmail(form.email) || validatePassword(form.password)
+      || (!form.phoneNumber.trim() ? "Vui lòng nhập số điện thoại để liên kết hồ sơ khách hàng." : "")
       || (form.password !== form.confirmPassword ? "Xác nhận mật khẩu không khớp." : "");
     if (validationError) return setError(validationError);
 
@@ -39,7 +40,7 @@ export default function RegisterPage() {
         {error ? <div className="inline-alert error" role="alert">{error}</div> : null}
         <label><span>Họ tên</span><input autoComplete="name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label>
         <label><span>Email</span><input autoComplete="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
-        <label><span>Số điện thoại</span><input autoComplete="tel" value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} /></label>
+        <label><span>Số điện thoại</span><input required autoComplete="tel" value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} /></label>
         <label><span>Mật khẩu</span><input autoComplete="new-password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
         <p className="field-help">Ít nhất 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt.</p>
         <label><span>Xác nhận mật khẩu</span><input autoComplete="new-password" type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} /></label>

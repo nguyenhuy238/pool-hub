@@ -25,17 +25,17 @@ async function assertBackendReady() {
 }
 
 async function login(page: Page, email: string, password: string) {
-  await page.goto("/login");
+  await page.goto("/admin/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mật khẩu").fill(password);
   await page.getByRole("button", { name: "Đăng nhập" }).click();
-  await expect(page).not.toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.locator(".app-shell")).toBeVisible();
 }
 
 async function expectAllowed(page: Page, path: string) {
   await page.goto(path);
-  await expect(page).not.toHaveURL(/\/login|\/403/);
+  await expect(page).not.toHaveURL(/\/admin\/login|\/403/);
   await expect(page.locator("main")).toBeVisible();
 }
 
@@ -92,6 +92,6 @@ test.describe("role route guard smoke", () => {
     await expect(page.locator("body")).toBeVisible();
 
     await page.goto("/admin/dashboard");
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/admin\/login/);
   });
 });

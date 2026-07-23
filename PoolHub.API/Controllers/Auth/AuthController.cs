@@ -5,6 +5,7 @@ using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
 using PoolHub.Shared.Extensions;
 using Microsoft.AspNetCore.RateLimiting;
+using PoolHub.Shared.Constants;
 
 namespace PoolHub.API.Controllers;
 
@@ -40,6 +41,46 @@ public class AuthController(IAuthService authService, IAuthCookieService authCoo
 
         WriteAuthCookies(result);
         return Ok(ApiResponse<AuthResponse>.Ok(result, "Login successfully"));
+    }
+
+    [HttpPost("customer/login")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<AuthResponse>>> CustomerLogin(
+        [FromBody] LoginRequest request, CancellationToken ct)
+    {
+        var result = await authService.LoginAsync(
+            request,
+            ct,
+            [RoleConstants.Customer]);
+        if (result is null)
+        {
+            return Unauthorized(ApiResponse<AuthResponse>.Fail(
+                "Invalid email or password.",
+                ["Invalid email or password."]));
+        }
+
+        WriteAuthCookies(result);
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Customer login successfully"));
+    }
+
+    [HttpPost("admin/login")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<AuthResponse>>> AdminLogin(
+        [FromBody] LoginRequest request, CancellationToken ct)
+    {
+        var result = await authService.LoginAsync(
+            request,
+            ct,
+            [RoleConstants.Admin, RoleConstants.Manager, RoleConstants.Staff, RoleConstants.Cashier]);
+        if (result is null)
+        {
+            return Unauthorized(ApiResponse<AuthResponse>.Fail(
+                "Invalid email or password.",
+                ["Invalid email or password."]));
+        }
+
+        WriteAuthCookies(result);
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Admin portal login successfully"));
     }
 
     [HttpGet("me")]
@@ -93,7 +134,7 @@ public class AuthController(IAuthService authService, IAuthCookieService authCoo
     {
         await authService.ForgotPasswordAsync(request, ct);
         return Ok(ApiResponse<object>.Ok(new { },
-            "If the email exists, a reset password instruction has been sent."));
+            "If the email exists, a password reset OTP has been sent."));
     }
 
     [HttpPost("reset-password")]

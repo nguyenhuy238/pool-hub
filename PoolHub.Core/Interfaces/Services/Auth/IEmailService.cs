@@ -3,7 +3,7 @@ namespace PoolHub.Core.Interfaces.Services;
 public interface IEmailService
 {
     void EnsureConfigured();
-    Task SendPasswordResetAsync(string email, string resetToken, CancellationToken cancellationToken);
+    Task SendPasswordResetOtpAsync(string email, string otp, int expirationMinutes, CancellationToken cancellationToken);
 
     /// <summary>Gửi email xác nhận đặt bàn thành công cho khách.</summary>
     Task SendBookingConfirmedAsync(string email, string customerName, string phoneNumber, string bookingCode,

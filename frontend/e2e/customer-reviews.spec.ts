@@ -1,5 +1,36 @@
 import { expect, test } from "@playwright/test";
 
+test("root is the landing page and customer login opens in a modal", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  const homeUrl = page.url();
+
+  await page.getByRole("button", { name: "Đăng nhập khách hàng" }).click();
+
+  await expect(page).toHaveURL(homeUrl);
+  const loginDialog = page.getByRole("dialog", { name: "Đăng nhập khách hàng" });
+  await expect(loginDialog).toBeVisible();
+  await expect(loginDialog.getByLabel("Email")).toBeVisible();
+  await expect(loginDialog.getByLabel("Mật khẩu")).toBeVisible();
+  await expect(loginDialog.getByRole("link", { name: "Dành cho nhân sự? Đăng nhập quản trị" })).toHaveCount(0);
+});
+
+test("legacy customer login URL returns home and opens the modal", async ({ page }) => {
+  await page.goto("/login");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("dialog", { name: "Đăng nhập khách hàng" })).toBeVisible();
+});
+
+test("admin login remains a standalone page", async ({ page }) => {
+  await page.goto("/admin/login");
+
+  await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(page.getByRole("heading", { name: "Đăng nhập quản trị" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("landing review section does not show the long form by default", async ({ page }) => {
   await page.route("**/api/public/reviews**", async (route) => {
     await route.fulfill({
