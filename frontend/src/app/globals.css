@@ -2178,6 +2178,161 @@ textarea:focus {
   }
 }
 
+.inventory-filter-card {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.inventory-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.inventory-filter-actions,
+.inventory-group-head,
+.inventory-group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inventory-filter-actions,
+.inventory-group-head {
+  justify-content: space-between;
+}
+
+.inventory-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.inventory-summary-grid .card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.inventory-summary-grid span,
+.inventory-product-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inventory-summary-grid strong {
+  font-size: 24px;
+}
+
+.inventory-group-list {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-group-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.inventory-group-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+}
+
+.inventory-group-head h3,
+.inventory-group-head p {
+  margin: 0;
+}
+
+.inventory-group-head p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inventory-group-head > strong {
+  font-size: 20px;
+  white-space: nowrap;
+}
+
+.inventory-product-list {
+  display: grid;
+}
+
+.inventory-product-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(100px, 0.7fr));
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.inventory-product-row:last-child {
+  border-bottom: 0;
+}
+
+.inventory-product-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.inventory-product-row strong {
+  overflow-wrap: anywhere;
+}
+
+.inventory-product-id {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inventory-positive {
+  color: #15803d;
+}
+
+.inventory-negative {
+  color: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .inventory-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-product-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .inventory-filter-grid,
+  .inventory-summary-grid,
+  .inventory-product-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inventory-filter-actions,
+  .inventory-group-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-filter-actions button {
+    width: 100%;
+  }
+
+  .inventory-group-head > strong {
+    align-self: flex-start;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
