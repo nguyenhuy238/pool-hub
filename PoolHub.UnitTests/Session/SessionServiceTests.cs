@@ -254,7 +254,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenLegacyMinimumSixtyMinutesExists_UsesActualMinutes()
+    public async Task GetSummaryAsync_WhenMinimumSixtyMinutesExists_AppliesMinimum()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -269,12 +269,12 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(1, summary.CurrentDurationMinutes);
-        Assert.Equal(1, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(416.67m, summary.TimeSubtotalAmount);
+        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(25000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenLegacyBillingBlockThirtyExists_UsesActualMinutes()
+    public async Task GetSummaryAsync_WhenBillingBlockThirtyExists_RoundsUpToBlock()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -289,8 +289,8 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(31, summary.Assignments[0].ActualDurationMinutes);
-        Assert.Equal(31, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(31000, summary.TimeSubtotalAmount);
+        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(60000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
@@ -311,11 +311,12 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(2, summary.Assignments.Count);
-        Assert.Equal(61000, summary.TimeSubtotalAmount);
+        // 61' thực -> làm tròn block 30' -> 90' -> 90.000đ
+        Assert.Equal(90000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_UsesActualMinutesPerAssignment()
+    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesSessionMinimumAcrossChain()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -332,14 +333,15 @@ public class SessionServiceTests
 
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
+        // 31' thực trên cả chuỗi chuyển bàn -> làm tròn block 15' -> 45', top-up dồn vào bàn cuối.
         Assert.Equal(31, summary.ActualDurationMinutes);
-        Assert.Equal(31, summary.BillableDurationMinutes);
-        Assert.Equal(31, summary.Assignments.Sum(x => x.BillableDurationMinutes));
-        Assert.Equal(31000, summary.TimeSubtotalAmount);
+        Assert.Equal(45, summary.BillableDurationMinutes);
+        Assert.Equal(45, summary.Assignments.Sum(x => x.BillableDurationMinutes));
+        Assert.Equal(45000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenPlayedThreeMinutesWithLegacyMinimumThirty_ChargesThreeMinutes()
+    public async Task GetSummaryAsync_WhenPlayedThreeMinutesWithMinimumThirty_ChargesMinimum()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -353,8 +355,8 @@ public class SessionServiceTests
 
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
-        Assert.Equal(3, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(3000, summary.TimeSubtotalAmount);
+        Assert.Equal(30, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(30000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
@@ -420,7 +422,8 @@ public class SessionServiceTests
 
         var invoice = await db.Invoices.SingleAsync();
         var deposit = await db.BookingDeposits.SingleAsync();
-        Assert.Equal(250000, invoice.GrandTotalAmount);
+        // 250' thực -> làm tròn block 15' -> 255' -> 255.000đ (cọc 200.000 < tổng => trả thiếu)
+        Assert.Equal(255000, invoice.GrandTotalAmount);
         Assert.Equal(200000, invoice.PaidAmount);
         Assert.Equal(InvoicePaymentStatuses.PartiallyPaid, invoice.PaymentStatus);
         Assert.Equal(200000, deposit.AppliedAmount);
@@ -433,17 +436,18 @@ public class SessionServiceTests
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
-        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 200, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        // 200' thực -> làm tròn block 15' -> 210' -> 210.000đ; đặt cọc bằng đúng tổng.
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 200, depositPaidAmount: 210000, depositStatus: BookingDepositStatuses.Paid);
         await db.SaveChangesAsync();
 
         await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(200), GenerateInvoice = true }, CancellationToken.None);
 
         var invoice = await db.Invoices.SingleAsync();
         var deposit = await db.BookingDeposits.SingleAsync();
-        Assert.Equal(200000, invoice.GrandTotalAmount);
-        Assert.Equal(200000, invoice.PaidAmount);
+        Assert.Equal(210000, invoice.GrandTotalAmount);
+        Assert.Equal(210000, invoice.PaidAmount);
         Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
-        Assert.Equal(200000, deposit.AppliedAmount);
+        Assert.Equal(210000, deposit.AppliedAmount);
         Assert.Equal(0, deposit.RefundedAmount);
         Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
     }

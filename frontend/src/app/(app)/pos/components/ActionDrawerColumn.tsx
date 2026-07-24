@@ -2,42 +2,29 @@
 
 import React, { useEffect, useState } from 'react';
 import { usePOS } from '../POSContext';
-import { X, Receipt, Clock, ArrowRightLeft, Coffee, Plus, Minus, Play } from 'lucide-react';
+import { X, Receipt, ArrowRightLeft, Coffee, Play } from 'lucide-react';
 import styles from '../pos.module.css';
-import { API_BASE_URL } from '@/lib/api/client';
-import { sessionApi, productApi, orderApi, invoiceApi } from '@/lib/api/endpoints';
-import type { Session, Product, Order, Invoice, PaymentMethod } from '@/types';
-import { Modal } from '@/components/ui';
-import { utcTimestampMs } from '@/lib/dateTime';
-import { openInvoiceDisplay } from '@/lib/invoiceDisplay';
-
-function formatDuration(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-  const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-  const s = (totalSeconds % 60).toString().padStart(2, '0');
-  return `${h}:${m}:${s}`;
-}
+import { sessionApi, productApi, orderApi } from '@/lib/api/endpoints';
+import type { Session, Product, Order } from '@/types';
+import { useElapsed, formatDuration } from '../hooks/useElapsed';
+import { CheckoutModal, type ReviewBill, type CheckoutExitResult } from './CheckoutModal';
+import { StartSessionModal } from './StartSessionModal';
+import { TransferTableModal } from './TransferTableModal';
 
 export function ActionDrawerColumn() {
-  const { selectedTable, isDrawerOpen, setIsDrawerOpen, setSelectedTable, refreshTrigger, triggerRefresh } = usePOS();
+  const { selectedTable, isDrawerOpen, setIsDrawerOpen, setSelectedTable, triggerRefresh } = usePOS();
   const [sessionData, setSessionData] = useState<Session | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [sessionSummary, setSessionSummary] = useState<any>(null);
-  
+
   const [loading, setLoading] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
 
-  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
-  const [invoiceData, setInvoiceData] = useState<Invoice | null>(null);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<number | "">("");
-  const [processingPayment, setProcessingPayment] = useState(false);
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-
-  const [isSessionEndedLocal, setIsSessionEndedLocal] = useState(false);
-  const [generatedInvoiceId, setGeneratedInvoiceId] = useState<number | null>(null);
+  // Điều phối checkout: modal đang mở hay không, và hóa đơn "đã đóng phiên nhưng chưa thu tiền" (safety net).
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [pendingInvoiceId, setPendingInvoiceId] = useState<number | null>(null);
+  const [startModalOpen, setStartModalOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   useEffect(() => {
     // Load products once
@@ -47,17 +34,8 @@ export function ActionDrawerColumn() {
     }).catch(err => console.error("Failed to load products", err));
   }, []);
 
-  // Sync elapsed time every second
-  useEffect(() => {
-    if (!sessionData?.startedAtUtc) return;
-    if (isSessionEndedLocal) return; // Stop timer when session ended
-    const startMs = utcTimestampMs(sessionData.startedAtUtc);
-    
-    const tick = () => setElapsed(Date.now() - startMs);
-    tick(); // initial tick
-    const iv = setInterval(tick, 1000);
-    return () => clearInterval(iv);
-  }, [sessionData?.startedAtUtc, isSessionEndedLocal]);
+  // Đồng hồ phiên — đóng băng trong lúc đang checkout / chờ thu tiền.
+  const elapsed = useElapsed(sessionData?.startedAtUtc, !(checkoutOpen || pendingInvoiceId != null));
 
   const loadSessionDetails = async () => {
     if (!selectedTable?.activeSessionId) {
@@ -86,32 +64,13 @@ export function ActionDrawerColumn() {
 
   useEffect(() => {
     if (isDrawerOpen && selectedTable) {
-      setIsSessionEndedLocal(false);
-      setGeneratedInvoiceId(null);
+      setCheckoutOpen(false);
+      setPendingInvoiceId(null);
+      setStartModalOpen(false);
+      setTransferOpen(false);
       loadSessionDetails();
     }
   }, [isDrawerOpen, selectedTable]);
-
-  // Listen to SignalR refreshTrigger to automatically check invoice status
-  useEffect(() => {
-    if (checkoutModalOpen && generatedInvoiceId && !paymentSuccess) {
-      invoiceApi.detail(generatedInvoiceId).then(inv => {
-        setInvoiceData(inv);
-        const remaining = Number(inv.remainingAmount ?? ((inv.grandTotalAmount || 0) - (inv.paidAmount || 0)));
-        // Invoice payment statuses are 1=unpaid, 2=partially paid,
-        // 3=fully paid. Do not close the checkout UI on a partial payment.
-        if (Number(inv.paymentStatus) === 3 || (remaining <= 0 && Number(inv.status) !== 3)) {
-          setPaymentSuccess(true);
-          setTimeout(() => {
-            setCheckoutModalOpen(false);
-            setPaymentSuccess(false);
-            triggerRefresh();
-            closeDrawer();
-          }, 2000);
-        }
-      }).catch(err => console.error("Failed to refresh invoice data", err));
-    }
-  }, [refreshTrigger, checkoutModalOpen, generatedInvoiceId, paymentSuccess]);
 
   if (!isDrawerOpen || !selectedTable) {
     return (
@@ -130,16 +89,6 @@ export function ActionDrawerColumn() {
   const closeDrawer = () => {
     setIsDrawerOpen(false);
     setSelectedTable(null);
-  };
-
-  const handleStartSession = async () => {
-    try {
-      await sessionApi.start({ tableId: selectedTable.tableId });
-      triggerRefresh();
-    } catch (err) {
-      console.error("Lỗi khi mở bàn", err);
-      alert("Không thể mở bàn. Vui lòng thử lại.");
-    }
   };
 
   const handleOrderProduct = async (product: Product) => {
@@ -163,89 +112,24 @@ export function ActionDrawerColumn() {
     }
   };
 
-  const handleEndSession = async () => {
+  // Mở checkout ở bước "review" (việc đóng phiên thật diễn ra bên trong modal).
+  const handleEndSession = () => {
     if (!sessionData?.sessionId) return;
-    if (confirm(`Xác nhận kết thúc phiên chơi cho ${selectedTable.tableName}?`)) {
-      try {
-        setProcessingPayment(true);
-        const res = await sessionApi.end(sessionData.sessionId);
-        
-        let invId = res?.invoiceId;
-        if (!invId) {
-           const generated = await invoiceApi.generate(sessionData.sessionId);
-           invId = generated.invoiceId;
-        }
-        
-        setGeneratedInvoiceId(invId);
-        setIsSessionEndedLocal(true);
-        // Do NOT triggerRefresh here so that we keep the active session view
-      } catch (err) {
-        console.error("Failed to end session", err);
-        alert("Lỗi khi kết thúc phiên!");
-      } finally {
-        setProcessingPayment(false);
-      }
-    }
+    setCheckoutOpen(true);
   };
 
-  const handleCheckout = async () => {
-    if (!generatedInvoiceId) return;
-    // Open synchronously from the cashier's click so browser popup blockers do
-    // not prevent the customer-facing receipt screen.
-    openInvoiceDisplay(generatedInvoiceId);
-    try {
-      setProcessingPayment(true);
-      
-      const [inv, methodsRes] = await Promise.all([
-         invoiceApi.detail(generatedInvoiceId),
-         invoiceApi.paymentMethods()
-      ]);
-      
-      const methods = Array.isArray(methodsRes) ? methodsRes : ((methodsRes as any).items || []);
-      
-      setInvoiceData(inv);
-      const invRemainingAmount = inv?.remainingAmount ?? (inv?.grandTotalAmount || 0);
-      setPaymentMethods(methods as PaymentMethod[]);
-      if (methods && methods.length > 0) {
-         setSelectedPaymentMethod(methods[0].paymentMethodId);
-      }
-      setCheckoutModalOpen(true);
-    } catch (err) {
-      console.error("Failed to open checkout", err);
-      alert("Lỗi tải thông tin thanh toán!");
-    } finally {
-      setProcessingPayment(false);
-    }
-  };
-
-  const handleConfirmPayment = async () => {
-    if (!invoiceData) return;
-    if (!selectedPaymentMethod) {
-      alert("Vui lòng chọn phương thức thanh toán.");
-      return;
-    }
-    
-    try {
-      setProcessingPayment(true);
-      const invRemainingAmount = invoiceData.remainingAmount ?? invoiceData.grandTotalAmount ?? 0;
-      if (invRemainingAmount > 0 && selectedPaymentMethod) {
-        await invoiceApi.pay({
-          invoiceId: invoiceData.invoiceId,
-          paymentMethodId: Number(selectedPaymentMethod),
-          amount: invRemainingAmount
-        });
-      }
-      // Nếu remaining = 0, invoice đã được auto-paid khi generate — chỉ cần đóng modal
-      alert("Thanh toán thành công!");
-      setCheckoutModalOpen(false);
+  // Kết quả trả về từ CheckoutModal.
+  const handleCheckoutExit = (result: CheckoutExitResult) => {
+    setCheckoutOpen(false);
+    if (result.paid) {
+      setPendingInvoiceId(null);
       triggerRefresh();
       closeDrawer();
-    } catch (err) {
-      console.error("Payment failed", err);
-      alert("Lỗi khi xác nhận thanh toán!");
-    } finally {
-      setProcessingPayment(false);
+    } else if (result.invoiceId != null) {
+      // Phiên đã đóng nhưng chưa thu tiền -> giữ lại để mở lại và thu.
+      setPendingInvoiceId(result.invoiceId);
     }
+    // invoiceId null & !paid -> hủy ngay ở bước review, không làm gì.
   };
 
   let calculatedFbAmount = 0;
@@ -262,6 +146,16 @@ export function ActionDrawerColumn() {
 
   const isEmpty = !selectedTable.activeSessionId;
 
+  const reviewBill: ReviewBill = {
+    durationLabel: formatDuration(elapsed).substring(0, 5),
+    timeAmount,
+    fbAmount,
+    subtotal,
+    depositApplied,
+    finalTotal,
+    refundAmount,
+  };
+
   return (
     <div className={styles.drawerColumn}>
       <div className={styles.drawerHeader}>
@@ -277,7 +171,7 @@ export function ActionDrawerColumn() {
       </div>
 
       <div className={styles.drawerBody}>
-        
+
         {/* Quick F&B Grid */}
         <div style={{ opacity: isEmpty ? 0.5 : 1 }}>
           <h3 className={styles.sectionTitle}>
@@ -285,10 +179,10 @@ export function ActionDrawerColumn() {
           </h3>
           <div className={styles.fbGrid}>
             {products.slice(0, 8).map(p => (
-              <button 
+              <button
                 key={p.productId}
                 onClick={() => handleOrderProduct(p)}
-                className="primary-btn" 
+                className="primary-btn"
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0.5rem', background: '#f8fafc', color: '#0f172a', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
               >
                 <span>{p.name}</span>
@@ -387,189 +281,72 @@ export function ActionDrawerColumn() {
       </div>
 
       <div className={styles.drawerFooter}>
-        {!isEmpty && !isSessionEndedLocal && (
+        {/* Nút "Gia hạn" tạm ẩn (chưa có endpoint backend — Q4). */}
+        {!isEmpty && pendingInvoiceId == null && (
           <div style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '8px' }}>
-            <button className="primary-btn" style={{ flex: 1, padding: '0.75rem', background: 'white', color: '#0f172a', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={() => setTransferOpen(true)}
+              className="primary-btn"
+              style={{ flex: 1, padding: '0.75rem', background: 'white', color: '#0f172a', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+            >
               <ArrowRightLeft size={16} /> Chuyển
-            </button>
-            <button className="primary-btn" style={{ flex: 1, padding: '0.75rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-              <Clock size={16} /> Gia hạn
             </button>
           </div>
         )}
 
         {isEmpty ? (
-          <button 
-            onClick={handleStartSession}
-            className="primary-btn" 
+          <button
+            onClick={() => setStartModalOpen(true)}
+            className="primary-btn"
             style={{ width: '100%', padding: '1rem', background: '#3b82f6', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem' }}
           >
             <Play size={20} fill="currentColor" /> Mở Bàn Ngay
           </button>
-        ) : !isSessionEndedLocal ? (
-          <button 
-            onClick={handleEndSession}
-            disabled={processingPayment}
-            className="primary-btn" 
-            style={{ width: '100%', padding: '1rem', background: '#dc2626', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', opacity: processingPayment ? 0.7 : 1 }}
+        ) : pendingInvoiceId != null ? (
+          <button
+            onClick={() => setCheckoutOpen(true)}
+            className="primary-btn"
+            style={{ width: '100%', padding: '1rem', background: '#22c55e', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem' }}
           >
-            <X size={20} /> {processingPayment ? "Đang xử lý..." : "Kết Thúc Phiên"}
+            <Receipt size={20} /> Thu Tiền Hóa Đơn
           </button>
         ) : (
-          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-            <button 
-              disabled
-              className="primary-btn" 
-              style={{ flex: 1, padding: '1rem', background: '#e2e8f0', color: '#94a3b8', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', cursor: 'not-allowed' }}
-            >
-               Tiếp tục phiên
-            </button>
-            <button 
-              onClick={handleCheckout}
-              disabled={processingPayment}
-              className="primary-btn" 
-              style={{ flex: 2, padding: '1rem', background: '#22c55e', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', opacity: processingPayment ? 0.7 : 1 }}
-            >
-              <Receipt size={20} /> {processingPayment ? "Đang xử lý..." : "Thanh Toán"}
-            </button>
-          </div>
+          <button
+            onClick={handleEndSession}
+            className="primary-btn"
+            style={{ width: '100%', padding: '1rem', background: '#dc2626', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem' }}
+          >
+            <X size={20} /> Kết Thúc Phiên
+          </button>
         )}
       </div>
 
-      {checkoutModalOpen && invoiceData && (() => {
-        const invRemainingAmount = invoiceData.remainingAmount ?? invoiceData.grandTotalAmount ?? 0;
-        
-        if (paymentSuccess) {
-          return (
-            <Modal title="" onClose={() => setCheckoutModalOpen(false)} size="medium">
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', gap: '16px' }}>
-                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#dcfce7', color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 4px 6px -1px rgba(34, 197, 94, 0.2)' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                </div>
-                <h2 style={{ color: '#16a34a', fontSize: '1.5rem', margin: 0 }}>Thanh Toán Thành Công!</h2>
-                <p style={{ color: '#64748b', fontSize: '1rem', margin: 0, textAlign: 'center' }}>Hóa đơn đã được xác nhận và tự động đóng.</p>
-              </div>
-            </Modal>
-          );
-        }
+      {checkoutOpen && sessionData?.sessionId && (
+        <CheckoutModal
+          tableName={selectedTable.tableName}
+          sessionId={sessionData.sessionId}
+          reviewBill={reviewBill}
+          initialInvoiceId={pendingInvoiceId}
+          onExit={handleCheckoutExit}
+        />
+      )}
 
-        return (
-        <Modal title="Thanh Toán Hóa Đơn" onClose={() => setCheckoutModalOpen(false)} size="medium">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-              <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Hóa Đơn Tổng Hợp</h3>
-              <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '4px 0 0' }}>Bàn: {selectedTable.tableName} - Mã HĐ: {invoiceData.invoiceCode || `#${invoiceData.invoiceId}`}</p>
-            </div>
-            
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-               <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                 {Object.values((invoiceData.lines || []).reduce((acc: any, l: any) => {
-                    const key = l.lineType === 'TIME' ? `TIME_${l.description}` : l.description;
-                    if (!acc[key]) {
-                      acc[key] = { ...l };
-                    } else {
-                      acc[key].quantity = Number(acc[key].quantity) + Number(l.quantity);
-                      acc[key].lineTotalAmount = Number(acc[key].lineTotalAmount) + Number(l.lineTotalAmount);
-                    }
-                    return acc;
-                 }, {})).map((l: any, i: number) => (
-                    <li key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-                       <div>
-                         <span style={{ fontWeight: 500 }}>{l.description}</span>
-                         <div style={{ fontSize: '0.8rem', color: '#64748b' }}>SL: {l.lineType === 'TIME' ? `${Math.round(Number(l.quantity) * 60)} phút` : l.quantity}</div>
-                       </div>
-                       <div style={{ fontWeight: 500 }}>{(l.lineTotalAmount || 0).toLocaleString()}Đ</div>
-                    </li>
-                 ))}
-               </ul>
-               
-               {/* Deposit breakdown */}
-               {(invoiceData.depositAppliedAmount ?? 0) > 0 && (
-                 <>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', fontSize: '0.9rem', color: '#64748b' }}>
-                     <span>Tạm tính:</span>
-                     <span>{(invoiceData.grandTotalAmount || 0).toLocaleString()}Đ</span>
-                   </div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', fontWeight: 600, color: '#16a34a', marginTop: '4px' }}>
-                     <span>✓ Trừ cọc đã thanh toán:</span>
-                     <span>-{((invoiceData.depositAppliedAmount ?? 0) + (invoiceData.depositRefundAmount ?? 0)).toLocaleString()}Đ</span>
-                   </div>
-                 </>
-               )}
-               
-               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '2px dashed #cbd5e1', fontSize: '1.2rem', fontWeight: 'bold' }}>
-                  <span>TỔNG CẦN THU:</span>
-                  <span style={{ color: invRemainingAmount === 0 ? '#22c55e' : '#2563eb' }}>{(invRemainingAmount).toLocaleString()}Đ</span>
-               </div>
-               
-               {(invoiceData.depositRefundAmount ?? 0) > 0 && (
-                 <div style={{ marginTop: '10px', padding: '8px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px', color: '#c2410c', fontWeight: 600 }}>
-                   ⚠️ Cần hoàn trả khách: {(invoiceData.depositRefundAmount ?? 0).toLocaleString()}Đ
-                 </div>
-               )}
-            </div>
+      {startModalOpen && isEmpty && (
+        <StartSessionModal
+          table={selectedTable}
+          onClose={() => setStartModalOpen(false)}
+          onStarted={() => { setStartModalOpen(false); triggerRefresh(); }}
+        />
+      )}
 
-            {invRemainingAmount > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>Phương thức thanh toán:</label>
-                <select 
-                  value={selectedPaymentMethod} 
-                  onChange={e => setSelectedPaymentMethod(Number(e.target.value))}
-                  style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', width: '100%', fontSize: '1rem', outline: 'none' }}
-                >
-                  {paymentMethods.map(m => (
-                    <option key={m.paymentMethodId} value={m.paymentMethodId}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {invRemainingAmount > 0 && (() => {
-              const method = paymentMethods.find(m => m.paymentMethodId === selectedPaymentMethod);
-              const methodStr = (method?.code || '') + ' ' + (method?.name || '');
-              const isBankTransfer = methodStr.toLowerCase().includes('bank') || methodStr.toLowerCase().includes('chuyển khoản');
-              if (isBankTransfer) {
-                return (
-                  <div style={{ marginTop: '8px', textAlign: 'center' }}>
-                    <p style={{ fontSize: '0.9rem', color: '#475569', marginBottom: '8px', fontWeight: 500 }}>Quét mã QR để thanh toán nhanh</p>
-                    <img 
-                      src={`${API_BASE_URL}/api/invoices/${invoiceData.invoiceId}/qr-code?amt=${invoiceData.grandTotalAmount || 0}&t=${Date.now()}`} 
-                      alt="QR Code" 
-                      style={{ width: '220px', height: '220px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: 'white' }}
-                    />
-                    <p style={{ fontSize: '0.85rem', color: '#16a34a', marginTop: '12px', fontWeight: 500, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
-                      ⏳ Hệ thống sẽ tự động xác nhận khi thanh toán thành công...
-                    </p>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-              <button onClick={() => setCheckoutModalOpen(false)} style={{ flex: 1, padding: '12px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Hủy Bỏ</button>
-              
-              {(() => {
-                const method = paymentMethods.find(m => m.paymentMethodId === selectedPaymentMethod);
-                const methodStr = (method?.code || '') + ' ' + (method?.name || '');
-                const isBankTransfer = methodStr.toLowerCase().includes('bank') || methodStr.toLowerCase().includes('chuyển khoản');
-                
-                // Hide confirmation button if bank transfer is selected
-                if (isBankTransfer && invRemainingAmount > 0) return null;
-                
-                return (
-                  <button onClick={handleConfirmPayment} disabled={processingPayment} style={{ flex: 2, padding: '12px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
-                    {processingPayment ? "Đang xử lý..." : invRemainingAmount === 0 ? "Hoàn Tất Miễn Thu" : "Xác Nhận Thu Tiền"}
-                  </button>
-                );
-              })()}
-            </div>
-          </div>
-        </Modal>
-        );
-      })()}
+      {transferOpen && sessionData && !isEmpty && (
+        <TransferTableModal
+          session={sessionData}
+          fromTable={selectedTable}
+          onClose={() => setTransferOpen(false)}
+          onTransferred={() => { setTransferOpen(false); triggerRefresh(); closeDrawer(); }}
+        />
+      )}
 
     </div>
   );

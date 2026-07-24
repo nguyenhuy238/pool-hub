@@ -136,6 +136,48 @@
 .legendActive { background-color: #22c55e; } /* Green */
 .legendReserved { background-color: #facc15; } /* Yellow */
 
+/* Filter bar (chip lọc trạng thái bàn) */
+.filterBar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  background-color: white;
+  flex-wrap: wrap;
+}
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line, #e2e8f0);
+  background-color: var(--surface, #f8fafc);
+  color: var(--muted, #64748b);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filterChip:hover { border-color: #cbd5e1; color: var(--ink, #0f172a); }
+.filterChipActive {
+  background-color: var(--primary, #2563eb);
+  border-color: var(--primary, #2563eb);
+  color: white;
+}
+.filterCount {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  min-width: 1.25rem;
+  text-align: center;
+}
+.filterChipActive .filterCount {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
 .gridArea {
   flex: 1;
   overflow-y: auto;
