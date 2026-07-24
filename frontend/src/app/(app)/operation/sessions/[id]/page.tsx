@@ -202,7 +202,6 @@ export default function SessionDetailPage() {
     <>
       <PageHeader
         title={session?.sessionCode || `Phiên #${sessionId}`}
-        description="Không gian vận hành phiên chơi, đơn hàng, tạm tính và kết thúc hóa đơn."
         action={<button className="ghost-btn" type="button" onClick={() => router.push("/operation/sessions")}>Danh sách phiên</button>}
       />
       <section style={{ padding: "0 24px 24px" }}>
@@ -213,10 +212,6 @@ export default function SessionDetailPage() {
               <div className="panel-head">
                 <div>
                   <h3>Thông tin phiên</h3>
-                  <p>{currentAssignment?.tableName || currentAssignment?.tableCode || "Bàn"} · bắt đầu {dateTime(session.startedAtUtc)}</p>
-                  <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
-                    Thời lượng hiển thị realtime. Tiền giờ được backend tính theo bảng giá và quy tắc làm tròn.
-                  </p>
                   <RealtimeStatusText status={realtimeStatus} />
                 </div>
                 <Badge tone={isOpen ? "green" : "neutral"}>{label(sessionStatus, Number(session.status))}</Badge>
@@ -233,7 +228,6 @@ export default function SessionDetailPage() {
               <div className="panel-head">
                 <div>
                   <h3>Tạm tính</h3>
-                  <p>Hệ thống tính tiền giờ theo bảng giá, thời gian tối thiểu và khung làm tròn hiện hành.</p>
                 </div>
                 <button className="ghost-btn" type="button" onClick={async () => { await reload(); setSummaryOpen(true); }}>Xem chi tiết tạm tính</button>
               </div>
@@ -447,7 +441,7 @@ export default function SessionDetailPage() {
             <Info label="Tổng tính tiền" value={`${summary.billableDurationMinutes ?? summary.timeCharge?.billableDurationMinutes ?? totalDuration} phút`} />
             <Info label="Tiền giờ" value={money(Number(timeAmount))} strong />
           </div>
-          <div className="inline-note">{summary.timeCharge?.note || "Thời gian tối thiểu/khung làm tròn áp dụng một lần cho toàn phiên, không áp lại sau mỗi lần chuyển bàn."}</div>
+          <div className="inline-note">{summary.timeCharge?.note || "Thời gian tính tiền bằng thời gian chơi thực tế của từng bàn."}</div>
           {(summary.timeCharge?.lines || summary.assignments || []).map((assignment: any) => (
             <div key={assignment.sessionTableAssignmentId} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>

@@ -583,14 +583,7 @@ function PricingDetails({ assignments }: { assignments: any[] }) {
       {assignments.map((assignment) => {
         const actual = assignment.actualDurationMinutes ?? assignment.durationMinutes ?? 0;
         const billable = assignment.billableDurationMinutes ?? assignment.billableMinutes ?? actual;
-        const minimum = assignment.minimumMinutes ?? 0;
-        const block = assignment.billingBlockMinutes ?? 0;
         const rate = assignment.hourlyRate ?? assignment.hourlyRateSnapshot ?? 0;
-        const reason = billable > actual
-          ? minimum > actual
-            ? `Áp dụng thời gian tối thiểu ${minimum} phút`
-            : `Làm tròn theo block ${block} phút`
-          : null;
 
         return (
           <div key={assignment.sessionTableAssignmentId || assignment.assignmentId || `${assignment.tableId}-${assignment.startedAtUtc}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
@@ -600,9 +593,7 @@ function PricingDetails({ assignments }: { assignments: any[] }) {
             </div>
             <div style={{ display: "grid", gap: 3, marginTop: 6, color: "#475569", fontSize: 13 }}>
               <span>Thực tế: {actual} phút · Tính tiền: {billable} phút</span>
-              <span>Minimum: {minimum} phút · Block: {block} phút</span>
               {assignment.pricingPlanName ? <span>Bảng giá: {assignment.pricingPlanName}</span> : null}
-              {reason ? <span style={{ color: "#b45309", fontWeight: 700 }}>{reason}</span> : null}
             </div>
           </div>
         );

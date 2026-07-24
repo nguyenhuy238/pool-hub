@@ -941,7 +941,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         var pricing = await GetAssignmentPricingAsync(assignment, table, ct);
         var actualMinutes = GetDurationMinutes(assignment.StartedAtUtc, endedAtUtc);
         var isBillable = IsAssignmentBillable(assignment, actualMinutes);
-        var billableMinutes = isBillable ? ApplyBillingRules(actualMinutes, pricing.MinimumMinutes, pricing.BillingBlockMinutes) : 0;
+        var billableMinutes = isBillable ? ApplyBillingRules(actualMinutes) : 0;
         var hourlyRate = assignment.HourlyRateSnapshot > 0 ? assignment.HourlyRateSnapshot : pricing.HourlyRate;
 
         assignment.EndedAtUtc = endedAtUtc;
@@ -954,25 +954,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         assignment.Note = AppendNote(assignment.Note, note);
     }
 
-    private static int ApplyBillingRules(int actualMinutes, int minimumMinutes, int billingBlockMinutes)
+    private static int ApplyBillingRules(int actualMinutes)
     {
         return Math.Max(0, actualMinutes);
-    }
-
-    // Áp mức tối thiểu (minimumMinutes) rồi làm tròn LÊN theo bội số block (billingBlockMinutes).
-    // Ví dụ min=30, block=15: 3' -> 30'; 46' -> 60'; 31' -> 45'.
-    private static int ApplyMinimumAndBlock(int actualMinutes, int minimumMinutes, int billingBlockMinutes)
-    {
-        var minutes = Math.Max(0, actualMinutes);
-        if (minimumMinutes > 0)
-        {
-            minutes = Math.Max(minutes, minimumMinutes);
-        }
-        if (billingBlockMinutes > 0 && minutes % billingBlockMinutes != 0)
-        {
-            minutes += billingBlockMinutes - (minutes % billingBlockMinutes);
-        }
-        return minutes;
     }
 
     private static string? AppendNote(string? currentNote, string? note)
@@ -1588,27 +1572,6 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             line.Amount = line.IsBillable ? CalculateActualTimeAmount(line.ActualDurationMinutes, line.HourlyRate) : 0;
         }
 
-        // Bước 2: áp mức tối thiểu + làm tròn block theo TỪNG chuỗi chơi liên tục (chuyển bàn = cùng chuỗi).
-        // Phần phút cộng thêm được dồn vào bàn CUỐI của chuỗi (nơi khách kết thúc) và tính theo giá bàn đó.
-        foreach (var chain in BuildContinuousAssignmentChains(lines))
-        {
-            var billableLines = chain.Where(x => x.IsBillable).ToList();
-            if (billableLines.Count == 0)
-            {
-                continue;
-            }
-
-            var actualTotal = billableLines.Sum(x => x.ActualDurationMinutes);
-            var lastLine = billableLines[^1];
-            var billableTotal = ApplyMinimumAndBlock(actualTotal, lastLine.MinimumMinutes, lastLine.BillingBlockMinutes);
-            var topUpMinutes = billableTotal - actualTotal;
-            if (topUpMinutes > 0)
-            {
-                lastLine.BillableDurationMinutes += topUpMinutes;
-                lastLine.Amount = CalculateActualTimeAmount(lastLine.BillableDurationMinutes, lastLine.HourlyRate);
-            }
-        }
-
         foreach (var line in lines)
         {
             if (!persist)
@@ -1633,37 +1596,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             MinimumMinutes = ruleLine?.MinimumMinutes ?? 0,
             BillingBlockMinutes = ruleLine?.BillingBlockMinutes ?? 0,
             SubtotalAmount = lines.Sum(x => x.Amount),
-            Note = "Billable time = max(actual, minimum) rounded up to billing block, applied per continuous transfer chain.",
+            Note = "Billable time equals actual played minutes. Minimum and billing block fields are kept for legacy configuration and do not increase session charges.",
             Lines = lines
         };
     }
 
-    private static List<List<SessionSummaryAssignmentDto>> BuildContinuousAssignmentChains(List<SessionSummaryAssignmentDto> lines)
-    {
-        const double transferToleranceSeconds = 2;
-        var chains = new List<List<SessionSummaryAssignmentDto>>();
-
-        foreach (var line in lines.OrderBy(x => x.StartedAtUtc).ThenBy(x => x.SessionTableAssignmentId))
-        {
-            var chain = chains.FirstOrDefault(items =>
-            {
-                var last = items.Last();
-                return last.EndedAtUtc.HasValue &&
-                       Math.Abs((line.StartedAtUtc - last.EndedAtUtc.Value).TotalSeconds) <= transferToleranceSeconds;
-            });
-
-            if (chain is null)
-            {
-                chains.Add([line]);
-            }
-            else
-            {
-                chain.Add(line);
-            }
-        }
-
-        return chains;
-    }
     private async Task<List<SessionSummaryOrderDto>> GetSessionSummaryOrdersAsync(long sessionId, CancellationToken ct)
     {
         var orders = await db.Orders.AsNoTracking()
