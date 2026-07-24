@@ -118,9 +118,13 @@ export default function DepositRefundsPage() {
       {selected ? (
         <Modal title="Chi tiết hoàn cọc" size="large" onClose={() => { setSelected(null); setBankInfo(null); }}>
           <RefundDetail refund={selected} />
-          <div className="refund-modal-actions">
+          <div className="refund-next-panel">
+            <div>
+              <h2>Hành động tiếp theo</h2>
+              <p>{getNextActionHint(selected)}</p>
+            </div>
             {selected.status === 1 ? (
-              <div className="inline-alert warning" style={{ marginBottom: 12 }}>
+              <div className="inline-alert warning">
                 Yêu cầu này đang chờ khách mở link hoàn cọc, xác minh email và chọn phương thức nhận tiền. Sau khi khách gửi thông tin, trạng thái sẽ chuyển sang “Chờ duyệt” và Manager sẽ thấy nút Duyệt/Từ chối.
               </div>
             ) : null}
@@ -187,10 +191,7 @@ function RefundDetail({ refund }: { refund: DepositRefundDetail }) {
       <div className="card">
         <h2>Timeline</h2>
         <div className="refund-timeline">
-          <Timeline label="Tạo yêu cầu" value={dateTime(refund.createdAtUtc)} />
-          <Timeline label="Duyệt" value={dateTime(refund.approvedAtUtc)} />
-          <Timeline label="Xử lý" value={dateTime(refund.processingAtUtc)} />
-          <Timeline label="Hoàn tất" value={dateTime(refund.succeededAtUtc)} />
+          {buildTimeline(refund).map((item) => <Timeline key={item.label} {...item} />)}
         </div>
       </div>
     </div>
@@ -298,6 +299,61 @@ function Info({ label, value, strong = false }: { label: string; value?: string;
   return <div className="refund-info-row"><span>{label}</span>{strong ? <strong>{value || "-"}</strong> : <b>{value || "-"}</b>}</div>;
 }
 
-function Timeline({ label, value }: { label: string; value?: string }) {
-  return <div><i /><span><strong>{label}</strong><br /><small className="muted-text">{value || "-"}</small></span></div>;
+function Timeline({ label, value, state, description }: { label: string; value?: string; state: "done" | "current" | "pending" | "failed"; description?: string }) {
+  return (
+    <div className={`refund-timeline-item ${state}`}>
+      <i />
+      <span>
+        <strong>{label}</strong>
+        <small>{value || description || "Chưa đến bước này"}</small>
+      </span>
+    </div>
+  );
+}
+
+function buildTimeline(refund: DepositRefundDetail) {
+  const isTerminalFailed = [7, 8, 9].includes(refund.status);
+  return [
+    {
+      label: "Tạo yêu cầu",
+      value: dateTime(refund.createdAtUtc),
+      state: "done" as const
+    },
+    {
+      label: "Khách gửi thông tin",
+      value: refund.status > 1 ? "Đã gửi thông tin nhận hoàn" : undefined,
+      state: refund.status > 1 ? "done" as const : refund.status === 1 ? "current" as const : "pending" as const,
+      description: "Chờ khách xác minh và chọn phương thức nhận tiền"
+    },
+    {
+      label: "Manager duyệt",
+      value: dateTime(refund.approvedAtUtc),
+      state: refund.approvedAtUtc ? "done" as const : refund.status === 2 ? "current" as const : isTerminalFailed ? "failed" as const : "pending" as const,
+      description: "Chờ Manager duyệt hoặc từ chối"
+    },
+    {
+      label: refund.refundMethod === 2 ? "Chuẩn bị tiền mặt" : "Staff xử lý",
+      value: refund.status === 5 ? "Sẵn sàng nhận tiền mặt" : dateTime(refund.processingAtUtc),
+      state: refund.processingAtUtc || refund.status === 5 ? "done" as const : [3, 4].includes(refund.status) ? "current" as const : isTerminalFailed ? "failed" as const : "pending" as const,
+      description: refund.refundMethod === 2 ? "Chờ Staff chuẩn bị và xác nhận nhận tiền mặt" : "Chờ Staff chuyển khoản và nhập mã giao dịch"
+    },
+    {
+      label: "Hoàn tất",
+      value: dateTime(refund.succeededAtUtc),
+      state: refund.status === 6 ? "done" as const : isTerminalFailed ? "failed" as const : "pending" as const,
+      description: isTerminalFailed ? getRefundStatusLabel(refund.status) : "Chỉ hoàn tất khi tiền đã trả thật cho khách"
+    }
+  ];
+}
+
+function getNextActionHint(refund: DepositRefundDetail) {
+  if (refund.status === 1) return "Chưa cần thao tác nội bộ. Khách cần mở link email, nhập mã xác minh và chọn cách nhận tiền.";
+  if (refund.status === 2) return "Manager kiểm tra thông tin và chọn Duyệt, Từ chối hoặc yêu cầu khách cập nhật.";
+  if (refund.status === 3 && refund.refundMethod === 1) return "Staff bắt đầu xử lý, xem thông tin chuyển khoản khi cần, rồi chuyển tiền ngoài hệ thống.";
+  if (refund.status === 3 && refund.refundMethod === 2) return "Staff chuẩn bị tiền mặt để hệ thống gửi mã nhận tiền cho khách.";
+  if (refund.status === 4) return "Staff chỉ bấm Hoàn tất chuyển khoản sau khi đã chuyển tiền thật cho khách.";
+  if (refund.status === 5) return "Khách đến quầy, Staff nhập mã nhận tiền, mã booking và 4 số cuối điện thoại để hoàn tất.";
+  if (refund.status === 6) return "Yêu cầu đã hoàn tất. RefundedAmount đã được ghi nhận.";
+  if ([7, 8, 9].includes(refund.status)) return "Yêu cầu đã kết thúc, không còn hành động tiếp theo.";
+  return "Không có hành động phù hợp ở trạng thái hiện tại.";
 }

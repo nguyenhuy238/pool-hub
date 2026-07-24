@@ -254,7 +254,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenMinimumSixtyMinutesExists_AppliesMinimum()
+    public async Task GetSummaryAsync_WhenMinimumSixtyMinutesExists_UsesActualMinutes()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -269,12 +269,12 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(1, summary.CurrentDurationMinutes);
-        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(25000, summary.TimeSubtotalAmount);
+        Assert.Equal(1, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(416.67m, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenBillingBlockThirtyExists_RoundsUpToBlock()
+    public async Task GetSummaryAsync_WhenBillingBlockThirtyExists_UsesActualMinutes()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -289,8 +289,8 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(31, summary.Assignments[0].ActualDurationMinutes);
-        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(60000, summary.TimeSubtotalAmount);
+        Assert.Equal(31, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(31000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
@@ -311,12 +311,12 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(2, summary.Assignments.Count);
-        // 61' thực -> làm tròn block 30' -> 90' -> 90.000đ
-        Assert.Equal(90000, summary.TimeSubtotalAmount);
+        // 61' thực vẫn tính đúng 61', không làm tròn theo block 30'.
+        Assert.Equal(61000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesSessionMinimumAcrossChain()
+    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_UsesActualMinutesPerAssignment()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -333,15 +333,15 @@ public class SessionServiceTests
 
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
-        // 31' thực trên cả chuỗi chuyển bàn -> làm tròn block 15' -> 45', top-up dồn vào bàn cuối.
+        // 31' thực qua nhiều lần chuyển bàn vẫn tính đúng 31', không top-up vào bàn cuối.
         Assert.Equal(31, summary.ActualDurationMinutes);
-        Assert.Equal(45, summary.BillableDurationMinutes);
-        Assert.Equal(45, summary.Assignments.Sum(x => x.BillableDurationMinutes));
-        Assert.Equal(45000, summary.TimeSubtotalAmount);
+        Assert.Equal(31, summary.BillableDurationMinutes);
+        Assert.Equal(31, summary.Assignments.Sum(x => x.BillableDurationMinutes));
+        Assert.Equal(31000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenPlayedThreeMinutesWithMinimumThirty_ChargesMinimum()
+    public async Task GetSummaryAsync_WhenPlayedThreeMinutesWithMinimumThirty_ChargesThreeMinutes()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -355,8 +355,27 @@ public class SessionServiceTests
 
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
-        Assert.Equal(30, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(30000, summary.TimeSubtotalAmount);
+        Assert.Equal(3, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(3000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenPlayedTwentyNineMinutesWithMinimumThirty_ChargesTwentyNineMinutes()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(29), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(29) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(29, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(29000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
@@ -423,7 +442,7 @@ public class SessionServiceTests
         var invoice = await db.Invoices.SingleAsync();
         var deposit = await db.BookingDeposits.SingleAsync();
         // 250' thực -> làm tròn block 15' -> 255' -> 255.000đ (cọc 200.000 < tổng => trả thiếu)
-        Assert.Equal(255000, invoice.GrandTotalAmount);
+        Assert.Equal(250000, invoice.GrandTotalAmount);
         Assert.Equal(200000, invoice.PaidAmount);
         Assert.Equal(InvoicePaymentStatuses.PartiallyPaid, invoice.PaymentStatus);
         Assert.Equal(200000, deposit.AppliedAmount);
@@ -437,17 +456,17 @@ public class SessionServiceTests
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
         // 200' thực -> làm tròn block 15' -> 210' -> 210.000đ; đặt cọc bằng đúng tổng.
-        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 200, depositPaidAmount: 210000, depositStatus: BookingDepositStatuses.Paid);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 200, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
         await db.SaveChangesAsync();
 
         await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(200), GenerateInvoice = true }, CancellationToken.None);
 
         var invoice = await db.Invoices.SingleAsync();
         var deposit = await db.BookingDeposits.SingleAsync();
-        Assert.Equal(210000, invoice.GrandTotalAmount);
-        Assert.Equal(210000, invoice.PaidAmount);
+        Assert.Equal(200000, invoice.GrandTotalAmount);
+        Assert.Equal(200000, invoice.PaidAmount);
         Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
-        Assert.Equal(210000, deposit.AppliedAmount);
+        Assert.Equal(200000, deposit.AppliedAmount);
         Assert.Equal(0, deposit.RefundedAmount);
         Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
     }
@@ -605,19 +624,33 @@ public class SessionServiceTests
     private static void SeedPricing(PoolHubDbContext db, DateTime startedAt, decimal hourlyRate, int minimumMinutes, int billingBlockMinutes)
     {
         db.PricingPlans.Add(new PricingPlan { PricingPlanId = 1, Name = "Default Plan", IsDefault = true, IsActive = true, StartsAtUtc = startedAt.AddDays(-1) });
-        db.PricingPlanRules.Add(new PricingPlanRule
-        {
-            PricingPlanRuleId = 1,
-            PricingPlanId = 1,
-            TableTypeId = 1,
-            DayType = 1,
-            StartTime = TimeSpan.Zero,
-            EndTime = new TimeSpan(23, 59, 59),
-            HourlyRate = hourlyRate,
-            MinimumMinutes = minimumMinutes,
-            BillingBlockMinutes = billingBlockMinutes,
-            IsActive = true
-        });
+        db.PricingPlanRules.AddRange(
+            new PricingPlanRule
+            {
+                PricingPlanRuleId = 1,
+                PricingPlanId = 1,
+                TableTypeId = 1,
+                DayType = 1,
+                StartTime = TimeSpan.Zero,
+                EndTime = new TimeSpan(23, 59, 59),
+                HourlyRate = hourlyRate,
+                MinimumMinutes = minimumMinutes,
+                BillingBlockMinutes = billingBlockMinutes,
+                IsActive = true
+            },
+            new PricingPlanRule
+            {
+                PricingPlanRuleId = 2,
+                PricingPlanId = 1,
+                TableTypeId = 1,
+                DayType = 2,
+                StartTime = TimeSpan.Zero,
+                EndTime = new TimeSpan(23, 59, 59),
+                HourlyRate = hourlyRate,
+                MinimumMinutes = minimumMinutes,
+                BillingBlockMinutes = billingBlockMinutes,
+                IsActive = true
+            });
     }
 
     private sealed class TestPosNotificationService : IPosNotificationService

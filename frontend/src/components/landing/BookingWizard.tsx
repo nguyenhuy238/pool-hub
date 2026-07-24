@@ -9,6 +9,7 @@ import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
 import { normalizeTableIds, tableDisplayName } from "@/lib/bookingTables";
+import { validateOptionalEmail, validateVietnamPhone } from "@/lib/validation";
 import type { VenueTableLayoutItem } from '@/types';
 import type { Booking } from "@/types";
 function getTableTypeColors(name: string) {
@@ -55,10 +56,16 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
     numberOfGuests: 4,
     note: ''
   });
+  const [customerInfoTouched, setCustomerInfoTouched] = useState({ phoneNumber: false, email: false });
+  const [customerInfoFocused, setCustomerInfoFocused] = useState({ phoneNumber: false, email: false });
 
   const [saving, setSaving] = useState(false);
   const [createdBooking, setCreatedBooking] = useState<Booking | null>(null);
   const [depositCountdown, setDepositCountdown] = useState("");
+  const phoneError = validateVietnamPhone(customerInfo.phoneNumber);
+  const emailError = validateOptionalEmail(customerInfo.email);
+  const showPhoneError = customerInfoTouched.phoneNumber && !customerInfoFocused.phoneNumber && Boolean(phoneError);
+  const showEmailError = customerInfoTouched.email && !customerInfoFocused.email && Boolean(emailError);
 
   useEffect(() => {
     Promise.all([
@@ -158,26 +165,15 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
 
 
   const handleNextStep3 = () => {
+    setCustomerInfoTouched({ phoneNumber: true, email: true });
     if (!customerInfo.customerName.trim()) {
       toast("Vui lòng nhập họ tên khách.", "error");
       return;
     }
 
-    const phoneRegex = /^(0|\+84)[3|5|7|8|9][0-9]{8}$/;
-    if (!customerInfo.phoneNumber.trim()) {
-      toast("Vui lòng nhập số điện thoại.", "error");
+    if (phoneError || emailError) {
+      toast(phoneError || emailError, "error");
       return;
-    } else if (!phoneRegex.test(customerInfo.phoneNumber.trim())) {
-      toast("Số điện thoại không hợp lệ (Ví dụ: 0987654321).", "error");
-      return;
-    }
-
-    if (customerInfo.email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(customerInfo.email.trim())) {
-        toast("Địa chỉ email không hợp lệ.", "error");
-        return;
-      }
     }
 
     if (!customerInfo.numberOfGuests || customerInfo.numberOfGuests < 1) {
@@ -205,7 +201,7 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
       }
       const booking = await publicBookingApi.create({
         customerName: customerInfo.customerName.trim(),
-        phoneNumber: customerInfo.phoneNumber.trim(),
+        phoneNumber: customerInfo.phoneNumber.trim().replace(/\s/g, ""),
         email: customerInfo.email.trim() || undefined,
         bookingDate,
         startTime,
@@ -594,10 +590,36 @@ export function BookingWizard({ policy }: { policy: BookingPolicySettings }) {
           <input value={customerInfo.customerName} onChange={e => setCustomerInfo({...customerInfo, customerName: e.target.value})} />
         </label>
         <label><span>Số điện thoại *</span>
-          <input inputMode="tel" value={customerInfo.phoneNumber} onChange={e => setCustomerInfo({...customerInfo, phoneNumber: e.target.value})} />
+          <input
+            inputMode="tel"
+            autoComplete="tel"
+            value={customerInfo.phoneNumber}
+            onFocus={() => setCustomerInfoFocused((current) => ({ ...current, phoneNumber: true }))}
+            onBlur={() => {
+              setCustomerInfoTouched((current) => ({ ...current, phoneNumber: true }));
+              setCustomerInfoFocused((current) => ({ ...current, phoneNumber: false }));
+            }}
+            onChange={e => setCustomerInfo({...customerInfo, phoneNumber: e.target.value})}
+            aria-invalid={showPhoneError}
+            aria-describedby={showPhoneError ? "public-booking-phone-error" : undefined}
+          />
+          {showPhoneError ? <small id="public-booking-phone-error" className="field-error">{phoneError}</small> : null}
         </label>
         <label><span>Email</span>
-          <input type="email" value={customerInfo.email} onChange={e => setCustomerInfo({...customerInfo, email: e.target.value})} />
+          <input
+            type="email"
+            autoComplete="email"
+            value={customerInfo.email}
+            onFocus={() => setCustomerInfoFocused((current) => ({ ...current, email: true }))}
+            onBlur={() => {
+              setCustomerInfoTouched((current) => ({ ...current, email: true }));
+              setCustomerInfoFocused((current) => ({ ...current, email: false }));
+            }}
+            onChange={e => setCustomerInfo({...customerInfo, email: e.target.value})}
+            aria-invalid={showEmailError}
+            aria-describedby={showEmailError ? "public-booking-email-error" : undefined}
+          />
+          {showEmailError ? <small id="public-booking-email-error" className="field-error">{emailError}</small> : null}
         </label>
         <label><span>Số người</span>
           <input type="number" min={1} max={20} value={customerInfo.numberOfGuests} onChange={e => setCustomerInfo({...customerInfo, numberOfGuests: Number(e.target.value)})} />

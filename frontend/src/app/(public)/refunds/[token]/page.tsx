@@ -41,6 +41,7 @@ export default function PublicRefundPage({ params }: PageProps) {
   const [countdown, setCountdown] = useState(0);
   const [verificationCode, setVerificationCode] = useState("");
   const [phoneLast4, setPhoneLast4] = useState("");
+  const [verifyError, setVerifyError] = useState("");
   const [method, setMethod] = useState<"BankTransfer" | "CashAtVenue">("BankTransfer");
   const [bankCode, setBankCode] = useState("VCB");
   const [bankName, setBankName] = useState("Vietcombank");
@@ -80,6 +81,7 @@ export default function PublicRefundPage({ params }: PageProps) {
 
   async function sendCode() {
     setBusy(true);
+    setVerifyError("");
     try {
       await publicDepositRefundApi.sendVerificationCode(token);
       setCountdown(60);
@@ -93,21 +95,23 @@ export default function PublicRefundPage({ params }: PageProps) {
 
   async function verify(event: FormEvent) {
     event.preventDefault();
+    setVerifyError("");
     if (!/^\d{6}$/.test(verificationCode.trim())) {
-      toast("Mã xác minh phải gồm 6 chữ số.", "error");
+      setVerifyError("Mã xác minh phải gồm đúng 6 chữ số. Vui lòng kiểm tra email PoolHub vừa gửi.");
       return;
     }
     if (!/^\d{4}$/.test(phoneLast4.trim())) {
-      toast("Vui lòng nhập đúng 4 số cuối điện thoại.", "error");
+      setVerifyError("Vui lòng nhập đúng 4 số cuối của số điện thoại đã dùng khi đặt bàn.");
       return;
     }
     setBusy(true);
     try {
       setRefund(await publicDepositRefundApi.verify(token, { verificationCode: verificationCode.trim(), phoneLast4: phoneLast4.trim() }));
       setVerificationCode("");
+      setPhoneLast4("");
       toast("Xác minh thành công.", "success");
     } catch (err) {
-      toast(friendlyError(err), "error");
+      setVerifyError(buildVerificationError(err));
     } finally {
       setBusy(false);
     }
@@ -177,8 +181,9 @@ export default function PublicRefundPage({ params }: PageProps) {
                 <button className="secondary-btn" type="button" onClick={sendCode} disabled={busy || countdown > 0}>
                   {countdown > 0 ? `Gửi lại sau ${countdown}s` : "Gửi mã xác minh"}
                 </button>
-                <label><span>Mã xác minh 6 số</span><input inputMode="numeric" autoComplete="one-time-code" value={verificationCode} maxLength={6} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))} /></label>
-                <label><span>4 số cuối điện thoại</span><input inputMode="numeric" value={phoneLast4} maxLength={4} onChange={(e) => setPhoneLast4(e.target.value.replace(/\D/g, "").slice(0, 4))} /></label>
+                <label><span>Mã xác minh 6 số</span><input inputMode="numeric" autoComplete="one-time-code" value={verificationCode} maxLength={6} onChange={(e) => { setVerifyError(""); setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6)); }} /></label>
+                <label><span>4 số cuối điện thoại</span><input inputMode="numeric" value={phoneLast4} maxLength={4} onChange={(e) => { setVerifyError(""); setPhoneLast4(e.target.value.replace(/\D/g, "").slice(0, 4)); }} /></label>
+                {verifyError ? <div className="inline-alert error" role="alert">{verifyError}</div> : null}
                 <button className="primary-btn" disabled={busy} type="submit">{busy ? "Đang xử lý..." : "Xác minh"}</button>
               </form>
             ) : null}
@@ -227,4 +232,19 @@ function Info({ label, value, strong = false }: { label: string; value?: string;
       {strong ? <strong>{value || "-"}</strong> : <b>{value || "-"}</b>}
     </div>
   );
+}
+
+function buildVerificationError(err: unknown) {
+  if (err instanceof ApiError) {
+    if (err.status === 401) {
+      return "Mã xác minh hoặc 4 số cuối điện thoại chưa đúng, hoặc mã đã hết hạn. Vui lòng kiểm tra lại email/SĐT và thử lại. Nếu mã hết hạn, hãy bấm gửi lại mã xác minh.";
+    }
+    if (err.status === 409) {
+      return "Yêu cầu hoàn cọc đã đổi trạng thái. Vui lòng tải lại trang để xem bước tiếp theo.";
+    }
+    if (err.status === 429) {
+      return "Bạn nhập sai quá nhiều lần hoặc gửi mã quá nhanh. Vui lòng chờ một chút rồi thử lại.";
+    }
+  }
+  return friendlyError(err);
 }
