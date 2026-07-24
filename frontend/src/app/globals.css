@@ -1233,21 +1233,57 @@ textarea:focus {
   flex-wrap: wrap;
 }
 
+.refund-next-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  background: #f8fbfa;
+}
+
+.refund-next-panel h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.refund-next-panel p {
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
 .refund-detail-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .refund-timeline {
   display: grid;
-  gap: 8px;
+  gap: 0;
   margin-top: 12px;
 }
 
-.refund-timeline div {
+.refund-timeline-item {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
+  min-height: 54px;
+  position: relative;
+}
+
+.refund-timeline-item::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 20px;
+  bottom: 0;
+  width: 2px;
+  background: #dbe7e1;
+}
+
+.refund-timeline-item:last-child::after {
+  display: none;
 }
 
 .refund-timeline i {
@@ -1255,7 +1291,42 @@ textarea:focus {
   height: 10px;
   margin-top: 5px;
   border-radius: 50%;
+  background: #cbd5e1;
+  box-shadow: 0 0 0 4px #f8fafc;
+  position: relative;
+  z-index: 1;
+}
+
+.refund-timeline-item.done i {
   background: var(--brand);
+}
+
+.refund-timeline-item.current i {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px #fff5d8;
+}
+
+.refund-timeline-item.failed i {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px #fee2e2;
+}
+
+.refund-timeline-item strong {
+  display: block;
+}
+
+.refund-timeline-item small {
+  color: var(--muted);
+  display: block;
+  margin-top: 3px;
+}
+
+.refund-timeline-item.current strong {
+  color: #8a5a00;
+}
+
+.refund-timeline-item.failed strong {
+  color: #991b1b;
 }
 
 @media (max-width: 760px) {
