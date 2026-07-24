@@ -959,6 +959,22 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         return Math.Max(0, actualMinutes);
     }
 
+    // Áp mức tối thiểu (minimumMinutes) rồi làm tròn LÊN theo bội số block (billingBlockMinutes).
+    // Ví dụ min=30, block=15: 3' -> 30'; 46' -> 60'; 31' -> 45'.
+    private static int ApplyMinimumAndBlock(int actualMinutes, int minimumMinutes, int billingBlockMinutes)
+    {
+        var minutes = Math.Max(0, actualMinutes);
+        if (minimumMinutes > 0)
+        {
+            minutes = Math.Max(minutes, minimumMinutes);
+        }
+        if (billingBlockMinutes > 0 && minutes % billingBlockMinutes != 0)
+        {
+            minutes += billingBlockMinutes - (minutes % billingBlockMinutes);
+        }
+        return minutes;
+    }
+
     private static string? AppendNote(string? currentNote, string? note)
     {
         if (string.IsNullOrWhiteSpace(note))
@@ -1565,10 +1581,32 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             });
         }
 
-        foreach (var line in lines.Where(x => x.IsBillable))
+        // Bước 1: tính tiền theo phút thực cho từng assignment (bàn không tính phí -> 0).
+        foreach (var line in lines)
         {
-            line.BillableDurationMinutes = line.ActualDurationMinutes;
-            line.Amount = CalculateActualTimeAmount(line.ActualDurationMinutes, line.HourlyRate);
+            line.BillableDurationMinutes = line.IsBillable ? line.ActualDurationMinutes : 0;
+            line.Amount = line.IsBillable ? CalculateActualTimeAmount(line.ActualDurationMinutes, line.HourlyRate) : 0;
+        }
+
+        // Bước 2: áp mức tối thiểu + làm tròn block theo TỪNG chuỗi chơi liên tục (chuyển bàn = cùng chuỗi).
+        // Phần phút cộng thêm được dồn vào bàn CUỐI của chuỗi (nơi khách kết thúc) và tính theo giá bàn đó.
+        foreach (var chain in BuildContinuousAssignmentChains(lines))
+        {
+            var billableLines = chain.Where(x => x.IsBillable).ToList();
+            if (billableLines.Count == 0)
+            {
+                continue;
+            }
+
+            var actualTotal = billableLines.Sum(x => x.ActualDurationMinutes);
+            var lastLine = billableLines[^1];
+            var billableTotal = ApplyMinimumAndBlock(actualTotal, lastLine.MinimumMinutes, lastLine.BillingBlockMinutes);
+            var topUpMinutes = billableTotal - actualTotal;
+            if (topUpMinutes > 0)
+            {
+                lastLine.BillableDurationMinutes += topUpMinutes;
+                lastLine.Amount = CalculateActualTimeAmount(lastLine.BillableDurationMinutes, lastLine.HourlyRate);
+            }
         }
 
         foreach (var line in lines)
@@ -1579,11 +1617,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             }
 
             var assignment = rows.First(x => x.Assignment.SessionTableAssignmentId == line.SessionTableAssignmentId).Assignment;
-            if (assignment.EndedAtUtc.HasValue && assignment.Amount.HasValue)
-            {
-                continue;
-            }
-
+            // Ghi lại số liệu đã tính (gồm cả phần top-up ở bàn cuối chuỗi) để invoice tổng hợp khớp.
             assignment.DurationMinutes = line.ActualDurationMinutes;
             assignment.Amount = line.Amount;
             assignment.HourlyRateSnapshot = line.HourlyRate;
@@ -1599,7 +1633,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             MinimumMinutes = ruleLine?.MinimumMinutes ?? 0,
             BillingBlockMinutes = ruleLine?.BillingBlockMinutes ?? 0,
             SubtotalAmount = lines.Sum(x => x.Amount),
-            Note = "Billable time equals actual time. Minimum and billing block settings are kept for legacy configuration only.",
+            Note = "Billable time = max(actual, minimum) rounded up to billing block, applied per continuous transfer chain.",
             Lines = lines
         };
     }
