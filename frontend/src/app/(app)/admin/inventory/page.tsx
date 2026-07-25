@@ -1,27 +1,121 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, ConfirmDialog, DataTable, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
+import { Badge, ConfirmDialog, ListControls, PageHeader, SmartForm, StateBlock, useList, useLoad, Pagination } from "@/components/ui";
 import { getTotalPages } from "@/lib/api/client";
 import { inventoryApi } from "@/lib/api/endpoints";
 import { productApi } from "@/lib/api/endpoints";
+import { groupInventoryTransactions } from "@/lib/inventoryGrouping";
+import { dateTime, money } from "@/lib/status";
 import { useToast } from "@/components/toast";
 import type { InventoryTransaction } from "@/types";
 
 type Adjustment = InventoryTransaction & { unitCost?: number; note?: string };
 type AdjustmentPayload = { productId: number; quantity: number; transactionType: number; unitCost?: number; note?: string };
+type InventoryQueryState = {
+  search: string;
+  pageNumber: number;
+  pageSize: number;
+  productId: string;
+  transactionType: string;
+  referenceType: string;
+  invoiceId: string;
+  fromDate: string;
+  toDate: string;
+};
+
+const initialQuery: InventoryQueryState = {
+  search: "",
+  pageNumber: 1,
+  pageSize: 20,
+  productId: "",
+  transactionType: "",
+  referenceType: "",
+  invoiceId: "",
+  fromDate: "",
+  toDate: ""
+};
+
+function toInventoryParams(query: InventoryQueryState) {
+  const toDate = query.toDate ? new Date(`${query.toDate}T00:00:00`) : null;
+  if (toDate) toDate.setDate(toDate.getDate() + 1);
+  return {
+    Search: query.search,
+    PageNumber: query.pageNumber,
+    PageSize: query.pageSize,
+    ProductId: query.productId ? Number(query.productId) : undefined,
+    TransactionType: query.transactionType ? Number(query.transactionType) : undefined,
+    ReferenceType: query.referenceType || undefined,
+    InvoiceId: query.invoiceId ? Number(query.invoiceId) : undefined,
+    FromUtc: query.fromDate ? new Date(`${query.fromDate}T00:00:00`).toISOString() : undefined,
+    ToUtc: toDate?.toISOString()
+  };
+}
 
 export default function InventoryPage() {
   const toast = useToast();
-  const [query, setQuery] = useState({ search: "", pageNumber: 1, pageSize: 20 });
+  const [query, setQuery] = useState<InventoryQueryState>(initialQuery);
   const [pendingAdjustment, setPendingAdjustment] = useState<AdjustmentPayload | null>(null);
-  const { data, loading, error, reload } = useLoad(() => inventoryApi.list({ Search: query.search, PageNumber: query.pageNumber, PageSize: query.pageSize }), [query]);
+  const { data, loading, error, reload } = useLoad(() => inventoryApi.list(toInventoryParams(query)), [query]);
   const products = useLoad(() => productApi.list({ PageNumber: 1, PageSize: 100 }), []);
   const rows = useList(data);
   const productRows = useList(products.data);
+  const groupedRows = groupInventoryTransactions(rows);
+  const visibleProductCount = new Set(rows.map((row) => row.productId)).size;
+  const visibleNetQuantity = rows.reduce((total, row) => total + Number(row.quantity || 0), 0);
   return <>
     <PageHeader title="Quản lý tồn kho" description="Theo dõi và thực hiện nhập, xuất, điều chỉnh số lượng hàng hóa." />
-    <ListControls {...query} onChange={setQuery} />
+    <ListControls
+      search={query.search}
+      pageNumber={query.pageNumber}
+      pageSize={query.pageSize}
+      onChange={(next) => setQuery((current) => ({ ...current, ...next }))}
+    />
+    <section className="card inventory-filter-card">
+      <div className="inventory-filter-grid">
+        <label>
+          <span>Sản phẩm</span>
+          <select value={query.productId} onChange={(event) => setQuery((current) => ({ ...current, productId: event.target.value, pageNumber: 1 }))}>
+            <option value="">Tất cả sản phẩm</option>
+            {productRows.map((item) => <option key={item.productId} value={item.productId}>{item.sku} - {item.name}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Loại giao dịch</span>
+          <select value={query.transactionType} onChange={(event) => setQuery((current) => ({ ...current, transactionType: event.target.value, pageNumber: 1 }))}>
+            <option value="">Tất cả loại</option>
+            <option value="1">Nhập kho</option>
+            <option value="2">Xuất kho</option>
+            <option value="3">Điều chỉnh</option>
+            <option value="4">Bán hàng / hoàn kho</option>
+          </select>
+        </label>
+        <label>
+          <span>Nguồn giao dịch</span>
+          <select value={query.referenceType} onChange={(event) => setQuery((current) => ({ ...current, referenceType: event.target.value, pageNumber: 1 }))}>
+            <option value="">Tất cả nguồn</option>
+            <option value="ORDER">Đơn hàng / hóa đơn</option>
+            <option value="ADMIN_ADJUSTMENT">Điều chỉnh thủ công</option>
+          </select>
+        </label>
+        <label>
+          <span>ID hóa đơn</span>
+          <input type="number" min={1} placeholder="Ví dụ: 12" value={query.invoiceId} onChange={(event) => setQuery((current) => ({ ...current, invoiceId: event.target.value, pageNumber: 1 }))} />
+        </label>
+        <label>
+          <span>Từ ngày</span>
+          <input type="date" value={query.fromDate} onChange={(event) => setQuery((current) => ({ ...current, fromDate: event.target.value, pageNumber: 1 }))} />
+        </label>
+        <label>
+          <span>Đến ngày</span>
+          <input type="date" value={query.toDate} onChange={(event) => setQuery((current) => ({ ...current, toDate: event.target.value, pageNumber: 1 }))} />
+        </label>
+      </div>
+      <div className="inventory-filter-actions">
+        <span className="muted-text">Có thể tìm theo tên, SKU hoặc mã hóa đơn.</span>
+        <button className="ghost-btn" type="button" onClick={() => setQuery(initialQuery)}>Xóa bộ lọc</button>
+      </div>
+    </section>
     <SmartForm<Adjustment> title="Điều chỉnh tồn kho" initial={{ transactionType: 1 }}
       fields={[
         { name: "productId", label: "Sản phẩm", required: true, options: productRows.map(item => ({ value: String(item.productId), label: `${item.sku} - ${item.name}` })) },
@@ -37,10 +131,59 @@ export default function InventoryPage() {
         setPendingAdjustment(payload);
       }} />
     <StateBlock loading={loading} error={error} empty={!loading && !rows.length} />
-    <DataTable rows={rows} columns={[
-      { key: "productName", label: "Sản phẩm" }, { key: "transactionType", label: "Loại", render: row => <Badge tone={row.transactionType === 1 ? "green" : "yellow"}>{row.transactionType === 1 ? "Nhập" : row.transactionType === 2 ? "Xuất" : row.transactionType === 3 ? "Điều chỉnh" : row.transactionType === 4 ? "Bán hàng" : "Hoàn kho"}</Badge> },
-      { key: "quantity", label: "Số lượng" }, { key: "unitCost", label: "Giá vốn" }, { key: "note", label: "Ghi chú" }, { key: "createdAtUtc", label: "Thời gian" }
-    ]} />
+    {rows.length ? (
+      <>
+        <section className="inventory-summary-grid" aria-label="Tổng quan dữ liệu tồn kho đang hiển thị">
+          <div className="card"><span>Nhóm hóa đơn / giao dịch</span><strong>{groupedRows.length}</strong></div>
+          <div className="card"><span>Sản phẩm khác nhau</span><strong>{visibleProductCount}</strong></div>
+          <div className="card"><span>Biến động ròng</span><strong className={visibleNetQuantity >= 0 ? "inventory-positive" : "inventory-negative"}>{visibleNetQuantity > 0 ? "+" : ""}{visibleNetQuantity}</strong></div>
+        </section>
+        <section className="inventory-group-list" aria-label="Giao dịch tồn kho được nhóm theo hóa đơn">
+          {groupedRows.map((group) => (
+            <article className="inventory-group-card" key={group.key}>
+              <header className="inventory-group-head">
+                <div>
+                  <div className="inventory-group-title">
+                    <h3>{group.title}</h3>
+                    <Badge tone={group.invoiceId ? "blue" : group.orderId ? "yellow" : "neutral"}>
+                      {group.invoiceId ? "Hóa đơn" : group.orderId ? "Đơn chưa xuất hóa đơn" : "Điều chỉnh"}
+                    </Badge>
+                  </div>
+                  <p>{group.transactionCount} giao dịch · Cập nhật {dateTime(group.latestAtUtc)}</p>
+                </div>
+                <strong className={group.netQuantity >= 0 ? "inventory-positive" : "inventory-negative"}>
+                  {group.netQuantity > 0 ? "+" : ""}{group.netQuantity}
+                </strong>
+              </header>
+              <div className="inventory-product-list">
+                {group.products.map((product) => (
+                  <div className="inventory-product-row" key={product.productId}>
+                    <div>
+                      <span className="inventory-product-id">ID #{product.productId}</span>
+                      <strong>{product.productName}</strong>
+                    </div>
+                    <div>
+                      <small>Số giao dịch</small>
+                      <span>{product.transactionCount}</span>
+                    </div>
+                    <div>
+                      <small>Giá vốn gần nhất</small>
+                      <span>{product.unitCost !== undefined ? money(product.unitCost) : "—"}</span>
+                    </div>
+                    <div>
+                      <small>Biến động</small>
+                      <strong className={product.quantity >= 0 ? "inventory-positive" : "inventory-negative"}>
+                        {product.quantity > 0 ? "+" : ""}{product.quantity}
+                      </strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </section>
+      </>
+    ) : null}
     <Pagination pageNumber={query.pageNumber} totalPages={getTotalPages(data, query.pageSize)} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
     {pendingAdjustment ? <ConfirmDialog title="Xác nhận điều chỉnh tồn kho" message="Ghi nhận giao dịch tồn kho này? Backend sẽ kiểm tra nghiệp vụ tồn kho âm nếu có." confirmLabel="Ghi nhận" danger={pendingAdjustment.transactionType !== 1} onCancel={() => setPendingAdjustment(null)} onConfirm={async () => {
       try {

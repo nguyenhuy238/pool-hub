@@ -10,7 +10,7 @@ import { calculateDurationMinutes, formatSlotDateTime, generateBookingSlots, slo
 import { dateTime, label, bookingStatus, sessionStatus, money } from "@/lib/status";
 import { formatElapsedDuration } from "@/lib/sessionDuration";
 import { getSessionActiveAssignments, getSessionReleasedAssignments, normalizeActiveSessions } from "@/lib/activeSessions";
-import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
+import { connectOperationHub } from "@/lib/realtime/operationHub";
 import { Badge, ConfirmDialog, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { OvernightToggle } from "@/components/OvernightToggle";
@@ -34,7 +34,6 @@ export default function SessionsPage() {
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [previewingSessionId, setPreviewingSessionId] = useState<number | null>(null);
   const [closingSession, setClosingSession] = useState(false);
-  const [realtimeStatus, setRealtimeStatus] = useState<OperationRealtimeStatus>("connecting");
   const [, setDurationTick] = useState(0);
 
   const { data, loading, error, reload } = useLoad(async () => {
@@ -80,7 +79,7 @@ export default function SessionsPage() {
       onOrderUpdated: scheduleRealtimeReload,
       onBookingUpdated: scheduleRealtimeReload,
       onTableStatusChanged: scheduleRealtimeReload,
-      onStatusChange: setRealtimeStatus
+      onStatusChange: () => undefined
     });
 
     return () => {
@@ -208,14 +207,13 @@ export default function SessionsPage() {
 
   return (
     <>
-      <PageHeader title="Quản lý phiên chơi" description="Bắt đầu phiên từ booking đã xác nhận và theo dõi các phiên đang hoạt động." />
+      <PageHeader title="Quản lý phiên chơi" />
 
       <section style={{ padding: "0 24px 24px" }}>
         <div className="panel">
           <div className="panel-head">
             <div>
               <h3>Booking đến giờ</h3>
-              <p>Các booking đã xác nhận và đang trong khung giờ chơi.</p>
             </div>
           </div>
           <StateBlock loading={loading} error={error} empty={!loading && dueBookings.length === 0} />
@@ -244,11 +242,6 @@ export default function SessionsPage() {
           <div className="panel-head">
             <div>
               <h3>Phiên đang hoạt động</h3>
-              <p>Các phiên đang mở, lấy từ API chuẩn /api/sessions/active.</p>
-              <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
-                Thời lượng chơi hiển thị realtime. Tiền giờ được hệ thống tính theo bảng giá và quy tắc làm tròn.
-              </p>
-              <RealtimeStatusText status={realtimeStatus} />
             </div>
             <button className="primary-btn" type="button" onClick={() => setWalkInOpen(true)}>Mở phiên khách vãng lai</button>
           </div>
@@ -499,15 +492,6 @@ function WalkInSessionModal({ tables, customers, onClose, onStarted }: {
   );
 }
 
-function RealtimeStatusText({ status }: { status: OperationRealtimeStatus }) {
-  if (status === "connected") return null;
-  const text = status === "reconnecting" || status === "connecting"
-    ? "Đang kết nối lại realtime..."
-    : "Dữ liệu tự làm mới định kỳ.";
-
-  return <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>{text}</p>;
-}
-
 function ActiveTablesCell({ session }: { session: Session }) {
   const assignments = getSessionActiveAssignments(session);
   if (!assignments.length) {
@@ -599,14 +583,7 @@ function PricingDetails({ assignments }: { assignments: any[] }) {
       {assignments.map((assignment) => {
         const actual = assignment.actualDurationMinutes ?? assignment.durationMinutes ?? 0;
         const billable = assignment.billableDurationMinutes ?? assignment.billableMinutes ?? actual;
-        const minimum = assignment.minimumMinutes ?? 0;
-        const block = assignment.billingBlockMinutes ?? 0;
         const rate = assignment.hourlyRate ?? assignment.hourlyRateSnapshot ?? 0;
-        const reason = billable > actual
-          ? minimum > actual
-            ? `Áp dụng thời gian tối thiểu ${minimum} phút`
-            : `Làm tròn theo block ${block} phút`
-          : null;
 
         return (
           <div key={assignment.sessionTableAssignmentId || assignment.assignmentId || `${assignment.tableId}-${assignment.startedAtUtc}`} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
@@ -616,9 +593,7 @@ function PricingDetails({ assignments }: { assignments: any[] }) {
             </div>
             <div style={{ display: "grid", gap: 3, marginTop: 6, color: "#475569", fontSize: 13 }}>
               <span>Thực tế: {actual} phút · Tính tiền: {billable} phút</span>
-              <span>Minimum: {minimum} phút · Block: {block} phút</span>
               {assignment.pricingPlanName ? <span>Bảng giá: {assignment.pricingPlanName}</span> : null}
-              {reason ? <span style={{ color: "#b45309", fontWeight: 700 }}>{reason}</span> : null}
             </div>
           </div>
         );

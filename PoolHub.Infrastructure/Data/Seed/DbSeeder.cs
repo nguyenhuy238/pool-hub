@@ -51,7 +51,6 @@ public static class DbSeeder
 
         db.PaymentMethods.AddRange(
             new PaymentMethod { Name = "Cash", Code = "CASH" },
-            new PaymentMethod { Name = "BankTransfer", Code = "BANK", Description = DefaultBankTransferDescription },
             new PaymentMethod { Name = "EWallet", Code = "EWALLET" }
         );
 
@@ -62,9 +61,9 @@ public static class DbSeeder
         var categories = await db.ProductCategories.OrderBy(x => x.ProductCategoryId).ToListAsync(ct);
 
         db.PricingPlanRules.AddRange(
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15 },
-            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15 }
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[0].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 50000, MinimumMinutes = 0, BillingBlockMinutes = 1 },
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[1].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 90000, MinimumMinutes = 0, BillingBlockMinutes = 1 },
+            new PricingPlanRule { PricingPlanId = plan.PricingPlanId, TableTypeId = tableTypes[2].TableTypeId, DayType = 1, StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(17), HourlyRate = 60000, MinimumMinutes = 0, BillingBlockMinutes = 1 }
         );
 
         for (var i = 1; i <= 10; i++)
@@ -93,13 +92,12 @@ public static class DbSeeder
             new Role { Name = RoleConstants.Admin, Description = "Full system admin", IsSystem = true },
             new Role { Name = RoleConstants.Manager, Description = "Operations manager", IsSystem = true },
             new Role { Name = RoleConstants.Staff, Description = "Floor staff", IsSystem = true },
-            new Role { Name = RoleConstants.Cashier, Description = "Cashier", IsSystem = true },
             new Role { Name = RoleConstants.Customer, Description = "Registered customer", IsSystem = true },
             new Role { Name = RoleConstants.Guest, Description = "Anonymous guest", IsSystem = true }
         };
 
-        var existing = await db.Roles.Select(x => x.Name).ToListAsync(ct);
-        var missing = definitions.Where(x => !existing.Contains(x.Name)).ToList();
+        var existing = await db.Roles.Select(x => x.Name.ToLower()).ToListAsync(ct);
+        var missing = definitions.Where(x => !existing.Contains(x.Name.ToLowerInvariant())).ToList();
         if (missing.Count == 0) return;
 
         db.Roles.AddRange(missing);
@@ -136,14 +134,18 @@ public static class DbSeeder
             [RoleConstants.Admin] = PermissionConstants.All,
             [RoleConstants.Manager] =
             [
-                PermissionConstants.UsersManage, PermissionConstants.RolesManage,
                 PermissionConstants.CustomersManage, PermissionConstants.VenueManage,
                 PermissionConstants.PricingManage, PermissionConstants.ProductsManage,
-                PermissionConstants.InventoryManage, PermissionConstants.ReportsView,
-                PermissionConstants.AuditView
+                PermissionConstants.InventoryManage, PermissionConstants.DiscountsManage,
+                PermissionConstants.PaymentsManage, PermissionConstants.LandingManage,
+                PermissionConstants.ReportsView
             ],
-            [RoleConstants.Staff] = [PermissionConstants.CustomersManage],
-            [RoleConstants.Cashier] = [PermissionConstants.DiscountsManage, PermissionConstants.PaymentsManage]
+            [RoleConstants.Staff] =
+            [
+                PermissionConstants.CustomersManage,
+                PermissionConstants.DiscountsManage,
+                PermissionConstants.PaymentsManage
+            ]
         };
 
         foreach (var (roleName, codes) in rolePermissions)
@@ -171,8 +173,7 @@ public static class DbSeeder
             new { FullName = "Admin", Email = "admin@poolhub.com", Password = "Admin@123", Role = RoleConstants.Admin },
             new { FullName = "Manager", Email = "manager@poolhub.com", Password = "Manager@123", Role = RoleConstants.Manager },
             new { FullName = "Staff 1", Email = "staff1@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff },
-            new { FullName = "Staff 2", Email = "staff2@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff },
-            new { FullName = "Cashier", Email = "cashier@poolhub.com", Password = "Cashier@123", Role = RoleConstants.Cashier }
+            new { FullName = "Staff 2", Email = "staff2@poolhub.com", Password = "Staff@123", Role = RoleConstants.Staff }
         };
 
         foreach (var demo in demos)
@@ -447,8 +448,8 @@ public static class DbSeeder
                 StartTime = startTime,
                 EndTime = endTime,
                 HourlyRate = hourlyRate,
-                MinimumMinutes = 30,
-                BillingBlockMinutes = 15,
+                MinimumMinutes = 0,
+                BillingBlockMinutes = 1,
                 IsActive = true
             };
             existingRules.Add(rule);

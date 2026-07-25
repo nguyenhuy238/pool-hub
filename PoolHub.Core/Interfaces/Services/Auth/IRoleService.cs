@@ -11,5 +11,5 @@ public interface IRoleService
     Task<RoleDto> UpdateAsync(long id, UpdateRoleRequest request, long actorUserId, CancellationToken ct);
     Task DeleteAsync(long id, long actorUserId, CancellationToken ct);
     Task<List<PermissionDto>> GetPermissionsAsync(CancellationToken ct);
-    Task SetPermissionsAsync(long roleId, UpdateRolePermissionsRequest request, long actorUserId, CancellationToken ct);
+    Task<RoleDto> SetPermissionsAsync(long roleId, UpdateRolePermissionsRequest request, long actorUserId, CancellationToken ct);
 }

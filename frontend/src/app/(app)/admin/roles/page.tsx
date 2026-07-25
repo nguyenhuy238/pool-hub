@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { RoleGuard } from "@/components/guards";
 import { useToast } from "@/components/toast";
@@ -10,6 +10,30 @@ import { ROLES } from "@/lib/auth/constants";
 import { dateTime } from "@/lib/status";
 import { roleService, type Permission, type RolePayload } from "@/services/role-service";
 import type { PagedResult, Role } from "@/types";
+
+const systemRoleNames = [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF];
+const permissionLabels: Record<string, { name: string; group: string; description: string }> = {
+  "users.manage": { name: "Quản lý người dùng", group: "Người dùng", description: "Xem và cập nhật tài khoản nội bộ theo quyền backend." },
+  "roles.manage": { name: "Quản lý vai trò", group: "Vai trò", description: "Xem vai trò, danh mục quyền và cấu hình quyền vai trò." },
+  "customers.manage": { name: "Quản lý khách hàng", group: "Khách hàng", description: "Xem hồ sơ, lịch sử và thông tin khách hàng." },
+  "venue.manage": { name: "Quản lý cơ sở", group: "Cơ sở", description: "Quản lý tầng, khu vực, loại bàn và bàn chơi." },
+  "pricing.manage": { name: "Quản lý bảng giá", group: "Bảng giá", description: "Quản lý gói giá và ngày giá đặc biệt." },
+  "products.manage": { name: "Quản lý sản phẩm", group: "Sản phẩm", description: "Quản lý sản phẩm và danh mục sản phẩm." },
+  "inventory.manage": { name: "Quản lý tồn kho", group: "Tồn kho", description: "Xem và xử lý nghiệp vụ tồn kho." },
+  "discounts.manage": { name: "Quản lý giảm giá", group: "Giảm giá", description: "Xem mã giảm giá và áp dụng nghiệp vụ giảm giá được phép." },
+  "payments.manage": { name: "Quản lý thanh toán", group: "Thanh toán", description: "Xem phương thức thanh toán, lịch sử giao dịch và ghi nhận thanh toán." },
+  "landing.manage": { name: "Cấu hình trang chủ", group: "Trang chủ", description: "Cập nhật nội dung và media trang public." },
+  "reports.view": { name: "Xem báo cáo", group: "Báo cáo", description: "Xem dashboard quản trị và báo cáo." },
+  "audit.view": { name: "Xem nhật ký hệ thống", group: "Bảo mật", description: "Xem audit log hệ thống." }
+};
+
+function labelForPermission(code: string) {
+  return permissionLabels[code]?.name ?? code.replace(".", " ");
+}
+
+function groupForPermission(permission: Permission) {
+  return permissionLabels[permission.code]?.group ?? permission.group;
+}
 
 export default function RolesPage() {
   const { hasRole } = useAuth();
@@ -81,6 +105,14 @@ export default function RolesPage() {
 }
 
 function RoleDetailModal({ role, onClose }: { role: Role; onClose: () => void }) {
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+
+  useEffect(() => {
+    void roleService.getPermissions().then(setPermissions).catch(() => setPermissions([]));
+  }, []);
+
+  const permissionByCode = useMemo(() => new Map(permissions.map((permission) => [permission.code, permission])), [permissions]);
+
   return <Modal title={`Chi tiết vai trò — ${role.name}`} onClose={onClose}>
     <div className="audit-detail-grid">
       <div><span>Tên vai trò</span><strong>{role.name}</strong></div>
@@ -90,7 +122,10 @@ function RoleDetailModal({ role, onClose }: { role: Role; onClose: () => void })
       <div><span>Ngày tạo</span><strong>{dateTime(role.createdAtUtc)}</strong></div>
       <div><span>Cập nhật</span><strong>{dateTime(role.updatedAtUtc)}</strong></div>
       <div className="full-field"><span>Mô tả</span><p>{role.description || "-"}</p></div>
-      <div className="full-field"><span>Quyền hiện có</span><div className="badge-list">{(role.permissionCodes ?? []).length ? role.permissionCodes?.map((code) => <Badge key={code} tone="blue">{code}</Badge>) : <span className="muted-text">Chưa có quyền</span>}</div></div>
+      <div className="full-field"><span>Quyền hiện có</span><div className="permission-chip-list">{(role.permissionCodes ?? []).length ? role.permissionCodes?.map((code) => {
+        const permission = permissionByCode.get(code);
+        return <span className="permission-chip" key={code}><strong>{permission?.name && permission.name !== code ? permission.name : labelForPermission(code)}</strong><small>{code}</small></span>;
+      }) : <span className="muted-text">Chưa có quyền</span>}</div></div>
     </div>
     <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Đóng</button></div>
   </Modal>;
@@ -100,22 +135,29 @@ function RolePermissionsModal({ role, onClose, onSaved }: { role: Role; onClose:
   const toast = useToast();
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
+  const [initialSelected, setInitialSelected] = useState<number[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     roleService.getPermissions()
       .then((items) => {
         setPermissions(items);
         const codes = new Set(role.permissionCodes ?? []);
-        setSelected(items.filter((item) => codes.has(item.code)).map((item) => item.permissionId));
+        const initial = items.filter((item) => codes.has(item.code)).map((item) => item.permissionId).sort((a, b) => a - b);
+        setSelected(initial);
+        setInitialSelected(initial);
       })
+      .catch((err) => setError(err instanceof Error ? err.message : "Không tải được danh mục quyền."))
       .finally(() => setLoading(false));
   }, [role.permissionCodes]);
 
   async function save() {
     if (!role.roleId) return;
     setSaving(true);
+    setError("");
     try {
       await roleService.setPermissions(role.roleId, selected);
       toast("Đã cập nhật quyền hạn cho vai trò.", "success");
@@ -127,29 +169,61 @@ function RolePermissionsModal({ role, onClose, onSaved }: { role: Role; onClose:
     }
   }
 
-  const groups = permissions.reduce<Record<string, Permission[]>>((result, permission) => {
-    (result[permission.group] ??= []).push(permission);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredPermissions = permissions.filter((permission) => {
+    if (!normalizedSearch) return true;
+    return [permission.code, permission.name, permission.description, groupForPermission(permission), labelForPermission(permission.code)]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+  });
+  const groups = filteredPermissions.reduce<Record<string, Permission[]>>((result, permission) => {
+    (result[groupForPermission(permission)] ??= []).push(permission);
     return result;
   }, {});
+  const normalizedSelected = [...selected].sort((a, b) => a - b).join(",");
+  const normalizedInitial = initialSelected.join(",");
+  const isDirty = normalizedSelected !== normalizedInitial;
+  const selectedSet = new Set(selected);
 
-  return <Modal title={`Quyền hạn — ${role.name}`} onClose={onClose} size="large">
-    <StateBlock loading={loading} />
-    {!loading ? <div className="form-stack">
-      {Object.entries(groups).map(([group, items]) => <div className="card" key={group}>
-        <strong>{group}</strong>
-        <div className="form-grid" style={{ marginTop: 12 }}>
-          {items.map((permission) => <label className="check-row" key={permission.permissionId}>
-            <input type="checkbox" checked={selected.includes(permission.permissionId)} onChange={(event) =>
-              setSelected((current) => event.target.checked
-                ? [...current, permission.permissionId]
-                : current.filter((id) => id !== permission.permissionId))}
-            />
-            <span>{permission.code}</span>
-          </label>)}
-        </div>
-      </div>)}
-      <div className="modal-actions"><button className="ghost-btn" onClick={onClose}>Hủy</button><button className="primary-btn" disabled={saving} onClick={save}>{saving ? "Đang lưu..." : "Lưu quyền hạn"}</button></div>
-    </div> : null}
+  function toggleGroup(items: Permission[], checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      items.forEach((permission) => checked ? next.add(permission.permissionId) : next.delete(permission.permissionId));
+      return [...next].sort((a, b) => a - b);
+    });
+  }
+
+  return <Modal title={`Quyền hạn — ${role.name}`} onClose={() => { if (!saving) onClose(); }} size="large">
+    <div className="role-permission-modal">
+      <div className="permission-toolbar">
+        <label><span>Tìm quyền</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tên quyền, module hoặc key" /></label>
+        <Badge tone="blue">{selected.length} quyền đã chọn</Badge>
+      </div>
+      <StateBlock loading={loading} error={error} empty={!loading && !filteredPermissions.length} />
+      {!loading && !error ? <div className="permission-scroll">
+        {Object.entries(groups).map(([group, items]) => {
+          const allChecked = items.every((permission) => selectedSet.has(permission.permissionId));
+          return <fieldset className="permission-group" key={group}>
+            <legend>{group}</legend>
+            <label className="check-row select-all">
+              <input type="checkbox" checked={allChecked} onChange={(event) => toggleGroup(items, event.target.checked)} />
+              <span>Chọn tất cả trong nhóm</span>
+            </label>
+            <div className="permission-grid">
+              {items.map((permission) => <label className="check-row permission-row" key={permission.permissionId}>
+                <input type="checkbox" checked={selectedSet.has(permission.permissionId)} onChange={(event) =>
+                  setSelected((current) => event.target.checked
+                    ? [...new Set([...current, permission.permissionId])].sort((a, b) => a - b)
+                    : current.filter((id) => id !== permission.permissionId))}
+                />
+                <span><strong>{permission.name && permission.name !== permission.code ? permission.name : labelForPermission(permission.code)}</strong><small>{permission.code}</small><em>{permission.description || permissionLabels[permission.code]?.description}</em></span>
+              </label>)}
+            </div>
+          </fieldset>;
+        })}
+      </div> : null}
+      <div className="modal-actions role-permission-actions"><button className="ghost-btn" onClick={onClose} disabled={saving}>Hủy</button><button className="primary-btn" disabled={saving || !isDirty || loading || Boolean(error)} onClick={save}>{saving ? "Đang lưu..." : "Lưu quyền hạn"}</button></div>
+    </div>
   </Modal>;
 }
 
@@ -160,12 +234,14 @@ function RoleFormModal({ role, onClose, onSaved }: { role: Role | null; onClose:
   const [error, setError] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!form.name.trim()) return setError("Vui lòng nhập tên vai trò.");
+    const normalized = form.name.trim();
+    if (!normalized) return setError("Vui lòng nhập tên vai trò.");
+    if (!role && systemRoleNames.some((name) => name.toLowerCase() === normalized.toLowerCase())) return setError("Tên vai trò hệ thống đã tồn tại.");
     setSaving(true);
     setError("");
     try {
-      if (role?.roleId) await roleService.updateRole(role.roleId, { name: form.name.trim(), description: form.description });
-      else await roleService.createRole({ name: form.name.trim(), description: form.description, isSystem: false });
+      if (role?.roleId) await roleService.updateRole(role.roleId, { name: normalized, description: form.description });
+      else await roleService.createRole({ name: normalized, description: form.description, isSystem: false });
       toast(role ? "Cập nhật vai trò thành công." : "Tạo vai trò thành công.", "success");
       await onSaved();
     } catch (err) {

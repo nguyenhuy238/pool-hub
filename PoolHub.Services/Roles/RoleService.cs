@@ -65,14 +65,15 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService, IClock
 
     public async Task<RoleDto> CreateAsync(CreateRoleRequest request, long actorUserId, CancellationToken ct)
     {
-        var name = request.Name.Trim();
-        if (await db.Roles.AnyAsync(x => x.Name == name, ct))
+        var name = NormalizeRoleName(request.Name);
+        EnsureRoleNameAllowed(name);
+        if (await db.Roles.AnyAsync(x => x.Name.ToLower() == name.ToLower(), ct))
             throw new ConflictException("Role name already exists.");
         var role = new Role
         {
             Name = name,
             Description = request.Description?.Trim(),
-            IsSystem = request.IsSystem,
+            IsSystem = false,
             IsActive = true
         };
         db.Roles.Add(role);
@@ -87,11 +88,12 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService, IClock
     {
         var role = await db.Roles.FirstOrDefaultAsync(x => x.RoleId == id && x.IsActive, ct)
             ?? throw new NotFoundException("Role not found.");
-        var name = request.Name.Trim();
+        var name = NormalizeRoleName(request.Name);
+        EnsureRoleNameAllowed(name);
         if (role.IsSystem && !string.Equals(role.Name, name, StringComparison.Ordinal))
             throw new BusinessRuleException("System role names cannot be changed.");
         if (!string.Equals(role.Name, name, StringComparison.OrdinalIgnoreCase) &&
-            await db.Roles.AnyAsync(x => x.RoleId != id && x.Name == name, ct))
+            await db.Roles.AnyAsync(x => x.RoleId != id && x.Name.ToLower() == name.ToLower(), ct))
             throw new ConflictException("Role name already exists.");
 
         var oldValues = new { role.Name, role.Description };
@@ -132,13 +134,22 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService, IClock
                 Description = x.Description
             }).ToListAsync(ct);
 
-    public async Task SetPermissionsAsync(long roleId, UpdateRolePermissionsRequest request, long actorUserId, CancellationToken ct)
+    public async Task<RoleDto> SetPermissionsAsync(long roleId, UpdateRolePermissionsRequest request, long actorUserId, CancellationToken ct)
     {
         var role = await db.Roles.FirstOrDefaultAsync(x => x.RoleId == roleId && x.IsActive, ct)
             ?? throw new NotFoundException("Role not found.");
         var permissionIds = request.PermissionIds.Distinct().ToList();
-        var validCount = await db.Permissions.CountAsync(x => permissionIds.Contains(x.PermissionId) && x.IsActive, ct);
-        if (validCount != permissionIds.Count) throw new ValidationException("One or more permissions are invalid.");
+        var validPermissions = await db.Permissions
+            .Where(x => permissionIds.Contains(x.PermissionId) && x.IsActive)
+            .Select(x => new { x.PermissionId, x.Code })
+            .ToListAsync(ct);
+        if (validPermissions.Count != permissionIds.Count) throw new ValidationException("One or more permissions are invalid.");
+        if (string.Equals(role.Name, RoleConstants.Admin, StringComparison.OrdinalIgnoreCase))
+        {
+            var requestedCodes = validPermissions.Select(x => x.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!PermissionConstants.All.All(requestedCodes.Contains))
+                throw new BusinessRuleException("Admin role must keep all configured permissions.");
+        }
 
         var existing = await db.RolePermissions.Where(x => x.RoleId == roleId).ToListAsync(ct);
         var oldIds = existing.Select(x => x.PermissionId).ToList();
@@ -151,9 +162,26 @@ public class RoleService(PoolHubDbContext db, IAuditService auditService, IClock
         }));
         role.UpdatedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
-        await auditService.LogAsync(actorUserId, "ROLE_PERMISSIONS_UPDATED", nameof(Role), roleId,
+        await auditService.LogAsync(actorUserId, AuditActions.RolePermissionsUpdated, nameof(Role), roleId,
             oldValues: new { PermissionIds = oldIds }, newValues: new { PermissionIds = permissionIds },
             description: "Role permissions updated.", ct: ct);
+        return await GetByIdAsync(roleId, ct);
+    }
+
+    private static string NormalizeRoleName(string? value)
+    {
+        var name = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ValidationException("Role name is required.");
+        if (name.Length > 100)
+            throw new ValidationException("Role name must be 100 characters or fewer.");
+        return name;
+    }
+
+    private static void EnsureRoleNameAllowed(string name)
+    {
+        if (RoleConstants.Retired.Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new BusinessRuleException("This role name has been retired and cannot be used.");
     }
 
     private static RoleDto Map(Role role, int userCount, List<string> permissionCodes) => new()

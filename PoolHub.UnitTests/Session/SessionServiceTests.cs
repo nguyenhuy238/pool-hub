@@ -89,7 +89,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_WhenConfirmedBookingIsBeforeEarlyCheckInWindow_ThrowsBusinessRuleException()
+    public async Task StartAsync_WhenConfirmedBookingIsBeforeEarlyCheckInWindowAndTableIsFree_StartsSession()
     {
         using var db = CreateSessionStartDb();
         var now = DateTime.UtcNow;
@@ -98,8 +98,39 @@ public class SessionServiceTests
 
         var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
 
-        var exception = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+        var result = await service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None);
+
+        var booking = await db.Bookings.FindAsync(1L);
+        Assert.Equal(BookingStatuses.InProgress, booking!.Status);
+        Assert.True(result.StartedAtUtc >= now);
+        Assert.True(result.StartedAtUtc < now.AddSeconds(10));
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenEarlyStartWouldOverlapAnotherBooking_ThrowsConflictException()
+    {
+        using var db = CreateSessionStartDb();
+        var now = DateTime.UtcNow;
+        SeedSessionStartData(db, now.AddMinutes(30), now.AddMinutes(90));
+        db.Bookings.Add(new Booking
+        {
+            BookingId = 2,
+            BookingCode = "BK2",
+            CustomerId = 1,
+            TableId = 1,
+            StartTimeUtc = DateTime.SpecifyKind(now.AddMinutes(10), DateTimeKind.Utc),
+            EndTimeUtc = DateTime.SpecifyKind(now.AddMinutes(20), DateTimeKind.Utc),
+            NumberOfGuests = 2,
+            Status = BookingStatuses.Confirmed
+        });
+        await db.SaveChangesAsync();
+
+        var service = new SessionService(db, new TestPosNotificationService(), BuildBookingRulesConfig(15));
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
             service.StartAsync(99, new StartSessionRequest { BookingId = 1 }, CancellationToken.None));
+
+        Assert.Equal("Khung giờ hiện tại đã có người booking bàn này, không thể mở bàn sớm.", exception.Message);
     }
 
     [Fact]
@@ -223,7 +254,7 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenMinimumSixtyMinutesApplies_ReturnsBillableSixtyMinutes()
+    public async Task GetSummaryAsync_WhenMinimumSixtyMinutesExists_UsesActualMinutes()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -238,12 +269,12 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(1, summary.CurrentDurationMinutes);
-        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(25000, summary.TimeSubtotalAmount);
+        Assert.Equal(1, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(416.67m, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenBillingBlockThirtyApplies_RoundsUpToSixtyMinutes()
+    public async Task GetSummaryAsync_WhenBillingBlockThirtyExists_UsesActualMinutes()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -258,8 +289,8 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(31, summary.Assignments[0].ActualDurationMinutes);
-        Assert.Equal(60, summary.Assignments[0].BillableDurationMinutes);
-        Assert.Equal(60000, summary.TimeSubtotalAmount);
+        Assert.Equal(31, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(31000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
@@ -280,11 +311,12 @@ public class SessionServiceTests
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
         Assert.Equal(2, summary.Assignments.Count);
-        Assert.Equal(90000, summary.TimeSubtotalAmount);
+        // 61' thực vẫn tính đúng 61', không làm tròn theo block 30'.
+        Assert.Equal(61000, summary.TimeSubtotalAmount);
     }
 
     [Fact]
-    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_AppliesMinimumAndBlockPerContinuousTableSlot()
+    public async Task GetSummaryAsync_WhenTransferredMultipleTimes_UsesActualMinutesPerAssignment()
     {
         using var db = CreateDb();
         var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
@@ -301,10 +333,200 @@ public class SessionServiceTests
 
         var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
 
+        // 31' thực qua nhiều lần chuyển bàn vẫn tính đúng 31', không top-up vào bàn cuối.
         Assert.Equal(31, summary.ActualDurationMinutes);
-        Assert.Equal(45, summary.BillableDurationMinutes);
-        Assert.Equal(45, summary.Assignments.Sum(x => x.BillableDurationMinutes));
-        Assert.Equal(45000, summary.TimeSubtotalAmount);
+        Assert.Equal(31, summary.BillableDurationMinutes);
+        Assert.Equal(31, summary.Assignments.Sum(x => x.BillableDurationMinutes));
+        Assert.Equal(31000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenPlayedThreeMinutesWithMinimumThirty_ChargesThreeMinutes()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(3), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(3) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(3, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(3000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenPlayedTwentyNineMinutesWithMinimumThirty_ChargesTwentyNineMinutes()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(29), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(29) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(29, summary.Assignments[0].BillableDurationMinutes);
+        Assert.Equal(29000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_WhenTransferredToDifferentRateTable_ChargesEachAssignmentIndependently()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        db.PricingPlans.Add(new PricingPlan { PricingPlanId = 1, Name = "Default Plan", IsDefault = true, IsActive = true, StartsAtUtc = startedAt.AddDays(-1) });
+        db.PricingPlanRules.Add(new PricingPlanRule { PricingPlanRuleId = 1, PricingPlanId = 1, TableTypeId = 1, DayType = 1, StartTime = TimeSpan.Zero, EndTime = new TimeSpan(23, 59, 59), HourlyRate = 60000, MinimumMinutes = 30, BillingBlockMinutes = 15, IsActive = true });
+        db.PricingPlanRules.Add(new PricingPlanRule { PricingPlanRuleId = 2, PricingPlanId = 1, TableTypeId = 2, DayType = 1, StartTime = TimeSpan.Zero, EndTime = new TimeSpan(23, 59, 59), HourlyRate = 90000, MinimumMinutes = 30, BillingBlockMinutes = 15, IsActive = true });
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "A", TableName = "Table A", TableTypeId = 1, OperationalStatus = 1, IsActive = true });
+        db.VenueTables.Add(new VenueTable { TableId = 2, ZoneId = 1, TableCode = "B", TableName = "Table B", TableTypeId = 2, OperationalStatus = 2, IsActive = true });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", Status = 2, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(30), OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt, EndedAtUtc = startedAt.AddMinutes(10) });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 2, StartedAtUtc = startedAt.AddMinutes(10), EndedAtUtc = startedAt.AddMinutes(30) });
+        await db.SaveChangesAsync();
+
+        var summary = await new SessionService(db).GetSummaryAsync(1, CancellationToken.None);
+
+        Assert.Equal(10000, summary.Assignments.Single(x => x.TableId == 1).Amount);
+        Assert.Equal(30000, summary.Assignments.Single(x => x.TableId == 2).Amount);
+        Assert.Equal(40000, summary.TimeSubtotalAmount);
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenDepositExceedsGrandTotal_MarksInvoicePaidAndForfeitsExcessAfterSessionStarted()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 150, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+
+        var response = await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(150), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.True(response.InvoiceGenerated);
+        Assert.Equal(150000, invoice.GrandTotalAmount);
+        Assert.Equal(150000, invoice.PaidAmount);
+        Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
+        Assert.Equal(150000, deposit.AppliedAmount);
+        Assert.Equal(50000, deposit.ForfeitedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(BookingDepositStatuses.AppliedToInvoice, deposit.Status);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+        Assert.NotNull(response.DepositRefundSummary);
+        Assert.Equal(50000, response.DepositRefundSummary!.ForfeitedAmount);
+        Assert.Equal(0, response.DepositRefundSummary.PendingRefundAmount);
+        Assert.Equal(0, response.DepositRefundSummary.RefundableBalance);
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenDepositIsLessThanGrandTotal_MarksInvoicePartiallyPaid()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 250, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+
+        await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(250), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        // 250' thực -> làm tròn block 15' -> 255' -> 255.000đ (cọc 200.000 < tổng => trả thiếu)
+        Assert.Equal(250000, invoice.GrandTotalAmount);
+        Assert.Equal(200000, invoice.PaidAmount);
+        Assert.Equal(InvoicePaymentStatuses.PartiallyPaid, invoice.PaymentStatus);
+        Assert.Equal(200000, deposit.AppliedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(BookingDepositStatuses.AppliedToInvoice, deposit.Status);
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenDepositEqualsGrandTotal_MarksInvoicePaidWithoutRefund()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        // 200' thực -> làm tròn block 15' -> 210' -> 210.000đ; đặt cọc bằng đúng tổng.
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 200, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+
+        await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(200), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(200000, invoice.GrandTotalAmount);
+        Assert.Equal(200000, invoice.PaidAmount);
+        Assert.Equal(InvoicePaymentStatuses.Paid, invoice.PaymentStatus);
+        Assert.Equal(200000, deposit.AppliedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenDepositIsNotPaid_DoesNotApplyDeposit()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 30, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Pending);
+        await db.SaveChangesAsync();
+
+        await new SessionService(db).CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(30), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(30000, invoice.GrandTotalAmount);
+        Assert.Equal(0, invoice.PaidAmount);
+        Assert.Equal(InvoicePaymentStatuses.Unpaid, invoice.PaymentStatus);
+        Assert.Equal(0, deposit.AppliedAmount);
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenCalledTwice_DoesNotCreateSecondInvoiceOrApplyDepositTwice()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 60, depositPaidAmount: 30000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+        var service = new SessionService(db);
+
+        await service.CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(60), GenerateInvoice = true }, CancellationToken.None);
+        await service.CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(60), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        Assert.Equal(30000, invoice.PaidAmount);
+        Assert.Equal(1, await db.Payments.CountAsync());
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CloseWithSummaryAsync_WhenCalledTwiceWithExcessDeposit_DoesNotDuplicatePaymentOrForfeitedAmount()
+    {
+        using var db = CreateDb();
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        SeedSessionWithBookingDeposit(db, startedAt, durationMinutes: 150, depositPaidAmount: 200000, depositStatus: BookingDepositStatuses.Paid);
+        await db.SaveChangesAsync();
+        var service = new SessionService(db);
+
+        await service.CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(150), GenerateInvoice = true }, CancellationToken.None);
+        await service.CloseWithSummaryAsync(1, 99, new CloseSessionRequest { EndedAtUtc = startedAt.AddMinutes(150), GenerateInvoice = true }, CancellationToken.None);
+
+        var invoice = await db.Invoices.SingleAsync();
+        var deposit = await db.BookingDeposits.SingleAsync();
+        Assert.Equal(150000, invoice.PaidAmount);
+        Assert.Equal(150000, deposit.AppliedAmount);
+        Assert.Equal(50000, deposit.ForfeitedAmount);
+        Assert.Equal(0, deposit.RefundedAmount);
+        Assert.Equal(1, await db.Payments.CountAsync());
+        Assert.Empty(await db.BookingDepositRefunds.ToListAsync());
     }
 
     [Fact]
@@ -359,6 +581,38 @@ public class SessionServiceTests
         SeedPricing(db, startUtc, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
     }
 
+    private static void SeedSessionWithBookingDeposit(PoolHubDbContext db, DateTime startedAt, int durationMinutes, decimal depositPaidAmount, int depositStatus)
+    {
+        SeedPricing(db, startedAt, hourlyRate: 60000, minimumMinutes: 30, billingBlockMinutes: 15);
+        db.Customers.Add(new Customer { CustomerId = 1, FullName = "Deposit Customer", PhoneNumber = "0900000000", Status = true });
+        db.Floors.Add(new Floor { FloorId = 1, Name = "Floor 1" });
+        db.Zones.Add(new Zone { ZoneId = 1, FloorId = 1, Name = "Zone 1" });
+        db.VenueTables.Add(new VenueTable { TableId = 1, ZoneId = 1, TableCode = "T1", TableName = "Table 1", TableTypeId = 1, OperationalStatus = 2, IsActive = true });
+        db.Bookings.Add(new Booking
+        {
+            BookingId = 1,
+            BookingCode = "BK1",
+            CustomerId = 1,
+            TableId = 1,
+            StartTimeUtc = startedAt,
+            EndTimeUtc = startedAt.AddMinutes(durationMinutes),
+            NumberOfGuests = 2,
+            Status = BookingStatuses.InProgress
+        });
+        db.BookingDeposits.Add(new BookingDeposit
+        {
+            BookingDepositId = 1,
+            BookingId = 1,
+            RequiredAmount = depositPaidAmount,
+            PaidAmount = depositPaidAmount,
+            Status = depositStatus,
+            PaidAtUtc = depositStatus == BookingDepositStatuses.Paid ? startedAt.AddMinutes(-5) : null,
+            DueAtUtc = startedAt.AddHours(-1)
+        });
+        db.Sessions.Add(new Session { SessionId = 1, SessionCode = "SS1", BookingId = 1, CustomerId = 1, Status = 1, StartedAtUtc = startedAt, OpenedByUserId = 99 });
+        db.SessionTableAssignments.Add(new SessionTableAssignment { SessionId = 1, TableId = 1, StartedAtUtc = startedAt });
+    }
+
     private static IConfiguration BuildBookingRulesConfig(int earlyCheckInMinutes) =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -370,19 +624,33 @@ public class SessionServiceTests
     private static void SeedPricing(PoolHubDbContext db, DateTime startedAt, decimal hourlyRate, int minimumMinutes, int billingBlockMinutes)
     {
         db.PricingPlans.Add(new PricingPlan { PricingPlanId = 1, Name = "Default Plan", IsDefault = true, IsActive = true, StartsAtUtc = startedAt.AddDays(-1) });
-        db.PricingPlanRules.Add(new PricingPlanRule
-        {
-            PricingPlanRuleId = 1,
-            PricingPlanId = 1,
-            TableTypeId = 1,
-            DayType = 1,
-            StartTime = TimeSpan.Zero,
-            EndTime = new TimeSpan(23, 59, 59),
-            HourlyRate = hourlyRate,
-            MinimumMinutes = minimumMinutes,
-            BillingBlockMinutes = billingBlockMinutes,
-            IsActive = true
-        });
+        db.PricingPlanRules.AddRange(
+            new PricingPlanRule
+            {
+                PricingPlanRuleId = 1,
+                PricingPlanId = 1,
+                TableTypeId = 1,
+                DayType = 1,
+                StartTime = TimeSpan.Zero,
+                EndTime = new TimeSpan(23, 59, 59),
+                HourlyRate = hourlyRate,
+                MinimumMinutes = minimumMinutes,
+                BillingBlockMinutes = billingBlockMinutes,
+                IsActive = true
+            },
+            new PricingPlanRule
+            {
+                PricingPlanRuleId = 2,
+                PricingPlanId = 1,
+                TableTypeId = 1,
+                DayType = 2,
+                StartTime = TimeSpan.Zero,
+                EndTime = new TimeSpan(23, 59, 59),
+                HourlyRate = hourlyRate,
+                MinimumMinutes = minimumMinutes,
+                BillingBlockMinutes = billingBlockMinutes,
+                IsActive = true
+            });
     }
 
     private sealed class TestPosNotificationService : IPosNotificationService

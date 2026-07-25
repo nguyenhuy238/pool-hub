@@ -21,20 +21,19 @@ using EntityCustomer = PoolHub.Core.Entities.Customer;
 namespace PoolHub.Services.Booking;
 
 [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
-public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IClock? clock = null, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IBookingService
+public class BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger, IPosNotificationService posNotificationService, IBookingDepositRefundService? refundService = null, IClock? clock = null, IConfiguration? config = null, IHttpClientFactory? httpClientFactory = null) : IBookingService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
+    private IBookingDepositRefundService RefundService => refundService ?? new BookingDepositRefundService(db, null, _clock);
     private const int BookingDepositPercent = 30;
     private const decimal MinimumDepositAmount = 50000m;
     private const int DepositHoldMinutes = 10;
     private const int NoShowGraceMinutes = 15;
-    private const int LargeBookingTableThreshold = 3;
-    private const int FullBookingPercentThreshold = 70;
     private const int CancellationRefundHours = 2;
     private const int MaxActiveBookingsPerPhonePerDay = 2;
 
     public BookingService(PoolHubDbContext db, IEmailService emailService, ILogger<BookingService> logger)
-        : this(db, emailService, logger, new NoOpPosNotificationService(), null, null, null)
+        : this(db, emailService, logger, new NoOpPosNotificationService(), null, null, null, null)
     {
     }
 
@@ -106,6 +105,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             throw new ConflictException("Booking already has a session and cannot be changed.");
 
         var tableIds = NormalizeTableIds(request.TableIds, request.TableId);
+        if (tableIds.Count == 0) throw new ValidationException("At least one table must be selected.");
         await EnsureTablesCanBeBookedAsync(tableIds, booking.BookingId, request.StartTimeUtc, request.EndTimeUtc, ct);
 
         var estimated = await EstimateAmountAsync(tableIds, request.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
@@ -338,9 +338,14 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             var refund = request.CancelledByVenue || booking.StartTimeUtc - now >= TimeSpan.FromHours(CancellationRefundHours);
             if (refund)
             {
-                deposit.Status = BookingDepositStatuses.Refunded;
-                deposit.RefundedAmount = deposit.PaidAmount;
-                deposit.RefundedAtUtc = now;
+                if (request.CancelledByVenue)
+                {
+                    await RefundService.CreateVenueFaultRefundAsync(deposit.BookingDepositId, null, ct);
+                }
+                else
+                {
+                    await RefundService.CreateEligibleCancellationRefundAsync(deposit.BookingDepositId, null, ct);
+                }
             }
             else
             {
@@ -402,16 +407,13 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         ValidateBookingPeriod(request.StartTimeUtc, request.EndTimeUtc);
 
         var requestedTableIds = NormalizeTableIds(request.TableIds, request.TableId);
-        var totalActiveTables = await db.VenueTables.CountAsync(x => x.IsActive && x.OperationalStatus != 4 && x.OperationalStatus != 5, ct);
-        var selectedCount = requestedTableIds.Count > 0 ? requestedTableIds.Count : 1;
-        var requiresApproval = RequiresApproval(selectedCount, totalActiveTables);
+        var activeSessionTableIds = await GetActiveSessionTableIdsAsync(requestedTableIds, ct);
 
         var query = from table in db.VenueTables.AsNoTracking()
                     join type in db.TableTypes.AsNoTracking() on table.TableTypeId equals type.TableTypeId
                     where table.IsActive
                        && table.OperationalStatus != 4
                        && table.OperationalStatus != 5
-                       && !db.SessionTableAssignments.Any(a => a.TableId == table.TableId && a.EndedAtUtc == null)
                     select new { table, type };
         if (requestedTableIds.Count > 0) query = query.Where(x => requestedTableIds.Contains(x.table.TableId));
         if (request.TableTypeId.HasValue) query = query.Where(x => x.table.TableTypeId == request.TableTypeId.Value);
@@ -420,6 +422,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var result = new List<AvailableTableDto>();
         foreach (var row in rows)
         {
+            if (activeSessionTableIds.Contains(row.table.TableId)) continue;
             var conflict = await HasConflictAsync(0, [row.table.TableId], request.StartTimeUtc, request.EndTimeUtc, ct);
             var estimated = await EstimateAmountAsync([row.table.TableId], row.table.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
             if (!conflict)
@@ -435,7 +438,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                     EstimatedAmount = estimated,
                     DepositRequiredAmount = CalculateDepositRequiredAmount(estimated),
                     DepositPercent = BookingDepositPercent,
-                    RequiresApproval = requiresApproval
+                    RequiresApproval = false
                 });
             }
         }
@@ -537,12 +540,10 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         await EnsureTablesCanBeBookedAsync(tableIds, 0, request.StartTimeUtc, request.EndTimeUtc, ct);
 
         var estimated = await EstimateAmountAsync(tableIds, request.TableTypeId, request.StartTimeUtc, request.EndTimeUtc, ct);
-        var totalActiveTables = await db.VenueTables.CountAsync(x => x.IsActive && x.OperationalStatus != 4 && x.OperationalStatus != 5, ct);
-        var requiresApproval = forceApprovalForLargeBooking && RequiresApproval(tableIds.Count, totalActiveTables);
         var now = _clock.UtcNow;
-        var status = requiresApproval ? BookingStatuses.PendingApproval : BookingStatuses.PendingDeposit;
-        var holdExpiresAtUtc = status == BookingStatuses.PendingDeposit ? now.AddMinutes(DepositHoldMinutes) : (DateTime?)null;
-        if (source == "Public" && status == BookingStatuses.PendingDeposit)
+        var status = BookingStatuses.PendingDeposit;
+        var holdExpiresAtUtc = now.AddMinutes(DepositHoldMinutes);
+        if (source == "Public")
         {
             _ = await GetBankTransferQrConfigAsync(required: true, ct);
         }
@@ -559,7 +560,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             NumberOfGuests = request.NumberOfGuests,
             Status = status,
             EstimatedAmount = estimated,
-            RequiresApproval = requiresApproval,
+            RequiresApproval = false,
             HoldExpiresAtUtc = holdExpiresAtUtc,
             Source = source,
             Note = request.Note?.Trim()
@@ -567,7 +568,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         db.Bookings.Add(entity);
         await db.SaveChangesAsync(ct);
         db.BookingTables.AddRange(tableIds.Select(tableId => new PoolHub.Core.Entities.BookingTable { BookingId = entity.BookingId, TableId = tableId }));
-        db.BookingDeposits.Add(NewDeposit(entity.BookingId, estimated, holdExpiresAtUtc ?? now.AddMinutes(DepositHoldMinutes)));
+        db.BookingDeposits.Add(NewDeposit(entity.BookingId, estimated, holdExpiresAtUtc));
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
 
@@ -636,8 +637,33 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         if (missing.Count > 0) throw new NotFoundException($"Table not found: {string.Join(", ", missing)}.");
         var unavailable = tables.FirstOrDefault(x => !x.IsActive || x.OperationalStatus is 4 or 5);
         if (unavailable is not null) throw new BusinessRuleException($"Table is not available for booking (Status: {unavailable.OperationalStatus}).");
+        var activeSessionTableIds = await GetActiveSessionTableIdsAsync(tableIds, ct);
+        if (activeSessionTableIds.Count > 0)
+        {
+            var activeTableLabels = tables
+                .Where(x => activeSessionTableIds.Contains(x.TableId))
+                .OrderBy(x => x.TableCode)
+                .Select(x => string.IsNullOrWhiteSpace(x.TableCode) ? x.TableName : x.TableCode)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+            var details = activeTableLabels.Count > 0
+                ? $" Active tables: {string.Join(", ", activeTableLabels)}."
+                : string.Empty;
+            throw new ConflictException($"One or more tables are currently in use and cannot be booked.{details}");
+        }
         if (await HasConflictAsync(excludeBookingId, tableIds, startTimeUtc, endTimeUtc, ct))
             throw new ConflictException("Table is already booked for the selected time.");
+    }
+
+    private async Task<HashSet<long>> GetActiveSessionTableIdsAsync(IReadOnlyCollection<long> tableIds, CancellationToken ct)
+    {
+        var query = from assignment in db.SessionTableAssignments.AsNoTracking()
+                    join session in db.Sessions.AsNoTracking() on assignment.SessionId equals session.SessionId
+                    where assignment.EndedAtUtc == null
+                       && session.Status == 1
+                    select assignment.TableId;
+        if (tableIds.Count > 0) query = query.Where(tableId => tableIds.Contains(tableId));
+        return (await query.ToListAsync(ct)).ToHashSet();
     }
 
     private async Task<bool> HasConflictAsync(long excludeBookingId, List<long> tableIds, DateTime startTimeUtc, DateTime endTimeUtc, CancellationToken ct)
@@ -703,14 +729,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
 
     private static decimal CalculateTimeAmount(decimal hourlyRate, int durationMinutes, int minimumMinutes, int billingBlockMinutes)
     {
-        var billableMinutes = Math.Max(durationMinutes, minimumMinutes);
-        if (billingBlockMinutes > 0)
-        {
-            var remainder = billableMinutes % billingBlockMinutes;
-            if (remainder > 0) billableMinutes += billingBlockMinutes - remainder;
-        }
-
-        return Math.Round(((decimal)billableMinutes / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
+        return Math.Round(((decimal)Math.Max(0, durationMinutes) / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
     }
 
     public static decimal CalculateDepositRequiredAmount(decimal estimatedAmount)
@@ -733,6 +752,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         var tableIds = await GetBookingTableIdsAsync(booking, ct);
         var deposit = await db.BookingDeposits.AsNoTracking().FirstOrDefaultAsync(x => x.BookingId == booking.BookingId, ct);
         var instruction = deposit is null ? null : await BuildDepositPaymentInstructionAsync(booking, customer?.PhoneNumber ?? string.Empty, deposit, ct);
+        var refundSummary = deposit is null ? null : await RefundService.GetSummaryForBookingAsync(booking.BookingId, ct);
         return new BookingDto
         {
             BookingId = booking.BookingId,
@@ -759,6 +779,7 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             StatusText = GetBookingStatusText(booking.Status),
             DepositStatusText = deposit is null ? null : GetDepositStatusText(deposit.Status),
             DepositPaymentInstruction = instruction,
+            DepositRefundSummary = refundSummary,
             Deposit = deposit is null ? null : new BookingDepositDto
             {
                 BookingDepositId = deposit.BookingDepositId,
@@ -948,7 +969,11 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
                             payosError = descEl.GetString() ?? payosError;
                         }
                     }
-                    throw new BusinessRuleException($"Không thể tạo mã QR thanh toán cọc PayOS. Vui lòng kiểm tra lại cấu hình PayOS. Lỗi từ PayOS: {payosError}");
+                    logger.LogWarning("PayOS did not return a QR for deposit #{DepositId}. Falling back to bank transfer QR. Error: {PayOsError}", deposit.BookingDepositId, payosError);
+                    if (settings.CanBuildDynamicQr)
+                    {
+                        vietQrUrl = BankTransferQrHelper.BuildVietQrUrl(settings, deposit.RequiredAmount, transferContent);
+                    }
                 }
             }
             catch (BusinessRuleException)
@@ -958,7 +983,10 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Error creating PayOS payment request for deposit #{DepositId}", deposit.BookingDepositId);
-                throw new BusinessRuleException("Lỗi kết nối tới cổng thanh toán PayOS. Vui lòng thử lại sau.");
+                if (settings.CanBuildDynamicQr)
+                {
+                    vietQrUrl = BankTransferQrHelper.BuildVietQrUrl(settings, deposit.RequiredAmount, transferContent);
+                }
             }
         }
         else if (settings.CanBuildDynamicQr)
@@ -1120,13 +1148,6 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         return result;
     }
 
-    private static bool RequiresApproval(int selectedTableCount, int totalActiveTableCount)
-    {
-        if (selectedTableCount > LargeBookingTableThreshold) return true;
-        if (totalActiveTableCount <= 0) return false;
-        return selectedTableCount * 100m / totalActiveTableCount >= FullBookingPercentThreshold;
-    }
-
     private static bool IsAlignedToThirtyMinutes(DateTime value) =>
         value.Minute % 30 == 0 && value.Second == 0 && value.Millisecond == 0;
 
@@ -1146,18 +1167,9 @@ public class BookingService(PoolHubDbContext db, IEmailService emailService, ILo
         return ruleDayType == localDayType;
     }
 
-    private async Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
+    private Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
     {
-        var specialDate = await db.PricingSpecialDates
-            .Where(x => x.Date.Date == date.Date)
-            .FirstOrDefaultAsync(ct);
-        
-        if (specialDate != null)
-        {
-            return specialDate.DayType;
-        }
-        
-        return date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1;
+        return Task.FromResult(date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1);
     }
 
 

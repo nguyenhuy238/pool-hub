@@ -88,9 +88,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     return invoices.filter(inv => {
       if (invoiceStatusFilter) {
         if (invoiceStatusFilter === "cancelled" && Number((inv as any).status) !== 3) return false;
-        if (invoiceStatusFilter === "paid" && Number((inv as any).paymentStatus) !== 3 && Number((inv as any).paidAmount) < Number((inv as any).grandTotalAmount)) return false;
-        if (invoiceStatusFilter === "unpaid" && Number((inv as any).paymentStatus) !== 1 && Number((inv as any).paidAmount) !== 0) return false;
-        if (invoiceStatusFilter === "partial" && Number((inv as any).paymentStatus) !== 2) return false;
+        if (invoiceStatusFilter === "paid" && (Number((inv as any).status) === 3 || (Number((inv as any).paymentStatus) !== 3 && Number((inv as any).paidAmount) < Number((inv as any).grandTotalAmount)))) return false;
+        if (invoiceStatusFilter === "unpaid" && (Number((inv as any).status) === 3 || Number((inv as any).paymentStatus) === 3)) return false;
       }
       if (invoiceSearch.trim()) {
         const q = invoiceSearch.trim().toLowerCase();
@@ -494,7 +493,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                     <option value="">Tất cả trạng thái</option>
                     <option value="paid">Đã thanh toán</option>
                     <option value="unpaid">Chưa thanh toán</option>
-                    <option value="partial">Thanh toán một phần</option>
                     <option value="cancelled">Đã hủy</option>
                   </select>
                   <select

@@ -40,7 +40,7 @@ export function resolveDashboardConfig(context: DashboardContext): DashboardConf
       actions: [
         { label: "Quản lý người dùng", href: "/admin/users" },
         { label: "Bảng giá", href: "/management/pricing-plans" },
-        { label: "Ngày đặc biệt", href: "/management/pricing-special-dates" },
+
         { label: "Phân tích", href: "/admin/analytics", primary: true },
         { label: "Nhật ký hệ thống", href: "/admin/audit-logs" },
         { label: "Cấu hình", href: "/admin/settings" }
@@ -79,35 +79,18 @@ export function resolveDashboardConfig(context: DashboardContext): DashboardConf
         metric("upcomingBookings", "Lượt đặt bàn sắp đến", summary?.upcomingBookings ?? 0, "Trong 2 giờ tới", "warning"),
         metric("pendingBookings", "Lượt đặt bàn cần xử lý", summary?.pendingBookings ?? 0),
         metric("ordersToday", "Đơn hàng hôm nay", summary?.ordersToday ?? 0),
-        metric("longRunningSessions", "Phiên chơi cần kiểm tra", summary?.longRunningSessions ?? 0, "Trên 3 giờ", "warning")
-      ],
+        metric("longRunningSessions", "Phiên chơi cần kiểm tra", summary?.longRunningSessions ?? 0, "Trên 3 giờ", "warning"),
+        paymentAllowed ? metric("unpaidInvoices", "Hóa đơn chưa thanh toán", summary?.unpaidInvoices ?? 0, undefined, "danger") : null,
+        paymentAllowed ? metric("successfulPaymentsToday", "Thanh toán thành công hôm nay", summary?.successfulPaymentsToday ?? 0, undefined, "success") : null
+      ].filter(Boolean) as DashboardMetric[],
       actions: [
         { label: "Mở bàn", href: "/operation/floor-map", primary: true },
         { label: "Sơ đồ bàn", href: "/operation/floor-map" },
         { label: "Xử lý đặt bàn", href: "/operation/bookings" },
-        { label: "Tạo đơn hàng", href: "/operation/orders" }
-      ]
-    };
-  }
-
-  if (hasRole(roles, ROLES.CASHIER)) {
-    return {
-      title: "Tổng quan",
-      description: "Tổng quan thu ngân và xử lý hóa đơn.",
-      metrics: [
-        paymentAllowed ? metric("unpaidInvoices", "Hóa đơn chưa thanh toán", summary?.unpaidInvoices ?? 0, undefined, "danger") : null,
-        paymentAllowed ? metric("invoicesToday", "Hóa đơn vừa tạo hôm nay", summary?.invoicesToday ?? 0) : null,
-        paymentAllowed ? metric("successfulPaymentsToday", "Thanh toán thành công hôm nay", summary?.successfulPaymentsToday ?? 0, undefined, "success") : null,
-        paymentAllowed ? metric("pendingPayments", "Giao dịch đang chờ", summary?.pendingPayments ?? 0, undefined, "warning") : null,
-        reportsAllowed || paymentAllowed ? metric("todayRevenue", "Doanh thu hôm nay", money(summary?.todayRevenue ?? 0), undefined, "success") : null,
-        metric("unreadNotifications", "Thông báo chưa đọc", summary?.unreadNotifications ?? 0)
-      ].filter(Boolean) as DashboardMetric[],
-      actions: [
-        { label: "Tìm hóa đơn", href: "/operation/invoices", primary: true },
-        { label: "Thanh toán", href: "/operation/invoices" },
-        { label: "Lịch sử giao dịch", href: "/admin/payments/history" },
-        { label: "Mã giảm giá", href: "/admin/discounts" }
-      ]
+        { label: "Tạo đơn hàng", href: "/operation/orders" },
+        paymentAllowed ? { label: "Hóa đơn", href: "/operation/invoices" } : null,
+        paymentAllowed ? { label: "Lịch sử giao dịch", href: "/admin/payments/history" } : null
+      ].filter(Boolean) as DashboardConfig["actions"]
     };
   }
 

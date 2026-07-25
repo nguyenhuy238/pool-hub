@@ -9,6 +9,7 @@ import { OvernightToggle } from "@/components/OvernightToggle";
 import { MultiTableSelector, SelectedTablesSummary } from "@/components/booking/MultiTableSelector";
 import { normalizeTableIds } from "@/lib/bookingTables";
 import { getGuestCapacityError, getSelectedTablesCapacity } from "@/lib/bookingCapacity";
+import { validateOptionalEmail, validateVietnamPhone } from "@/lib/validation";
 import type { Booking, VenueTable, PricingPlan, PricingPlanRule } from "@/types";
 import "./booking-modal.css";
 
@@ -26,6 +27,8 @@ export function BookingModal({
   const [customerName, setCustomerName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
+  const [touchedFields, setTouchedFields] = useState({ phoneNumber: false, email: false });
+  const [focusedFields, setFocusedFields] = useState({ phoneNumber: false, email: false });
   const [numberOfGuests, setNumberOfGuests] = useState("2");
   const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
   const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
@@ -182,6 +185,10 @@ export function BookingModal({
   const guestCapacityError = selectedTableIds.length
     ? getGuestCapacityError(Number(numberOfGuests), maximumGuestCapacity)
     : null;
+  const phoneError = validateVietnamPhone(phoneNumber);
+  const emailError = validateOptionalEmail(email);
+  const showPhoneError = touchedFields.phoneNumber && !focusedFields.phoneNumber && Boolean(phoneError);
+  const showEmailError = touchedFields.email && !focusedFields.email && Boolean(emailError);
   const selectedTable = selectedTables[0];
   const selectedStartSlot = timeSlots[selectedSlotIndexes[0]];
   const selectedEndSlot = timeSlots[selectedSlotIndexes[1]];
@@ -266,8 +273,13 @@ export function BookingModal({
   }, [selectedSlotIndexes, selectedTables.length, getSlotPrice]);
 
   const handleSubmit = async () => {
-    if (!customerName || !phoneNumber) {
+    setTouchedFields({ phoneNumber: true, email: true });
+    if (!customerName.trim() || !phoneNumber.trim()) {
       toast("Vui lòng nhập tên và số điện thoại khách hàng.", "error");
+      return;
+    }
+    if (phoneError || emailError) {
+      toast(phoneError || emailError, "error");
       return;
     }
     const normalizedTableIds = normalizeTableIds(selectedTableIds);
@@ -302,9 +314,9 @@ export function BookingModal({
 
       // Create booking payload
       const payload: Partial<Booking> = {
-        customerName,
-        phoneNumber,
-        email: email || undefined,
+        customerName: customerName.trim(),
+        phoneNumber: phoneNumber.trim().replace(/\s/g, ""),
+        email: email.trim() || undefined,
         numberOfGuests: Number(numberOfGuests),
         tableId: normalizedTableIds[0],
         tableIds: normalizedTableIds,
@@ -339,11 +351,40 @@ export function BookingModal({
             </label>
             <label>
               <span>Số điện thoại *</span>
-              <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="Nhập SĐT" />
+              <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phoneNumber}
+                onFocus={() => setFocusedFields((current) => ({ ...current, phoneNumber: true }))}
+                onBlur={() => {
+                  setTouchedFields((current) => ({ ...current, phoneNumber: true }));
+                  setFocusedFields((current) => ({ ...current, phoneNumber: false }));
+                }}
+                onChange={e => setPhoneNumber(e.target.value)}
+                placeholder="Nhập SĐT"
+                aria-invalid={showPhoneError}
+                aria-describedby={showPhoneError ? "booking-phone-error" : undefined}
+              />
+              {showPhoneError ? <small id="booking-phone-error" className="field-error">{phoneError}</small> : null}
             </label>
             <label>
               <span>Email (nhận thông báo)</span>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" />
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onFocus={() => setFocusedFields((current) => ({ ...current, email: true }))}
+                onBlur={() => {
+                  setTouchedFields((current) => ({ ...current, email: true }));
+                  setFocusedFields((current) => ({ ...current, email: false }));
+                }}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                aria-invalid={showEmailError}
+                aria-describedby={showEmailError ? "booking-email-error" : undefined}
+              />
+              {showEmailError ? <small id="booking-email-error" className="field-error">{emailError}</small> : null}
             </label>
             <label>
               <span>Số lượng khách</span>

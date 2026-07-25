@@ -1,0 +1,124 @@
+<mxfile host="app.diagrams.net" modified="2026-07-24T00:00:00.000Z" agent="Codex" version="24.7.17" type="device">
+  <diagram id="poolhub-context" name="PoolHub - Context Diagram">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="CONTEXT DIAGRAM — POOLHUB" style="text;html=1;align=center;verticalAlign=middle;fontSize=28;fontStyle=1;fontColor=#123C33;" vertex="1" parent="1">
+          <mxGeometry x="390" y="25" width="920" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Phạm vi hệ thống, actor và các luồng dữ liệu ở mức tổng quan" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontColor=#60746D;" vertex="1" parent="1">
+          <mxGeometry x="450" y="70" width="800" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="actorsLabel" value="ACTOR NGHIỆP VỤ" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#2453A6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="115" width="230" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="externalLabel" value="HỆ THỐNG BÊN NGOÀI" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#9A4B13;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="115" width="260" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="guest" value="&lt;b&gt;GUEST&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Khách chưa đăng nhập&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FF;strokeColor=#4C78C2;strokeWidth=2;fontColor=#183B66;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="55" y="165" width="225" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="customer" value="&lt;b&gt;CUSTOMER&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Khách hàng thành viên&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FF;strokeColor=#4C78C2;strokeWidth=2;fontColor=#183B66;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="55" y="345" width="225" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="staff" value="&lt;b&gt;STAFF&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Nhân viên vận hành / POS&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FF;strokeColor=#4C78C2;strokeWidth=2;fontColor=#183B66;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="55" y="525" width="225" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="manager" value="&lt;b&gt;MANAGER&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Quản lý trung tâm&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FF;strokeColor=#4C78C2;strokeWidth=2;fontColor=#183B66;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="55" y="705" width="225" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin" value="&lt;b&gt;ADMIN&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Quản trị hệ thống&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FF;strokeColor=#4C78C2;strokeWidth=2;fontColor=#183B66;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="55" y="885" width="225" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="systemShadow" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFD8CE;strokeColor=none;opacity=45;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="609" y="194" width="492" height="652" as="geometry"/>
+        </mxCell>
+        <mxCell id="poolhub" value="&lt;div style=&quot;text-align:center&quot;&gt;&lt;font style=&quot;font-size:30px&quot;&gt;&lt;b&gt;POOLHUB&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:15px;color:#BEE3D8&quot;&gt;HỆ THỐNG QUẢN LÝ TRUNG TÂM BI-A&lt;/font&gt;&lt;/div&gt;&lt;hr&gt;&lt;div style=&quot;text-align:left;line-height:1.75&quot;&gt;&lt;b&gt;Phạm vi nghiệp vụ&lt;/b&gt;&lt;br&gt;• Trang công khai &amp;amp; tài khoản khách hàng&lt;br&gt;• Đặt bàn, cọc &amp;amp; hoàn cọc&lt;br&gt;• Quản lý bàn, phiên chơi &amp;amp; order&lt;br&gt;• Hóa đơn, giảm giá &amp;amp; thanh toán&lt;br&gt;• Voucher &amp;amp; điểm thành viên&lt;br&gt;• Quản trị vận hành, người dùng &amp;amp; báo cáo&lt;br&gt;• Thông báo thời gian thực&lt;/div&gt;&lt;br&gt;&lt;div style=&quot;text-align:center;padding:9px;background:#0C4C40;border-radius:8px&quot;&gt;Next.js Web ↔ ASP.NET Core API / SignalR&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#126B58;gradientColor=#0A493E;gradientDirection=south;strokeColor=#073D34;strokeWidth=3;fontColor=#FFFFFF;fontSize=15;align=left;verticalAlign=top;spacingTop=24;spacingLeft=28;spacingRight=28;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="595" y="180" width="492" height="652" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="payment" value="&lt;b&gt;CỔNG THANH TOÁN / NGÂN HÀNG&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:13px&quot;&gt;PayOS · VietQR&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF1E6;strokeColor=#D97728;strokeWidth=2;fontColor=#7A3510;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="235" width="290" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="smtp" value="&lt;b&gt;DỊCH VỤ EMAIL&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:13px&quot;&gt;SMTP Server&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF1E6;strokeColor=#D97728;strokeWidth=2;fontColor=#7A3510;fontSize=16;align=center;verticalAlign=middle;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="560" width="290" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="infraLabel" value="PHỤ THUỘC HẠ TẦNG" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#58636B;" vertex="1" parent="1">
+          <mxGeometry x="660" y="875" width="390" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="sql" value="&lt;b&gt;SQL SERVER&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Dữ liệu nghiệp vụ&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F1F3F5;strokeColor=#7B8790;strokeWidth=2;fontColor=#39434A;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="645" y="925" width="185" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="redis" value="&lt;b&gt;REDIS&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Refresh token store&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#F1F3F5;strokeColor=#7B8790;strokeWidth=2;fontColor=#39434A;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="885" y="925" width="185" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="guestToSystem" value="Xem thông tin, giá, bàn trống;&lt;br&gt;đăng ký, đặt bàn, gửi đánh giá" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4C78C2;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#183B66;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="guest" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="systemToGuest" value="Nội dung công khai, lịch bàn;&lt;br&gt;kết quả booking &amp;amp; hướng dẫn cọc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#29907A;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#125848;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="guest">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="customerToSystem" value="Cập nhật hồ sơ, đặt bàn;&lt;br&gt;đổi voucher, yêu cầu OTP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4C78C2;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#183B66;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="customer" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="systemToCustomer" value="Hồ sơ, booking, phiên, hóa đơn;&lt;br&gt;voucher, điểm &amp;amp; trạng thái thanh toán" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#29907A;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#125848;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="customer">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="staffToSystem" value="Mở/chuyển/đóng phiên, order;&lt;br&gt;áp dụng giảm giá &amp;amp; thanh toán" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4C78C2;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#183B66;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="staff" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="systemToStaff" value="Sơ đồ bàn, phiên, order, hóa đơn;&lt;br&gt;cập nhật POS thời gian thực" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#29907A;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#125848;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="staff">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="managerToSystem" value="Duyệt booking; quản lý khách hàng,&lt;br&gt;giá, danh mục, kho, đánh giá" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4C78C2;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#183B66;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="manager" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="systemToManager" value="Dashboard, báo cáo, trạng thái vận hành;&lt;br&gt;giao dịch &amp;amp; audit log" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#29907A;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#125848;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="manager">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="adminToSystem" value="Quản lý user, role, quyền;&lt;br&gt;cấu hình hệ thống &amp;amp; dữ liệu nền" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4C78C2;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#183B66;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="admin" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="systemToAdmin" value="Trạng thái hệ thống, báo cáo;&lt;br&gt;nhật ký kiểm toán &amp;amp; phân quyền" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#29907A;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#125848;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="admin">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="systemToPayment" value="Tạo QR / yêu cầu thanh toán;&lt;br&gt;mã tham chiếu, số tiền" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97728;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#7A3510;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="payment">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="paymentToSystem" value="Webhook giao dịch / đối soát;&lt;br&gt;trạng thái cọc và hóa đơn" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97728;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#7A3510;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="payment" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="systemToSmtp" value="OTP đặt lại mật khẩu; email booking;&lt;br&gt;hoàn cọc, nhắc lịch &amp;amp; mời đánh giá" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97728;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#7A3510;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="smtp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="smtpToSystem" value="Kết quả gửi email / lỗi delivery" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97728;strokeWidth=2;endArrow=block;endFill=1;fontSize=11;fontColor=#7A3510;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="smtp" target="poolhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="systemToSql" value="Đọc / ghi dữ liệu nghiệp vụ" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;dashPattern=6 4;strokeColor=#7B8790;strokeWidth=2;startArrow=block;startFill=1;endArrow=block;endFill=1;fontSize=11;fontColor=#4D5961;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="sql">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="systemToRedis" value="Lưu, xoay vòng &amp;amp; thu hồi refresh token" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;dashPattern=6 4;strokeColor=#7B8790;strokeWidth=2;startArrow=block;startFill=1;endArrow=block;endFill=1;fontSize=11;fontColor=#4D5961;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="poolhub" target="redis">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="legend" value="&lt;b&gt;Chú thích:&lt;/b&gt; &lt;font color=&quot;#4C78C2&quot;&gt;━━ Actor → PoolHub&lt;/font&gt;&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#29907A&quot;&gt;━━ PoolHub → Actor&lt;/font&gt;&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#D97728&quot;&gt;━━ Tích hợp ngoài&lt;/font&gt;&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#7B8790&quot;&gt;┄┄ Phụ thuộc hạ tầng&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5D1;fontColor=#39434A;fontSize=12;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="315" y="1080" width="1070" height="55" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

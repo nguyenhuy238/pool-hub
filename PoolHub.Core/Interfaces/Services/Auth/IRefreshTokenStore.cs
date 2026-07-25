@@ -30,4 +30,9 @@ public interface IRefreshTokenStore
         string familyId,
         string? ipAddress,
         CancellationToken cancellationToken);
+
+    Task RevokeUserAsync(
+        long userId,
+        string? ipAddress,
+        CancellationToken cancellationToken);
 }

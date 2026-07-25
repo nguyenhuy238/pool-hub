@@ -6,12 +6,18 @@ export const metadata: Metadata = {
   title: defaultLandingSettings.seo.metaTitle,
   description: defaultLandingSettings.seo.metaDescription,
   keywords: defaultLandingSettings.seo.metaKeywords,
-  alternates: defaultLandingSettings.seo.canonicalUrl ? { canonical: defaultLandingSettings.seo.canonicalUrl } : undefined,
-  icons: defaultLandingSettings.generalInfo.faviconUrl ? { icon: defaultLandingSettings.generalInfo.faviconUrl } : undefined,
+  alternates: defaultLandingSettings.seo.canonicalUrl
+    ? { canonical: defaultLandingSettings.seo.canonicalUrl }
+    : undefined,
+  icons: defaultLandingSettings.generalInfo.faviconUrl
+    ? { icon: defaultLandingSettings.generalInfo.faviconUrl }
+    : undefined,
   openGraph: {
     title: defaultLandingSettings.seo.metaTitle,
     description: defaultLandingSettings.seo.metaDescription,
-    images: defaultLandingSettings.seo.ogImageUrl ? [defaultLandingSettings.seo.ogImageUrl] : undefined
+    images: defaultLandingSettings.seo.ogImageUrl
+      ? [defaultLandingSettings.seo.ogImageUrl]
+      : undefined
   }
 };
 

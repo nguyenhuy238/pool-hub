@@ -34,21 +34,23 @@ const nav: NavItem[] = [
   { href: "/operation/sessions", label: "Phiên chơi", roles: OPERATION_ROLES },
   { href: "/operation/orders", label: "Đơn hàng", roles: OPERATION_ROLES },
   { href: "/operation/invoices", label: "Hóa đơn", roles: OPERATION_ROLES },
+  { href: "/management/deposit-refunds", label: "Hoàn cọc", roles: [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF] },
   { href: "/management/products", label: "Sản phẩm", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/product-categories", label: "Danh mục sản phẩm", roles: MANAGEMENT_READ_ROLES },
   { href: "/management/pricing-plans", label: "Bảng giá", roles: MANAGEMENT_READ_ROLES },
-  { href: "/management/pricing-special-dates", label: "Ngày đặc biệt", roles: MANAGEMENT_READ_ROLES },
+
 
   { href: "/admin/users", label: "Người dùng", roles: [ROLES.ADMIN] },
   { href: "/admin/roles", label: "Vai trò và quyền hạn", roles: [ROLES.ADMIN] },
-  { href: "/admin/discounts", label: "Mã giảm giá", roles: [ROLES.ADMIN, ROLES.CASHIER] },
+  { href: "/admin/discounts", label: "Mã giảm giá", roles: OPERATION_ROLES, permissions: [PERMISSIONS.DISCOUNTS_MANAGE] },
   { href: "/admin/inventory", label: "Tồn kho", roles: [ROLES.ADMIN, ROLES.MANAGER] },
   {
     label: "Thanh toán",
-    roles: [ROLES.ADMIN, ROLES.CASHIER],
+    roles: OPERATION_ROLES,
+    permissions: [PERMISSIONS.PAYMENTS_MANAGE],
     children: [
-      { href: "/admin/payments/methods", label: "Phương thức thanh toán", roles: [ROLES.ADMIN, ROLES.CASHIER] },
-      { href: "/admin/payments/history", label: "Lịch sử giao dịch", roles: [ROLES.ADMIN, ROLES.CASHIER] },
+      { href: "/admin/payments/methods", label: "Phương thức thanh toán", roles: OPERATION_ROLES, permissions: [PERMISSIONS.PAYMENTS_MANAGE] },
+      { href: "/admin/payments/history", label: "Lịch sử giao dịch", roles: OPERATION_ROLES, permissions: [PERMISSIONS.PAYMENTS_MANAGE] },
     ]
   },
   { href: "/admin/analytics", label: "Phân tích", roles: [ROLES.ADMIN, ROLES.MANAGER], permissions: [PERMISSIONS.REPORTS_VIEW] },
@@ -60,7 +62,9 @@ const nav: NavItem[] = [
 ];
 
 function canAccess(item: { roles: string[]; permissions?: string[] }, roles: string[], permissions: string[]) {
-  return item.roles.some((role) => roles.includes(role)) || Boolean(item.permissions?.some((permission) => permissions.includes(permission)));
+  const roleAllowed = !item.roles.length || item.roles.some((role) => roles.includes(role));
+  const permissionAllowed = !item.permissions?.length || item.permissions.some((permission) => permissions.includes(permission));
+  return roleAllowed && permissionAllowed;
 }
 
 const breadcrumbLabels: Record<string, string> = {
@@ -73,6 +77,7 @@ const breadcrumbLabels: Record<string, string> = {
   sessions: "Phiên chơi",
   orders: "Đơn hàng",
   invoices: "Hóa đơn",
+  "deposit-refunds": "Hoàn cọc",
   payments: "Thanh toán",
   reports: "Báo cáo",
   inventory: "Tồn kho",
@@ -88,7 +93,6 @@ const roleLabels: Record<string, string> = {
   [ROLES.ADMIN]: "Quản trị viên",
   [ROLES.MANAGER]: "Quản lý",
   [ROLES.STAFF]: "Nhân viên",
-  [ROLES.CASHIER]: "Thu ngân",
   [ROLES.CUSTOMER]: "Khách hàng",
   [ROLES.GUEST]: "Khách"
 };

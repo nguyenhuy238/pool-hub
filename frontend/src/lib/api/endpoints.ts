@@ -12,7 +12,7 @@ import type {
   PaymentMethod,
   PricingPlan,
   PricingPlanRule,
-  PricingSpecialDate,
+
   Product,
   ProductCategory,
   RecentAuditLog,
@@ -27,8 +27,25 @@ import type {
   CustomerDto,
   CustomerBookingHistory,
   CustomerSessionHistory,
-  CustomerInvoiceHistory
-  , Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport
+  CustomerInvoiceHistory,
+  CustomerPointHistory,
+  CustomerPortalProfile,
+  PagedResult,
+  Discount, InventoryTransaction, Payment, RevenueReport, TableUsageReport, ProductSalesReport, BookingReport, CustomerReport, PaymentMethodReport, InventoryReport,
+  PublicDepositRefund,
+  VerifyRefundRequest,
+  SubmitRefundMethodRequest,
+  DepositRefundListItem,
+  DepositRefundDetail,
+  DepositRefundBankInfo,
+  DepositRefundStatus,
+  DepositRefundMethod,
+  DepositRefundReason,
+  RejectRefundRequest,
+  RequestCustomerRefundUpdateRequest,
+  CompleteBankTransferRequest,
+  MarkRefundFailedRequest,
+  CompleteCashPickupRequest
 } from "@/types";
 
 type UpdateCustomerPayload = Pick<CustomerDto, "fullName" | "status"> & {
@@ -97,6 +114,26 @@ export const customerApi = {
   pointHistory: (id: number) => apiFetch<{ items?: any[] }>(`/api/customers/${id}/point-history`)
 };
 
+export const customerPortalApi = {
+  profile: () => apiFetch<CustomerPortalProfile>("/api/customer-portal/me"),
+  updateProfile: (body: { fullName: string; phoneNumber: string }) =>
+    apiFetch<CustomerPortalProfile>("/api/customer-portal/me", { method: "PUT", body: JSON.stringify(body) }),
+  bookings: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerBookingHistory>>(`/api/customer-portal/me/bookings${toQuery(params)}`),
+  sessions: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerSessionHistory>>(`/api/customer-portal/me/sessions${toQuery(params)}`),
+  invoices: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerInvoiceHistory>>(`/api/customer-portal/me/invoices${toQuery(params)}`),
+  invoiceDetail: (id: number) => apiFetch<Invoice>(`/api/customer-portal/me/invoices/${id}`),
+  vouchers: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<Discount>>(`/api/customer-portal/me/vouchers${toQuery(params)}`),
+  voucherTemplates: () => apiFetch<Discount[]>("/api/customer-portal/me/voucher-templates"),
+  exchangeVoucher: (templateId: number) =>
+    apiFetch<Discount>(`/api/customer-portal/me/vouchers/${templateId}/exchange`, { method: "POST" }),
+  points: (params: { pageNumber?: number; pageSize?: number } = {}) =>
+    apiFetch<PagedResult<CustomerPointHistory>>(`/api/customer-portal/me/point-history${toQuery(params)}`)
+};
+
 export const sessionApi = {
   list: (params: Record<string, string | number | undefined> = {}) => apiFetch<Session[] | { items?: Session[] }>(`/api/sessions${toQuery(params)}`),
   active: (params: Record<string, string | number | undefined> = {}) => apiFetch<Session[] | { items?: Session[] }>(`/api/sessions/active${toQuery(params)}`),
@@ -160,14 +197,6 @@ export const pricingApi = {
   deleteRule: (planId: number, ruleId: number) => apiFetch(`/api/pricing-plans/${planId}/rules/${ruleId}`, { method: "DELETE" })
 };
 
-export const pricingSpecialDateApi = {
-  list: (params: Record<string, string | number | undefined> = {}) => apiFetch<PricingSpecialDate[] | { items?: PricingSpecialDate[] }>(`/api/pricing-special-dates${toQuery(params)}`),
-  detail: (id: number) => apiFetch<PricingSpecialDate>(`/api/pricing-special-dates/${id}`),
-  create: (body: Partial<PricingSpecialDate>) => apiFetch<PricingSpecialDate>("/api/pricing-special-dates", { method: "POST", body: JSON.stringify(body) }),
-  update: (id: number, body: Partial<PricingSpecialDate>) => apiFetch<PricingSpecialDate>(`/api/pricing-special-dates/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  delete: (id: number) => apiFetch(`/api/pricing-special-dates/${id}`, { method: "DELETE" })
-};
-
 export const adminDashboardApi = {
   summary: () => apiFetch<DashboardSummary>("/api/admin/dashboard/summary"),
   revenue: (params: Record<string, string | number | boolean | undefined> = {}) => apiFetch<RevenuePoint[]>(`/api/admin/dashboard/revenue${toQuery(params)}`),
@@ -206,6 +235,34 @@ export const paymentsApi = {
   updateMethod: (id: number, body: Partial<PaymentMethod>) => apiFetch<PaymentMethod>(`/api/payment-methods/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   methodStatus: (id: number, isActive: boolean) => apiFetch(`/api/payment-methods/${id}/status`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
   refund: (id: number, reason: string) => apiFetch(`/api/payments/${id}/refund`, { method: "POST", body: JSON.stringify({ reason }) })
+};
+
+export const publicDepositRefundApi = {
+  get: (token: string) => apiFetch<PublicDepositRefund>(`/api/public/deposit-refunds/${encodeURIComponent(token)}`, { skipAuth: true }),
+  sendVerificationCode: (token: string) => apiFetch(`/api/public/deposit-refunds/${encodeURIComponent(token)}/send-verification-code`, { method: "POST", skipAuth: true }),
+  verify: (token: string, body: VerifyRefundRequest) =>
+    apiFetch<PublicDepositRefund>(`/api/public/deposit-refunds/${encodeURIComponent(token)}/verify`, { method: "POST", body: JSON.stringify(body), skipAuth: true }),
+  submitMethod: (token: string, body: SubmitRefundMethodRequest) =>
+    apiFetch<PublicDepositRefund>(`/api/public/deposit-refunds/${encodeURIComponent(token)}/submit-method`, { method: "POST", body: JSON.stringify(body), skipAuth: true })
+};
+
+export const depositRefundApi = {
+  list: (params: Record<string, string | number | undefined> = {}) =>
+    apiFetch<{ items?: DepositRefundListItem[]; totalItems?: number; totalCount?: number; totalPages?: number; pageNumber?: number; pageSize?: number }>(`/api/deposit-refunds${toQuery(params)}`),
+  detail: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}`),
+  bankInfo: (id: number) => apiFetch<DepositRefundBankInfo>(`/api/deposit-refunds/${id}/bank-info`),
+  approve: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/approve`, { method: "POST" }),
+  reject: (id: number, body: RejectRefundRequest) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/reject`, { method: "POST", body: JSON.stringify(body) }),
+  requestCustomerUpdate: (id: number, body: RequestCustomerRefundUpdateRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/request-customer-update`, { method: "POST", body: JSON.stringify(body) }),
+  markProcessing: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/mark-processing`, { method: "POST" }),
+  completeBankTransfer: (id: number, body: CompleteBankTransferRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/complete-bank-transfer`, { method: "POST", body: JSON.stringify(body) }),
+  markFailed: (id: number, body: MarkRefundFailedRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/mark-failed`, { method: "POST", body: JSON.stringify(body) }),
+  prepareCashPickup: (id: number) => apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/prepare-cash-pickup`, { method: "POST" }),
+  completeCashPickup: (id: number, body: CompleteCashPickupRequest) =>
+    apiFetch<DepositRefundDetail>(`/api/deposit-refunds/${id}/complete-cash-pickup`, { method: "POST", body: JSON.stringify(body) })
 };
 
 export const reportsApi = {

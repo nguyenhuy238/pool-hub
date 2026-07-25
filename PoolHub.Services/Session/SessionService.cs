@@ -17,12 +17,12 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace PoolHub.Services.Session;
 
-public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null, IClock? clock = null) : ISessionService
+public class SessionService(PoolHubDbContext db, IPosNotificationService posNotificationService, IConfiguration? config = null, IClock? clock = null, IBookingDepositRefundService? refundService = null) : ISessionService
 {
-    private const int DefaultEarlyCheckInMinutes = 15;
     private readonly IClock _clock = clock ?? SystemClock.Instance;
+    private IBookingDepositRefundService RefundService => refundService ?? new PoolHub.Services.Booking.BookingDepositRefundService(db, null, _clock);
 
-    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null, null)
+    public SessionService(PoolHubDbContext db) : this(db, new NoOpPosNotificationService(), null, null, null)
     {
     }
 
@@ -55,6 +55,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             {
                 x.SessionId,
                 x.SessionCode,
+                x.BookingId,
                 x.Status,
                 x.StartedAtUtc,
                 x.EndedAtUtc,
@@ -79,6 +80,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 ? (int)Math.Max(0, Math.Ceiling((now - x.StartedAtUtc).TotalMinutes))
                 : (x.EndedAtUtc.HasValue ? (int)Math.Max(0, Math.Ceiling((x.EndedAtUtc.Value - x.StartedAtUtc).TotalMinutes)) : 0)
         }).ToList();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var bookingId = rawItems[i].BookingId;
+            if (bookingId.HasValue)
+            {
+                items[i].DepositRefundSummary = await RefundService.GetSummaryForBookingAsync(bookingId.Value, ct);
+            }
+        }
 
         return new PagedResult<SessionDto> { Items = items, PageNumber = request.PageNumber, PageSize = request.PageSize, TotalCount = total };
     }
@@ -293,6 +302,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             OpenedByUserId = session.OpenedByUserId,
             ClosedByUserId = session.ClosedByUserId,
             Note = session.Note,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct),
             Assignments = assignments
         };
     }
@@ -349,6 +359,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             InvoiceCode = existingInvoice?.InvoiceCode,
             InvoiceStatus = existingInvoice?.Status,
             DepositAmount = depositAmount,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct),
             CurrentTable = currentAssignment is null
                 ? null
                 : new SessionSummaryTableDto
@@ -450,17 +461,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
                 throw new BusinessRuleException("Only confirmed bookings can start a session.");
             }
 
-            var earliestStartUtc = bookingStartUtc.AddMinutes(-GetEarlyCheckInMinutes());
-            if (nowUtc < earliestStartUtc)
-            {
-                throw new BusinessRuleException("Booking cannot start before the early check-in window.");
-            }
         }
 
         var tableId = request.TableId > 0
             ? request.TableId
             : booking?.TableId ?? throw new BusinessRuleException("A table is required to start a session.");
         var customerId = booking?.CustomerId ?? request.CustomerId;
+
+        if (booking is not null)
+        {
+            await EnsureNoOtherBookingBlocksEarlyStartAsync([tableId], booking, _clock.UtcNow, ct);
+        }
 
         await EnsureCustomerCanStartSessionAsync(customerId, null, ct);
         await EnsureTableHasNoActiveSessionAsync(tableId, "Table already has an active session.", ct);
@@ -558,12 +569,6 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw new BusinessRuleException("Only confirmed bookings can start a session.");
         }
 
-        var earliestStartUtc = bookingStartUtc.AddMinutes(-GetEarlyCheckInMinutes());
-        if (nowUtc < earliestStartUtc)
-        {
-            throw new BusinessRuleException("Booking cannot start before the early check-in window.");
-        }
-
         var tableIds = await GetBookingTableIdsAsync(booking, ct);
         if (tableId.HasValue && tableId.Value > 0 && !tableIds.Contains(tableId.Value))
         {
@@ -575,6 +580,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         {
             throw new BusinessRuleException("Booking has no table to start a session.");
         }
+
+        await EnsureNoOtherBookingBlocksEarlyStartAsync(tableIds, booking, nowUtc, ct);
 
         var tables = await db.VenueTables.Where(x => tableIds.Contains(x.TableId)).ToListAsync(ct);
         var missing = tableIds.Except(tables.Select(x => x.TableId)).ToList();
@@ -665,10 +672,33 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
     private static string AppendAutomaticBookingNote(string? note, string reason) =>
         string.IsNullOrWhiteSpace(note) ? reason : $"{note.Trim()} | {reason}";
 
-    private int GetEarlyCheckInMinutes()
+    private async Task EnsureNoOtherBookingBlocksEarlyStartAsync(IReadOnlyCollection<long> tableIds, EntityBooking booking, DateTime nowUtc, CancellationToken ct)
     {
-        var configured = config?.GetValue<int?>("BookingRules:EarlyCheckInMinutes") ?? DefaultEarlyCheckInMinutes;
-        return Math.Clamp(configured, 0, 240);
+        if (tableIds.Count == 0) return;
+        var bookingStartUtc = NormalizeUtc(booking.StartTimeUtc);
+        if (nowUtc >= bookingStartUtc) return;
+
+        var activeBlockingStatuses = new[]
+        {
+            BookingStatuses.Confirmed,
+            BookingStatuses.PendingApproval,
+            BookingStatuses.InProgress
+        };
+
+        var hasBlockingBooking = await db.Bookings.AsNoTracking().AnyAsync(other =>
+            other.BookingId != booking.BookingId &&
+            (tableIds.Contains(other.TableId ?? 0) ||
+             db.BookingTables.Any(bt => bt.BookingId == other.BookingId && tableIds.Contains(bt.TableId))) &&
+            (activeBlockingStatuses.Contains(other.Status) ||
+             (other.Status == BookingStatuses.PendingDeposit &&
+              (other.HoldExpiresAtUtc == null || other.HoldExpiresAtUtc > nowUtc))) &&
+            other.StartTimeUtc < bookingStartUtc &&
+            other.EndTimeUtc > nowUtc, ct);
+
+        if (hasBlockingBooking)
+        {
+            throw new ConflictException("Khung giờ hiện tại đã có người booking bàn này, không thể mở bàn sớm.");
+        }
     }
 
     private async Task EnsureCustomerCanStartSessionAsync(long? customerId, long? bookingId, CancellationToken ct)
@@ -778,6 +808,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             DurationMinutes = session.Status == 1
                 ? GetDurationMinutes(session.StartedAtUtc, now)
                 : session.EndedAtUtc.HasValue ? GetDurationMinutes(session.StartedAtUtc, session.EndedAtUtc.Value) : 0,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct),
             Assignments = assignments
         };
     }
@@ -910,7 +941,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         var pricing = await GetAssignmentPricingAsync(assignment, table, ct);
         var actualMinutes = GetDurationMinutes(assignment.StartedAtUtc, endedAtUtc);
         var isBillable = IsAssignmentBillable(assignment, actualMinutes);
-        var billableMinutes = isBillable ? ApplyBillingRules(actualMinutes, pricing.MinimumMinutes, pricing.BillingBlockMinutes) : 0;
+        var billableMinutes = isBillable ? ApplyBillingRules(actualMinutes) : 0;
         var hourlyRate = assignment.HourlyRateSnapshot > 0 ? assignment.HourlyRateSnapshot : pricing.HourlyRate;
 
         assignment.EndedAtUtc = endedAtUtc;
@@ -918,21 +949,14 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         assignment.HourlyRateSnapshot = hourlyRate;
         assignment.PricingPlanRuleId ??= pricing.PricingPlanRuleId;
         assignment.Amount = isBillable
-            ? Math.Round(((decimal)billableMinutes / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero)
+            ? CalculateActualTimeAmount(billableMinutes, hourlyRate)
             : 0;
         assignment.Note = AppendNote(assignment.Note, note);
     }
 
-    private static int ApplyBillingRules(int actualMinutes, int minimumMinutes, int billingBlockMinutes)
+    private static int ApplyBillingRules(int actualMinutes)
     {
-        var billableMinutes = Math.Max(actualMinutes, minimumMinutes);
-        if (billingBlockMinutes <= 0)
-        {
-            return billableMinutes;
-        }
-
-        var remainder = billableMinutes % billingBlockMinutes;
-        return remainder == 0 ? billableMinutes : billableMinutes + billingBlockMinutes - remainder;
+        return Math.Max(0, actualMinutes);
     }
 
     private static string? AppendNote(string? currentNote, string? note)
@@ -1034,7 +1058,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             GrandTotalAmount = invoice?.GrandTotalAmount ?? timeSubtotal + productSubtotal,
             InvoiceId = invoice?.InvoiceId,
             InvoiceCode = invoice?.InvoiceCode,
-            InvoiceGenerated = invoice is not null
+            InvoiceGenerated = invoice is not null,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct)
         };
     }
 
@@ -1067,7 +1092,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             GrandTotalAmount = invoice?.GrandTotalAmount ?? subtotal,
             InvoiceId = invoice?.InvoiceId,
             InvoiceCode = invoice?.InvoiceCode,
-            InvoiceGenerated = invoiceGenerated || invoice is not null
+            InvoiceGenerated = invoiceGenerated || invoice is not null,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct)
         };
     }
 
@@ -1289,7 +1315,8 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             SessionCode = session.SessionCode,
             StartedAtUtc = session.StartedAtUtc,
             EndedAtUtc = session.EndedAtUtc,
-            Status = session.Status
+            Status = session.Status,
+            DepositRefundSummary = await RefundService.GetSummaryForSessionAsync(session.SessionId, ct)
         };
     }
 
@@ -1538,32 +1565,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             });
         }
 
-        var chains = BuildContinuousAssignmentChains(lines);
-        foreach (var chain in chains)
+        // Bước 1: tính tiền theo phút thực cho từng assignment (bàn không tính phí -> 0).
+        foreach (var line in lines)
         {
-            var billableLines = chain.Where(x => x.IsBillable).ToList();
-            if (billableLines.Count == 0)
-            {
-                continue;
-            }
-
-            var chainRuleLine = billableLines[0];
-            var actualBillableMinutes = billableLines.Sum(x => x.ActualDurationMinutes);
-            var chainBillableMinutes = ApplyBillingRules(actualBillableMinutes, chainRuleLine.MinimumMinutes, chainRuleLine.BillingBlockMinutes);
-            var assignedBillableMinutes = 0;
-
-            for (var i = 0; i < billableLines.Count; i++)
-            {
-                var line = billableLines[i];
-                var isLast = i == billableLines.Count - 1;
-                var lineBillableMinutes = isLast
-                    ? Math.Max(0, chainBillableMinutes - assignedBillableMinutes)
-                    : line.ActualDurationMinutes;
-
-                line.BillableDurationMinutes = lineBillableMinutes;
-                line.Amount = Math.Round(((decimal)lineBillableMinutes / 60m) * line.HourlyRate, 2, MidpointRounding.AwayFromZero);
-                assignedBillableMinutes += lineBillableMinutes;
-            }
+            line.BillableDurationMinutes = line.IsBillable ? line.ActualDurationMinutes : 0;
+            line.Amount = line.IsBillable ? CalculateActualTimeAmount(line.ActualDurationMinutes, line.HourlyRate) : 0;
         }
 
         foreach (var line in lines)
@@ -1574,11 +1580,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             }
 
             var assignment = rows.First(x => x.Assignment.SessionTableAssignmentId == line.SessionTableAssignmentId).Assignment;
-            if (assignment.EndedAtUtc.HasValue && assignment.Amount.HasValue)
-            {
-                continue;
-            }
-
+            // Ghi lại số liệu đã tính (gồm cả phần top-up ở bàn cuối chuỗi) để invoice tổng hợp khớp.
             assignment.DurationMinutes = line.ActualDurationMinutes;
             assignment.Amount = line.Amount;
             assignment.HourlyRateSnapshot = line.HourlyRate;
@@ -1594,37 +1596,11 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             MinimumMinutes = ruleLine?.MinimumMinutes ?? 0,
             BillingBlockMinutes = ruleLine?.BillingBlockMinutes ?? 0,
             SubtotalAmount = lines.Sum(x => x.Amount),
-            Note = "Minimum/block applies once per continuous table slot. Transfers do not create a new minimum charge.",
+            Note = "Billable time equals actual played minutes. Minimum and billing block fields are kept for legacy configuration and do not increase session charges.",
             Lines = lines
         };
     }
 
-    private static List<List<SessionSummaryAssignmentDto>> BuildContinuousAssignmentChains(List<SessionSummaryAssignmentDto> lines)
-    {
-        const double transferToleranceSeconds = 2;
-        var chains = new List<List<SessionSummaryAssignmentDto>>();
-
-        foreach (var line in lines.OrderBy(x => x.StartedAtUtc).ThenBy(x => x.SessionTableAssignmentId))
-        {
-            var chain = chains.FirstOrDefault(items =>
-            {
-                var last = items.Last();
-                return last.EndedAtUtc.HasValue &&
-                       Math.Abs((line.StartedAtUtc - last.EndedAtUtc.Value).TotalSeconds) <= transferToleranceSeconds;
-            });
-
-            if (chain is null)
-            {
-                chains.Add([line]);
-            }
-            else
-            {
-                chain.Add(line);
-            }
-        }
-
-        return chains;
-    }
     private async Task<List<SessionSummaryOrderDto>> GetSessionSummaryOrdersAsync(long sessionId, CancellationToken ct)
     {
         var orders = await db.Orders.AsNoTracking()
@@ -1738,18 +1714,9 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         return rule.DayType == localDayType;
     }
 
-    private async Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
+    private Task<int> GetDayTypeAsync(DateTime date, CancellationToken ct)
     {
-        var specialDate = await db.PricingSpecialDates
-            .Where(x => x.Date.Date == date.Date)
-            .FirstOrDefaultAsync(ct);
-        
-        if (specialDate != null)
-        {
-            return specialDate.DayType;
-        }
-        
-        return date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1;
+        return Task.FromResult(date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 2 : 1);
     }
 
 
@@ -1882,7 +1849,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         // Set table status back to 1 (Available)
         table.OperationalStatus = 1; 
 
-        var durationMinutes = (int)Math.Ceiling((endedAtUtc - assignment.StartedAtUtc).TotalMinutes);
+        var durationMinutes = GetDurationMinutes(assignment.StartedAtUtc, endedAtUtc);
         if (durationMinutes < 0) durationMinutes = 0;
         assignment.DurationMinutes = durationMinutes;
 
@@ -1892,20 +1859,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
             assignment.HourlyRateSnapshot = rule.HourlyRate;
 
-            var billableMinutes = durationMinutes;
-            if (billableMinutes < rule.MinimumMinutes)
-            {
-                billableMinutes = rule.MinimumMinutes;
-            }
-            if (rule.BillingBlockMinutes > 0)
-            {
-                var remainder = billableMinutes % rule.BillingBlockMinutes;
-                if (remainder > 0)
-                {
-                    billableMinutes += (rule.BillingBlockMinutes - remainder);
-                }
-            }
-            assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+            assignment.Amount = CalculateActualTimeAmount(durationMinutes, rule.HourlyRate);
         }
         else
         {
@@ -1921,20 +1875,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             throw BuildMissingPricingRuleException(table, assignment.StartedAtUtc, "thá»i Ä‘iá»ƒm báº¯t Ä‘áº§u gĂ¡n bĂ n");
         }
 
-        var billableMinutes = durationMinutes;
-        if (billableMinutes < rule.MinimumMinutes)
-        {
-            billableMinutes = rule.MinimumMinutes;
-        }
-
-        if (rule.BillingBlockMinutes > 0)
-        {
-            var remainder = billableMinutes % rule.BillingBlockMinutes;
-            if (remainder > 0)
-            {
-                billableMinutes += rule.BillingBlockMinutes - remainder;
-            }
-        }
+        var billableMinutes = Math.Max(0, durationMinutes);
 
         var pricingPlanName = await db.PricingPlans.AsNoTracking()
             .Where(x => x.PricingPlanId == rule.PricingPlanId)
@@ -1943,7 +1884,7 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
 
         return new PricingCharge(
             billableMinutes,
-            ((decimal)billableMinutes / 60m) * rule.HourlyRate,
+            CalculateActualTimeAmount(billableMinutes, rule.HourlyRate),
             rule.PricingPlanRuleId,
             rule.HourlyRate,
             rule.MinimumMinutes,
@@ -1958,14 +1899,17 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
             return Math.Max(0, storedDurationMinutes.Value);
         }
 
-        return Math.Max(0, (int)Math.Ceiling((endedAtUtc - startedAtUtc).TotalMinutes));
+        return Math.Max(0, (int)Math.Floor((endedAtUtc - startedAtUtc).TotalMinutes));
     }
+
+    private static decimal CalculateActualTimeAmount(int actualMinutes, decimal hourlyRate) =>
+        Math.Round(((decimal)Math.Max(0, actualMinutes) / 60m) * hourlyRate, 2, MidpointRounding.AwayFromZero);
 
     private async Task CalculateAssignmentAmountStrictAsync(SessionTableAssignment assignment, VenueTable table, DateTime endedAtUtc, CancellationToken ct)
     {
         assignment.EndedAtUtc = endedAtUtc;
 
-        var durationMinutes = (int)Math.Ceiling((endedAtUtc - assignment.StartedAtUtc).TotalMinutes);
+        var durationMinutes = GetDurationMinutes(assignment.StartedAtUtc, endedAtUtc);
         if (durationMinutes <= 0)
         {
             throw new ValidationException("Assignment duration must be greater than zero.");
@@ -1979,86 +1923,15 @@ public class SessionService(PoolHubDbContext db, IPosNotificationService posNoti
         assignment.PricingPlanRuleId = rule.PricingPlanRuleId;
         assignment.HourlyRateSnapshot = rule.HourlyRate;
 
-        var billableMinutes = durationMinutes;
-        if (billableMinutes < rule.MinimumMinutes)
-        {
-            billableMinutes = rule.MinimumMinutes;
-        }
-
-        if (rule.BillingBlockMinutes > 0)
-        {
-            var remainder = billableMinutes % rule.BillingBlockMinutes;
-            if (remainder > 0)
-            {
-                billableMinutes += rule.BillingBlockMinutes - remainder;
-            }
-        }
-
-        assignment.Amount = ((decimal)billableMinutes / 60m) * rule.HourlyRate;
+        assignment.Amount = CalculateActualTimeAmount(durationMinutes, rule.HourlyRate);
     }
 
     private async Task ApplyBookingDepositToInvoiceAsync(EntitySession session, EntityInvoice invoice, CancellationToken ct)
     {
-        if (!session.BookingId.HasValue) return;
-
-        var deposit = await db.BookingDeposits.FirstOrDefaultAsync(x =>
-            x.BookingId == session.BookingId.Value &&
-            x.Status == BookingDepositStatuses.Paid &&
-            x.PaidAmount > 0, ct);
-        if (deposit is null) return;
-
-        var appliedAmount = Math.Min(deposit.PaidAmount, invoice.GrandTotalAmount);
-        if (appliedAmount <= 0) return;
-
-        var paymentMethod = await db.PaymentMethods.FirstOrDefaultAsync(x => x.Code == "DEPOSIT", ct);
-        if (paymentMethod is null)
+        var result = await RefundService.ApplyDepositToInvoiceAsync(session, invoice, ct);
+        if (result.PaymentCreated && invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
         {
-            paymentMethod = new PaymentMethod
-            {
-                Code = "DEPOSIT",
-                Name = "Deposit Applied",
-                Description = "System payment method used when applying booking deposits to invoices.",
-                IsActive = true
-            };
-            db.PaymentMethods.Add(paymentMethod);
-            await db.SaveChangesAsync(ct);
-        }
-
-        if (await db.Payments.AnyAsync(x => x.InvoiceId == invoice.InvoiceId && x.PaymentMethodId == paymentMethod.PaymentMethodId, ct))
-            return;
-
-        db.Payments.Add(new Payment
-        {
-            InvoiceId = invoice.InvoiceId,
-            PaymentMethodId = paymentMethod.PaymentMethodId,
-            Amount = appliedAmount,
-            PaymentStatus = PaymentStatuses.Completed,
-            TransactionCode = $"DEPAPP{_clock.UtcNow:HHmmssddMMyyyy}",
-            PaidAtUtc = _clock.UtcNow,
-            Note = $"Booking deposit applied from booking #{session.BookingId.Value}"
-        });
-
-        invoice.PaidAmount += appliedAmount;
-        invoice.PaymentStatus = invoice.PaidAmount >= invoice.GrandTotalAmount
-            ? InvoicePaymentStatuses.Paid
-            : InvoicePaymentStatuses.PartiallyPaid;
-        if (invoice.PaymentStatus == InvoicePaymentStatuses.Paid)
-        {
-            invoice.Status = 2;
             await ProcessInvoicePaidRewardsAsync(invoice, ct);
-        }
-
-        deposit.AppliedAmount = appliedAmount;
-        deposit.AppliedToInvoiceId = invoice.InvoiceId;
-        if (deposit.PaidAmount > invoice.GrandTotalAmount)
-        {
-            deposit.RefundedAmount = deposit.PaidAmount - invoice.GrandTotalAmount;
-            deposit.RefundedAtUtc = _clock.UtcNow;
-            deposit.Status = BookingDepositStatuses.PartiallyRefunded;
-        }
-        else
-        {
-            deposit.Status = BookingDepositStatuses.AppliedToInvoice;
         }
     }
 

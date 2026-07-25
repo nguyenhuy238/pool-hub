@@ -310,6 +310,272 @@ namespace PoolHub.Infrastructure.Migrations
                     b.ToTable("booking_deposits", (string)null);
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.BookingDepositRefund", b =>
+                {
+                    b.Property<long>("BookingDepositRefundId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("booking_deposit_refund_id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("BookingDepositRefundId"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("approved_at_utc");
+
+                    b.Property<long?>("ApprovedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("approved_by_user_id");
+
+                    b.Property<long>("BookingDepositId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("booking_deposit_id");
+
+                    b.Property<long>("BookingId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("booking_id");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("cancelled_at_utc");
+
+                    b.Property<DateTime?>("CashPickupCodeExpiresAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("cash_pickup_code_expires_at_utc");
+
+                    b.Property<string>("CashPickupCodeHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("cash_pickup_code_hash");
+
+                    b.Property<DateTime?>("CashPickupCodeUsedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("cash_pickup_code_used_at_utc");
+
+                    b.Property<string>("CashReceiptCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("cash_receipt_code");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CustomerBankAccountLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)")
+                        .HasColumnName("customer_bank_account_last4");
+
+                    b.Property<string>("CustomerBankAccountNameEncrypted")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)")
+                        .HasColumnName("customer_bank_account_name_encrypted");
+
+                    b.Property<string>("CustomerBankAccountNumberEncrypted")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)")
+                        .HasColumnName("customer_bank_account_number_encrypted");
+
+                    b.Property<string>("CustomerBankCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("customer_bank_code");
+
+                    b.Property<string>("CustomerBankName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("customer_bank_name");
+
+                    b.Property<string>("CustomerEmailSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasColumnName("customer_email_snapshot");
+
+                    b.Property<long?>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTime?>("CustomerInfoSubmittedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("customer_info_submitted_at_utc");
+
+                    b.Property<string>("CustomerPhoneSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("customer_phone_snapshot");
+
+                    b.Property<DateTime?>("CustomerTokenExpiresAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("customer_token_expires_at_utc");
+
+                    b.Property<DateTime?>("CustomerTokenGeneratedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("customer_token_generated_at_utc");
+
+                    b.Property<string>("CustomerTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("customer_token_hash");
+
+                    b.Property<DateTime?>("CustomerVerifiedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("customer_verified_at_utc");
+
+                    b.Property<DateTime?>("FailedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("failed_at_utc");
+
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("failure_reason");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<long?>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("ManualTransferCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("manual_transfer_code");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("note");
+
+                    b.Property<long?>("ProcessedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("processed_by_user_id");
+
+                    b.Property<DateTime?>("ProcessingAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("processing_at_utc");
+
+                    b.Property<long?>("ProofMediaAssetId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("proof_media_asset_id");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ReasonDetail")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("reason_detail");
+
+                    b.Property<string>("RefundCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("refund_code");
+
+                    b.Property<int?>("RefundMethod")
+                        .HasColumnType("int")
+                        .HasColumnName("refund_method");
+
+                    b.Property<string>("RejectReason")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("reject_reason");
+
+                    b.Property<DateTime?>("RejectedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("rejected_at_utc");
+
+                    b.Property<long?>("RequestedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("SucceededAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("succeeded_at_utc");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<DateTime?>("VerificationCodeExpiresAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("verification_code_expires_at_utc");
+
+                    b.Property<string>("VerificationCodeHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasColumnName("verification_code_hash");
+
+                    b.Property<DateTime?>("VerificationCodeSentAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("verification_code_sent_at_utc");
+
+                    b.Property<int>("VerificationFailedAttempts")
+                        .HasColumnType("int")
+                        .HasColumnName("verification_failed_attempts");
+
+                    b.HasKey("BookingDepositRefundId");
+
+                    b.HasIndex("ApprovedByUserId");
+
+                    b.HasIndex("BookingDepositId");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("CustomerTokenHash");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("InvoiceId");
+
+                    b.HasIndex("ProcessedByUserId");
+
+                    b.HasIndex("ProofMediaAssetId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RefundCode")
+                        .IsUnique();
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("booking_deposit_refunds", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_booking_deposit_refunds_amount_positive", "amount > 0");
+                        });
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.BookingTable", b =>
                 {
                     b.Property<long>("BookingTableId")
@@ -396,6 +662,10 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("updated_at_utc");
 
+                    b.Property<long?>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_id");
+
                     b.HasKey("CustomerId");
 
                     b.HasIndex("Email")
@@ -407,6 +677,10 @@ namespace PoolHub.Infrastructure.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("[user_id] IS NOT NULL");
 
                     b.ToTable("customers", (string)null);
                 });
@@ -1671,45 +1945,6 @@ namespace PoolHub.Infrastructure.Migrations
                     b.ToTable("pricing_plan_rules", (string)null);
                 });
 
-            modelBuilder.Entity("PoolHub.Core.Entities.PricingSpecialDate", b =>
-                {
-                    b.Property<long>("PricingSpecialDateId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("pricing_special_date_id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("PricingSpecialDateId"));
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("date");
-
-                    b.Property<int>("DayType")
-                        .HasColumnType("int")
-                        .HasColumnName("day_type");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("description");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("updated_at_utc");
-
-                    b.HasKey("PricingSpecialDateId");
-
-                    b.HasIndex("Date")
-                        .IsUnique();
-
-                    b.ToTable("pricing_special_dates", (string)null);
-                });
-
             modelBuilder.Entity("PoolHub.Core.Entities.Product", b =>
                 {
                     b.Property<long>("ProductId")
@@ -2507,6 +2742,51 @@ namespace PoolHub.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
                 });
 
+            modelBuilder.Entity("PoolHub.Core.Entities.BookingDepositRefund", b =>
+                {
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PoolHub.Core.Entities.BookingDeposit", null)
+                        .WithMany("Refunds")
+                        .HasForeignKey("BookingDepositId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PoolHub.Core.Entities.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("PoolHub.Core.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PoolHub.Core.Entities.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ProcessedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PoolHub.Core.Entities.MediaAsset", null)
+                        .WithMany()
+                        .HasForeignKey("ProofMediaAssetId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
             modelBuilder.Entity("PoolHub.Core.Entities.BookingTable", b =>
                 {
                     b.HasOne("PoolHub.Core.Entities.Booking", null)
@@ -2520,6 +2800,14 @@ namespace PoolHub.Infrastructure.Migrations
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PoolHub.Core.Entities.Customer", b =>
+                {
+                    b.HasOne("PoolHub.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("PoolHub.Core.Entities.CustomerReview", b =>
@@ -2877,6 +3165,11 @@ namespace PoolHub.Infrastructure.Migrations
                     b.Navigation("BookingTables");
 
                     b.Navigation("Deposit");
+                });
+
+            modelBuilder.Entity("PoolHub.Core.Entities.BookingDeposit", b =>
+                {
+                    b.Navigation("Refunds");
                 });
 #pragma warning restore 612, 618
         }

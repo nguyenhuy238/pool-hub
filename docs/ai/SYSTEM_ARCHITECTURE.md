@@ -5,7 +5,7 @@ Hệ thống hiện đi theo mô hình layered architecture cho cả backend và
 
 ```mermaid
 flowchart LR
-  U[User / Admin / Staff / Cashier] --> F[Next.js Frontend]
+  U[User / Admin / Manager / Staff] --> F[Next.js Frontend]
   F --> A[PoolHub.API]
   A --> S[PoolHub.Services]
   A --> I[PoolHub.Infrastructure]

@@ -107,11 +107,28 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit, IC
         Normalize(request);
         var query = from item in db.InventoryTransactions.AsNoTracking()
                     join product in db.Products.AsNoTracking() on item.ProductId equals product.ProductId
-                    select new { item, product };
+                    join order in db.Orders.AsNoTracking()
+                        on new { ReferenceType = item.ReferenceType, ReferenceId = item.ReferenceId }
+                        equals new { ReferenceType = (string?)"ORDER", ReferenceId = (long?)order.OrderId }
+                        into orderGroup
+                    from order in orderGroup.DefaultIfEmpty()
+                    join invoice in db.Invoices.AsNoTracking().Where(x => x.Status != 3)
+                        on order.SessionId equals invoice.SessionId
+                        into invoiceGroup
+                    from invoice in invoiceGroup.DefaultIfEmpty()
+                    select new { item, product, order, invoice };
         if (request.ProductId.HasValue) query = query.Where(x => x.item.ProductId == request.ProductId);
         if (request.TransactionType.HasValue) query = query.Where(x => x.item.TransactionType == request.TransactionType);
+        if (!string.IsNullOrWhiteSpace(request.ReferenceType))
+            query = query.Where(x => x.item.ReferenceType == request.ReferenceType);
+        if (request.InvoiceId.HasValue) query = query.Where(x => x.invoice != null && x.invoice.InvoiceId == request.InvoiceId);
+        if (request.FromUtc.HasValue) query = query.Where(x => x.item.CreatedAtUtc >= request.FromUtc);
+        if (request.ToUtc.HasValue) query = query.Where(x => x.item.CreatedAtUtc < request.ToUtc);
         if (!string.IsNullOrWhiteSpace(request.Search))
-            query = query.Where(x => x.product.Name.Contains(request.Search) || x.product.Sku.Contains(request.Search));
+            query = query.Where(x =>
+                x.product.Name.Contains(request.Search) ||
+                x.product.Sku.Contains(request.Search) ||
+                (x.invoice != null && x.invoice.InvoiceCode.Contains(request.Search)));
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.item.InventoryTransactionId)
             .Skip((request.PageNumber - 1) * request.PageSize).Take(request.PageSize)
@@ -119,6 +136,9 @@ public class AdminManagementService(PoolHubDbContext db, IAuditService audit, IC
                 InventoryTransactionId = x.item.InventoryTransactionId, ProductId = x.item.ProductId,
                 ProductName = x.product.Name, TransactionType = x.item.TransactionType, Quantity = x.item.Quantity,
                 UnitCost = x.item.UnitCost, ReferenceType = x.item.ReferenceType, ReferenceId = x.item.ReferenceId,
+                OrderId = x.order != null ? x.order.OrderId : null,
+                InvoiceId = x.invoice != null ? x.invoice.InvoiceId : null,
+                InvoiceCode = x.invoice != null ? x.invoice.InvoiceCode : null,
                 Note = x.item.Note, CreatedByUserId = x.item.CreatedByUserId, CreatedAtUtc = x.item.CreatedAtUtc
             }).ToListAsync(ct);
         return Page(items, request.PageNumber, request.PageSize, total);

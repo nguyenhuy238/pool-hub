@@ -4,6 +4,7 @@ using PoolHub.Core.DTOs.Booking;
 using PoolHub.Core.DTOs.Session;
 using PoolHub.Shared;
 using PoolHub.Shared.Constants;
+using PoolHub.Shared.Exceptions;
 using PoolHub.Shared.Extensions;
 
 namespace PoolHub.API.Controllers;
@@ -27,6 +28,20 @@ public partial class BookingsController
 
     [HttpPost("{id:long}/start-session")]
     [Authorize(Roles = RoleConstants.Operation)]
-    public async Task<ActionResult<ApiResponse<SessionDto>>> StartSession(long id, [FromBody] StartSessionRequest request, CancellationToken ct) =>
-        Ok(ApiResponse<SessionDto>.Ok(await _sessionService.StartFromBookingAsync(id, request.TableId > 0 ? request.TableId : null, User.GetUserId(), ct), "Session started"));
+    public async Task<ActionResult<ApiResponse<SessionDto>>> StartSession(long id, [FromBody] StartSessionRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var session = await _sessionService.StartFromBookingAsync(id, request.TableId > 0 ? request.TableId : null, User.GetUserId(), ct);
+            return Ok(ApiResponse<SessionDto>.Ok(session, "Session started"));
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(ApiResponse<SessionDto>.Fail(ex.Message, ex.Errors.Count > 0 ? ex.Errors : [ex.Message]));
+        }
+        catch (BusinessRuleException ex)
+        {
+            return BadRequest(ApiResponse<SessionDto>.Fail(ex.Message, ex.Errors.Count > 0 ? ex.Errors : [ex.Message]));
+        }
+    }
 }

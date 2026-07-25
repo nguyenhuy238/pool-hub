@@ -35,6 +35,37 @@ public static class BookingDepositStatuses
     public const int PendingVerification = 9;
 }
 
+public static class BookingDepositRefundStatuses
+{
+    public const int PendingCustomerInfo = 1;
+    public const int PendingApproval = 2;
+    public const int Approved = 3;
+    public const int Processing = 4;
+    public const int ReadyForCashPickup = 5;
+    public const int Succeeded = 6;
+    public const int Failed = 7;
+    public const int Rejected = 8;
+    public const int Cancelled = 9;
+}
+
+public static class BookingDepositRefundMethods
+{
+    public const int BankTransfer = 1;
+    public const int CashAtVenue = 2;
+}
+
+public static class BookingDepositRefundReasons
+{
+    public const string CustomerCancelledInTime = "CustomerCancelledInTime";
+    public const string CustomerCancelledLate = "CustomerCancelledLate";
+    public const string VenueFault = "VenueFault";
+    public const string BookingRejected = "BookingRejected";
+    public const string DuplicateDeposit = "DuplicateDeposit";
+    public const string DepositExcess = "DepositExcess";
+    public const string ManualAdjustment = "ManualAdjustment";
+    public const string Other = "Other";
+}
+
 public static class InvoicePaymentStatuses
 {
     public const int Unpaid = 1;

@@ -6,12 +6,19 @@ import { bookingApi, orderApi, productApi, sessionApi, venueApi } from "@/lib/ap
 import { dateTime, label, money, sessionStatus } from "@/lib/status";
 import { formatElapsedDuration } from "@/lib/sessionDuration";
 import { connectOperationHub, type OperationRealtimeStatus } from "@/lib/realtime/operationHub";
-import { Badge, DataTable, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
+import { Badge, Modal, PageHeader, StateBlock, useList, useLoad } from "@/components/ui";
+import { DepositRefundSummaryPanel } from "@/components/refunds/DepositRefundSummaryPanel";
 import { useToast } from "@/components/toast";
 import type { BookingCalendarItem, Order, Product, Session, SessionTableAssignment, VenueTable } from "@/types";
 
 const SESSION_OPEN = 1;
 const SESSION_CLOSED = 2;
+
+const orderStatusText = (status?: number) => {
+  if (status === 2) return "Hoàn thành";
+  if (status === 3) return "Đã hủy";
+  return "Mới";
+};
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -19,6 +26,7 @@ export default function SessionDetailPage() {
   const toast = useToast();
   const sessionId = Number(params?.id);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [detailItemPage, setDetailItemPage] = useState(1);
   const [closing, setClosing] = useState(false);
   const [releaseSaving, setReleaseSaving] = useState(false);
   const [selectedReleaseAssignmentIds, setSelectedReleaseAssignmentIds] = useState<number[]>([]);
@@ -92,7 +100,11 @@ export default function SessionDetailPage() {
   const tables = useList<VenueTable>(data?.tables);
   const activeSessions = useList<Session>(data?.activeSessions);
   const upcomingBookings = useList<BookingCalendarItem>(data?.upcomingBookings);
-  const currentOrder = selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : orders[0] ?? null;
+  const currentOrder = (selectedOrderId ? orders.find((order) => order.orderId === selectedOrderId) : null) ?? orders[0] ?? null;
+  const currentOrderItems = currentOrder?.items ?? [];
+  const detailItemPageCount = Math.max(1, currentOrderItems.length);
+  const activeDetailItemPage = Math.min(detailItemPage, detailItemPageCount);
+  const activeDetailItem = currentOrderItems[activeDetailItemPage - 1] ?? null;
   const currentAssignment = useMemo(() => {
     const assignments = session?.assignments || [];
     return assignments.find((assignment) => !assignment.endedAtUtc) || assignments[assignments.length - 1];
@@ -101,6 +113,10 @@ export default function SessionDetailPage() {
   const isOpen = Number(session?.status) === SESSION_OPEN;
   const isClosed = Number(session?.status) === SESSION_CLOSED;
   const canReopen = isClosed && Number(summary?.invoiceStatus ?? 0) !== 2;
+
+  useEffect(() => {
+    setDetailItemPage(1);
+  }, [currentOrder?.orderId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -186,7 +202,6 @@ export default function SessionDetailPage() {
     <>
       <PageHeader
         title={session?.sessionCode || `Phiên #${sessionId}`}
-        description="Không gian vận hành phiên chơi, đơn hàng, tạm tính và kết thúc hóa đơn."
         action={<button className="ghost-btn" type="button" onClick={() => router.push("/operation/sessions")}>Danh sách phiên</button>}
       />
       <section style={{ padding: "0 24px 24px" }}>
@@ -197,10 +212,6 @@ export default function SessionDetailPage() {
               <div className="panel-head">
                 <div>
                   <h3>Thông tin phiên</h3>
-                  <p>{currentAssignment?.tableName || currentAssignment?.tableCode || "Bàn"} · bắt đầu {dateTime(session.startedAtUtc)}</p>
-                  <p style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
-                    Thời lượng hiển thị realtime. Tiền giờ được backend tính theo bảng giá và quy tắc làm tròn.
-                  </p>
                   <RealtimeStatusText status={realtimeStatus} />
                 </div>
                 <Badge tone={isOpen ? "green" : "neutral"}>{label(sessionStatus, Number(session.status))}</Badge>
@@ -217,7 +228,6 @@ export default function SessionDetailPage() {
               <div className="panel-head">
                 <div>
                   <h3>Tạm tính</h3>
-                  <p>Hệ thống tính tiền giờ theo bảng giá, thời gian tối thiểu và khung làm tròn hiện hành.</p>
                 </div>
                 <button className="ghost-btn" type="button" onClick={async () => { await reload(); setSummaryOpen(true); }}>Xem chi tiết tạm tính</button>
               </div>
@@ -226,6 +236,9 @@ export default function SessionDetailPage() {
                 <Info label="Tiền đơn hàng" value={money(Number(productAmount))} />
                 <Info label="Giảm giá" value={`-${money(Number(discountAmount))}`} />
                 <Info label="Tổng tiền" value={money(Number(grandTotal))} strong />
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <DepositRefundSummaryPanel summary={summary?.depositRefundSummary || session.depositRefundSummary} variant="bill" />
               </div>
             </div>
 
@@ -264,9 +277,9 @@ export default function SessionDetailPage() {
               </div>
             ) : null}
 
-            <div className="section-grid">
+            <div className="section-grid orders-layout">
               <div className="card">
-                <h2>Thêm đơn hàng</h2>
+                <h2>Sản phẩm</h2>
                 {!isOpen ? <div className="inline-alert error">Phiên đã đóng hoặc hủy, không thể thêm đơn hàng.</div> : null}
                 <div className="floor-grid">
                   {products.map((product) => (
@@ -278,35 +291,134 @@ export default function SessionDetailPage() {
                 </div>
               </div>
 
-              <div className="card">
-                <h2>Đơn hàng của phiên</h2>
-                <DataTable
-                  rows={orders as unknown as Record<string, unknown>[]}
-                  columns={[
-                    { key: "orderCode", label: "Đơn hàng" },
-                    { key: "status", label: "Trạng thái" },
-                    { key: "subtotalAmount", label: "Tổng", render: (row) => money(Number(row.subtotalAmount || 0)) }
-                  ]}
-                  actions={(row) => <button className="ghost-btn" type="button" onClick={() => setSelectedOrderId(Number(row.orderId))}>Chọn</button>}
-                />
-                {currentOrder?.items?.length ? (
-                  <div className="table-wrap" style={{ marginTop: 18 }}>
-                    <table>
-                      <thead>
-                        <tr><th>Sản phẩm</th><th>Số lượng</th><th>Thành tiền</th></tr>
-                      </thead>
-                      <tbody>
-                        {currentOrder.items.map((item) => (
-                          <tr key={item.orderItemId}>
-                            <td>{item.productNameSnapshot}</td>
-                            <td>{item.quantity}</td>
-                            <td>{money(item.lineTotalAmount || 0)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              <div className="card orders-card">
+                <div className="orders-card-head">
+                  <div>
+                    <h2>Đơn hàng của phiên</h2>
+                    <div style={{ color: "var(--muted)", marginTop: 4 }}>
+                      {currentOrder ? `Đã chọn: ${currentOrder.orderCode || `Đơn #${currentOrder.orderId}`}` : "Chưa chọn đơn hàng."}
+                    </div>
                   </div>
-                ) : <p>Chưa có sản phẩm trong đơn hàng.</p>}
+                </div>
+
+                <div className="order-list" aria-label="Danh sách đơn hàng của phiên">
+                  {orders.length ? orders.map((order) => {
+                    const selected = currentOrder?.orderId === order.orderId;
+                    return (
+                      <article className={`order-list-item${selected ? " is-selected" : ""}`} key={order.orderId}>
+                        <button
+                          className="order-list-select"
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setSelectedOrderId(order.orderId)}
+                        >
+                          <span className="order-list-code">
+                            <strong>{order.orderCode || `Đơn #${order.orderId}`}</strong>
+                            {selected ? <span className="badge blue">Đang chọn</span> : null}
+                          </span>
+                          <span className="order-list-meta">
+                            <span>
+                              <small>Trạng thái</small>
+                              <strong>{orderStatusText(Number(order.status))}</strong>
+                            </span>
+                            <span>
+                              <small>Tổng tiền</small>
+                              <strong>{money(Number(order.subtotalAmount || 0))}</strong>
+                            </span>
+                          </span>
+                        </button>
+                        <div className="order-list-actions">
+                          <button
+                            className={selected ? "primary-btn" : "ghost-btn"}
+                            type="button"
+                            onClick={() => setSelectedOrderId(order.orderId)}
+                          >
+                            {selected ? "Đang chọn" : "Chọn"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  }) : <p className="order-list-empty">Chưa có đơn hàng trong phiên này.</p>}
+                </div>
+
+                {currentOrder ? (
+                  <section className="order-detail-section">
+                    <div className="order-detail-heading">
+                      <div>
+                        <h3>Chi tiết đơn hàng</h3>
+                        <p>{currentOrder.orderCode || `Đơn #${currentOrder.orderId}`}</p>
+                      </div>
+                      <strong>{money(Number(currentOrder.subtotalAmount || 0))}</strong>
+                    </div>
+                    {currentOrderItems.length ? (
+                      <>
+                        <div className="order-detail-controls">
+                          <label className="order-detail-picker">
+                            <span>Sản phẩm trong đơn</span>
+                            <select
+                              value={activeDetailItem ? String(activeDetailItem.orderItemId) : ""}
+                              onChange={(event) => {
+                                const selectedIndex = currentOrderItems.findIndex(
+                                  (item) => item.orderItemId === Number(event.target.value)
+                                );
+                                if (selectedIndex >= 0) setDetailItemPage(selectedIndex + 1);
+                              }}
+                            >
+                              {currentOrderItems.map((item, index) => (
+                                <option key={item.orderItemId} value={item.orderItemId}>
+                                  {index + 1}. {item.productNameSnapshot} · SL {item.quantity}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <nav className="order-detail-pagination" aria-label="Phân trang sản phẩm của đơn hàng">
+                            <button
+                              className="ghost-btn"
+                              type="button"
+                              disabled={activeDetailItemPage <= 1}
+                              onClick={() => setDetailItemPage(activeDetailItemPage - 1)}
+                            >
+                              Trước
+                            </button>
+                            <span>
+                              Sản phẩm {activeDetailItemPage}/{currentOrderItems.length}
+                            </span>
+                            <button
+                              className="ghost-btn"
+                              type="button"
+                              disabled={activeDetailItemPage >= currentOrderItems.length}
+                              onClick={() => setDetailItemPage(activeDetailItemPage + 1)}
+                            >
+                              Sau
+                            </button>
+                          </nav>
+                        </div>
+                        <div className="order-detail-list">
+                          {currentOrderItems.slice(activeDetailItemPage - 1, activeDetailItemPage).map((item) => (
+                            <article className="order-detail-item" key={item.orderItemId}>
+                              <div className="order-detail-cell order-detail-product">
+                                <small>Sản phẩm</small>
+                                <strong>{item.productNameSnapshot}</strong>
+                              </div>
+                              <div className="order-detail-cell">
+                                <small>Đơn giá</small>
+                                <span>{money(item.unitPriceSnapshot ?? 0)}</span>
+                              </div>
+                              <div className="order-detail-cell">
+                                <small>Số lượng</small>
+                                <strong>{item.quantity}</strong>
+                              </div>
+                              <div className="order-detail-cell">
+                                <small>Thành tiền</small>
+                                <strong>{money(item.lineTotalAmount ?? 0)}</strong>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </>
+                    ) : <p className="order-list-empty">Chưa có sản phẩm trong đơn hàng.</p>}
+                  </section>
+                ) : null}
               </div>
             </div>
 
@@ -329,7 +441,7 @@ export default function SessionDetailPage() {
             <Info label="Tổng tính tiền" value={`${summary.billableDurationMinutes ?? summary.timeCharge?.billableDurationMinutes ?? totalDuration} phút`} />
             <Info label="Tiền giờ" value={money(Number(timeAmount))} strong />
           </div>
-          <div className="inline-note">{summary.timeCharge?.note || "Thời gian tối thiểu/khung làm tròn áp dụng một lần cho toàn phiên, không áp lại sau mỗi lần chuyển bàn."}</div>
+          <div className="inline-note">{summary.timeCharge?.note || "Thời gian tính tiền bằng thời gian chơi thực tế của từng bàn."}</div>
           {(summary.timeCharge?.lines || summary.assignments || []).map((assignment: any) => (
             <div key={assignment.sessionTableAssignmentId} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>

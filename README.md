@@ -129,7 +129,6 @@ Redis does not start automatically after pulling code. Run Docker Compose once b
 - `manager@poolhub.com / Manager@123` (Manager)
 - `staff1@poolhub.com / Staff@123` (Staff)
 - `staff2@poolhub.com / Staff@123` (Staff)
-- `cashier@poolhub.com / Cashier@123` (Cashier)
 
 ## Swagger Auth Test
 1. Login `POST /api/auth/login`

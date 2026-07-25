@@ -18,8 +18,11 @@ public static class AuditActions
     public const string RoleCreated = "ROLE_CREATED";
     public const string RoleUpdated = "ROLE_UPDATED";
     public const string RoleDeleted = "ROLE_DELETED";
+    public const string RolePermissionsUpdated = "ROLE_PERMISSIONS_UPDATED";
     public const string UserRoleAssigned = "USER_ROLE_ASSIGNED";
     public const string UserRoleRemoved = "USER_ROLE_REMOVED";
+    public const string UserTokensRevoked = "USER_TOKENS_REVOKED";
+    public const string LegacyCashierMigrated = "LEGACY_CASHIER_MIGRATED";
     public const string CustomerCreated = "CUSTOMER_CREATED";
     public const string CustomerUpdated = "CUSTOMER_UPDATED";
     public const string CustomerStatusChanged = "CUSTOMER_STATUS_CHANGED";
@@ -31,4 +34,18 @@ public static class AuditActions
     public const string CustomerReviewInvitationUsed = "CUSTOMER_REVIEW_INVITATION_USED";
     public const string CustomerVoucherExchanged = "CUSTOMER_VOUCHER_EXCHANGED";
     public const string CustomerPointsEarned = "CUSTOMER_POINTS_EARNED";
+    public const string BookingDepositRefundCreated = "BOOKING_DEPOSIT_REFUND_CREATED";
+    public const string RefundTokenGenerated = "BOOKING_DEPOSIT_REFUND_TOKEN_GENERATED";
+    public const string RefundVerificationCodeSent = "BOOKING_DEPOSIT_REFUND_VERIFICATION_CODE_SENT";
+    public const string RefundCustomerVerified = "BOOKING_DEPOSIT_REFUND_CUSTOMER_VERIFIED";
+    public const string CustomerRefundInfoSubmitted = "BOOKING_DEPOSIT_REFUND_CUSTOMER_INFO_SUBMITTED";
+    public const string BookingDepositRefundApproved = "BOOKING_DEPOSIT_REFUND_APPROVED";
+    public const string BookingDepositRefundRejected = "BOOKING_DEPOSIT_REFUND_REJECTED";
+    public const string DepositRefundCustomerUpdateRequested = "BOOKING_DEPOSIT_REFUND_CUSTOMER_UPDATE_REQUESTED";
+    public const string BookingDepositRefundProcessing = "BOOKING_DEPOSIT_REFUND_PROCESSING";
+    public const string BankInformationViewed = "BOOKING_DEPOSIT_REFUND_BANK_INFORMATION_VIEWED";
+    public const string CashRefundPrepared = "BOOKING_DEPOSIT_REFUND_CASH_PREPARED";
+    public const string BookingDepositRefundFailed = "BOOKING_DEPOSIT_REFUND_FAILED";
+    public const string BookingDepositRefundCompleted = "BOOKING_DEPOSIT_REFUND_COMPLETED";
+    public const string CashRefundPickedUp = "BOOKING_DEPOSIT_REFUND_CASH_PICKED_UP";
 }

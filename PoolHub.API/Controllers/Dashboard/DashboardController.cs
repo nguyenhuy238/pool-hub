@@ -11,7 +11,7 @@ namespace PoolHub.API.Controllers;
 
 [ApiController]
 [Route("api/dashboard")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Cashier + "," + RoleConstants.Customer)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff + "," + RoleConstants.Customer)]
 public class DashboardController(IDashboardService dashboardService) : ControllerBase
 {
     [HttpGet("summary")]

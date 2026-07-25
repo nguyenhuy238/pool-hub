@@ -9,9 +9,11 @@ using PoolHub.Core.Entities;
 using PoolHub.Core.Enums;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
+using PoolHub.Shared;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
 using PoolHub.Shared.Time;
+using CustomerEntity = PoolHub.Core.Entities.Customer;
 
 namespace PoolHub.Services.Auth;
 
@@ -36,6 +38,47 @@ public class AuthService(
         if (await db.Users.AnyAsync(x => x.Email == email, ct))
             throw new ConflictException("Email already exists.");
 
+        var normalizedPhone = PhoneNumberNormalizer.Normalize(request.PhoneNumber);
+        CustomerEntity? existingCustomer = null;
+        if (!currentUserId.HasValue)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedPhone))
+                throw new ValidationException("Phone number is required for a customer account.");
+
+            var customerByEmail = await db.Customers
+                .FirstOrDefaultAsync(
+                    x => x.Email != null && x.Email.ToLower() == email,
+                    ct);
+            var customerByPhone = await db.Customers
+                .FirstOrDefaultAsync(x => x.PhoneNumber == normalizedPhone, ct);
+            if (customerByEmail is not null && customerByPhone is not null &&
+                customerByEmail.CustomerId != customerByPhone.CustomerId)
+            {
+                throw new ConflictException("The email and phone number belong to different customer profiles.");
+            }
+
+            existingCustomer = customerByEmail ?? customerByPhone;
+            if (existingCustomer?.UserId is not null)
+                throw new ConflictException("This customer profile is already linked to an account.");
+            if (existingCustomer is not null && !existingCustomer.Status)
+                throw new ConflictException("This customer profile is inactive.");
+            if (existingCustomer is not null &&
+                !string.IsNullOrWhiteSpace(existingCustomer.Email) &&
+                !string.Equals(existingCustomer.Email, email, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ConflictException("The phone number belongs to a different customer email.");
+            }
+            if (existingCustomer is not null &&
+                !string.IsNullOrWhiteSpace(existingCustomer.PhoneNumber) &&
+                !string.Equals(
+                    PhoneNumberNormalizer.Normalize(existingCustomer.PhoneNumber),
+                    normalizedPhone,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ConflictException("The email belongs to a different customer phone number.");
+            }
+        }
+
         var roleIds = currentUserId.HasValue ? request.RoleIds.Distinct().ToList() : [];
         if (roleIds.Count == 0)
         {
@@ -52,25 +95,62 @@ public class AuthService(
         if (validRoles.Count != roleIds.Count)
             throw new ValidationException("One or more roles are invalid.");
 
-        var user = new User
+        // User, role assignment and the customer profile must be created as one
+        // unit. Without a transaction a duplicate phone/customer race can leave
+        // an orphaned user account after the profile insert fails.
+        User user;
+        await using (var transaction = await BeginTransactionIfSupportedAsync(ct))
         {
-            FullName = request.FullName.Trim(),
-            Email = email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
-            PhoneNumber = request.PhoneNumber?.Trim(),
-            EmailConfirmed = false,
-            Status = UserStatus.Active
-        };
-        db.Users.Add(user);
-        await db.SaveChangesAsync(ct);
+            user = new User
+            {
+                FullName = request.FullName.Trim(),
+                Email = email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
+                PhoneNumber = string.IsNullOrWhiteSpace(normalizedPhone) ? null : normalizedPhone,
+                EmailConfirmed = false,
+                Status = UserStatus.Active
+            };
+            db.Users.Add(user);
+            await db.SaveChangesAsync(ct);
 
-        db.UserRoles.AddRange(validRoles.Select(roleId => new UserRole
-        {
-            UserId = user.UserId,
-            RoleId = roleId,
-            AssignedByUserId = currentUserId
-        }));
-        await db.SaveChangesAsync(ct);
+            db.UserRoles.AddRange(validRoles.Select(roleId => new UserRole
+            {
+                UserId = user.UserId,
+                RoleId = roleId,
+                AssignedByUserId = currentUserId
+            }));
+            await db.SaveChangesAsync(ct);
+
+            if (!currentUserId.HasValue)
+            {
+                var customer = existingCustomer ?? new CustomerEntity
+                {
+                    FullName = user.FullName,
+                    PhoneNumber = normalizedPhone,
+                    Email = user.Email,
+                    Status = true
+                };
+                customer.UserId = user.UserId;
+                // Do not reactivate a profile that an administrator disabled.
+                // Inactive profiles are rejected above before the account is
+                // created; active profiles retain their current status.
+                if (existingCustomer is null)
+                {
+                    customer.FullName = user.FullName;
+                    customer.PhoneNumber = normalizedPhone;
+                    customer.Email = user.Email;
+                    customer.Status = true;
+                    db.Customers.Add(customer);
+                }
+                await db.SaveChangesAsync(ct);
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(ct);
+            }
+        }
+
         await auditService.LogAsync(currentUserId ?? user.UserId, AuditActions.Register, "User",
             user.UserId, user.PublicId, newValues: new { user.FullName, user.Email, RoleIds = validRoles },
             description: "User registered.", ct: ct);
@@ -78,7 +158,13 @@ public class AuthService(
         return await BuildAuthResponseAsync(user, ct);
     }
 
-    public async Task<AuthResponse?> LoginAsync(LoginRequest request, CancellationToken ct)
+    public Task<AuthResponse?> LoginAsync(LoginRequest request, CancellationToken ct) =>
+        LoginAsync(request, ct, null);
+
+    public async Task<AuthResponse?> LoginAsync(
+        LoginRequest request,
+        CancellationToken ct,
+        IReadOnlyCollection<string>? allowedRoles = null)
     {
         var email = NormalizeEmail(request.Email);
         var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
@@ -95,6 +181,16 @@ public class AuthService(
             await auditService.LogAsync(user.UserId, AuditActions.LoginFailed, "User",
                 user.UserId, user.PublicId, description: $"Login blocked: account is {user.Status}.", ct: ct);
             throw new LockedException($"Account is {user.Status.ToString().ToLowerInvariant()}.");
+        }
+
+        var roles = await GetRolesAsync(user.UserId, ct);
+        if (allowedRoles is not null && !roles.Any(role => allowedRoles.Contains(role, StringComparer.OrdinalIgnoreCase)))
+        {
+            await auditService.LogAsync(user.UserId, AuditActions.LoginFailed, "User",
+                user.UserId, user.PublicId,
+                description: "Login blocked because the account is not assigned to this portal.",
+                ct: ct);
+            throw new ForbiddenException("This account is not allowed to sign in to this portal.");
         }
 
         user.LastLoginAtUtc = _clock.UtcNow;
@@ -142,6 +238,8 @@ public class AuthService(
         }
 
         if (!validation.IsValid || validation.Record is null)
+            
+            
             throw new UnauthorizedException("Invalid refresh token.");
 
         var user = await db.Users.FindAsync([validation.Record.UserId], ct)
@@ -189,28 +287,36 @@ public class AuthService(
                 .ToListAsync(ct);
             foreach (var item in previous) item.UsedAtUtc = now;
 
-            var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
+            string otp;
+            string otpHash;
+            do
+            {
+                otp = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+                otpHash = tokenService.HashToken($"{user.UserId}:{otp}");
+            } while (await db.PasswordResetTokens.AnyAsync(x => x.TokenHash == otpHash, ct));
+
+            var expirationMinutes = Math.Clamp(_emailSettings.PasswordResetExpirationMinutes, 5, 120);
             db.PasswordResetTokens.Add(new PasswordResetToken
             {
                 UserId = user.UserId,
-                TokenHash = tokenService.HashToken(rawToken),
-                ExpiresAtUtc = now.AddMinutes(Math.Clamp(_emailSettings.PasswordResetExpirationMinutes, 5, 120)),
+                TokenHash = otpHash,
+                ExpiresAtUtc = now.AddMinutes(expirationMinutes),
                 RequestedByIp = GetIpAddress()
             });
             await db.SaveChangesAsync(ct);
             try
             {
-                await emailService.SendPasswordResetAsync(user.Email, rawToken, ct);
+                await emailService.SendPasswordResetOtpAsync(user.Email, otp, expirationMinutes, ct);
             }
             catch (ServiceUnavailableException)
             {
                 var failedToken = await db.PasswordResetTokens
-                    .FirstAsync(x => x.UserId == user.UserId && x.TokenHash == tokenService.HashToken(rawToken), ct);
+                    .FirstAsync(x => x.UserId == user.UserId && x.TokenHash == otpHash, ct);
                 failedToken.UsedAtUtc = _clock.UtcNow;
                 await db.SaveChangesAsync(ct);
                 await auditService.LogAsync(user.UserId, AuditActions.ForgotPasswordEmailFailed, "User",
                     user.UserId, user.PublicId, description: "Password reset email delivery failed.", ct: ct);
-                return;
+                throw;
             }
             await auditService.LogAsync(user.UserId, AuditActions.ForgotPassword, "User",
                 user.UserId, user.PublicId, description: "Password reset requested.", ct: ct);
@@ -227,7 +333,9 @@ public class AuthService(
         ValidatePasswords(request.NewPassword, request.ConfirmPassword);
         var email = NormalizeEmail(request.Email);
         var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
-        var hash = tokenService.HashToken(request.Token);
+        var hash = user is null
+            ? string.Empty
+            : tokenService.HashToken($"{user.UserId}:{request.Otp}");
         var resetToken = user is null
             ? null
             : await db.PasswordResetTokens.FirstOrDefaultAsync(
@@ -356,4 +464,12 @@ public class AuthService(
 
     private string? GetUserAgent() =>
         httpContextAccessor.HttpContext?.Request.Headers.UserAgent.ToString();
+
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginTransactionIfSupportedAsync(
+        CancellationToken ct)
+    {
+        return db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true
+            ? null
+            : await db.Database.BeginTransactionAsync(ct);
+    }
 }

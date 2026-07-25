@@ -10,7 +10,7 @@ using PoolHub.Shared.Extensions;
 namespace PoolHub.API.Controllers;
 
 [ApiController, Route("api/payments")]
-[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Cashier, Policy = PermissionConstants.PaymentsManage)]
+[Authorize(Roles = RoleConstants.Admin + "," + RoleConstants.Manager + "," + RoleConstants.Staff, Policy = PermissionConstants.PaymentsManage)]
 public class PaymentsController(IAdminManagementService admin, IInvoiceService invoices) : ControllerBase
 {
     [HttpGet] public async Task<ActionResult<ApiResponse<object>>> Get([FromQuery] PaymentQueryRequest request, CancellationToken ct) => Ok(ApiResponse<object>.Ok(await admin.GetPaymentsAsync(request, ct)));

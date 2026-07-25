@@ -45,6 +45,7 @@ public class RedisRefreshTokenStore(
 
         await SaveRecordAsync(record, cancellationToken);
         await AddSessionToFamilyAsync(record.FamilyId, record.SessionId, expiresAtUtc, cancellationToken);
+        await AddSessionToUserAsync(record.UserId, record.SessionId, expiresAtUtc, cancellationToken);
         return new RefreshTokenIssueResult { PlainValue = plainValue, Record = record };
     }
 
@@ -128,6 +129,24 @@ public class RedisRefreshTokenStore(
         }
     }
 
+    public async Task RevokeUserAsync(
+        long userId,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var sessionIds = await GetUserSessionsAsync(userId, cancellationToken);
+        foreach (var sessionId in sessionIds)
+        {
+            var record = await GetRecordAsync(sessionId, cancellationToken);
+            if (record is null || record.RevokedAtUtc is not null)
+                continue;
+
+            record.RevokedAtUtc = _clock.UtcNow;
+            record.RevokedByIp = ipAddress;
+            await SaveRecordAsync(record, cancellationToken);
+        }
+    }
+
     private async Task SaveRecordAsync(RefreshTokenRecord record, CancellationToken cancellationToken)
     {
         var ttl = record.ExpiresAtUtc - _clock.UtcNow;
@@ -170,9 +189,38 @@ public class RedisRefreshTokenStore(
             cancellationToken);
     }
 
+    private async Task AddSessionToUserAsync(
+        long userId,
+        string sessionId,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var sessionIds = await GetUserSessionsAsync(userId, cancellationToken);
+        if (!sessionIds.Contains(sessionId, StringComparer.Ordinal))
+            sessionIds.Add(sessionId);
+
+        var ttl = expiresAtUtc - _clock.UtcNow;
+        if (ttl <= TimeSpan.Zero)
+            return;
+
+        await cache.SetStringAsync(
+            BuildUserSessionsKey(userId),
+            JsonSerializer.Serialize(sessionIds, JsonOptions),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl },
+            cancellationToken);
+    }
+
     private async Task<List<string>> GetFamilySessionsAsync(string familyId, CancellationToken cancellationToken)
     {
         var json = await cache.GetStringAsync(BuildFamilyKey(familyId), cancellationToken);
+        return string.IsNullOrWhiteSpace(json)
+            ? []
+            : JsonSerializer.Deserialize<List<string>>(json, JsonOptions) ?? [];
+    }
+
+    private async Task<List<string>> GetUserSessionsAsync(long userId, CancellationToken cancellationToken)
+    {
+        var json = await cache.GetStringAsync(BuildUserSessionsKey(userId), cancellationToken);
         return string.IsNullOrWhiteSpace(json)
             ? []
             : JsonSerializer.Deserialize<List<string>>(json, JsonOptions) ?? [];
@@ -206,4 +254,7 @@ public class RedisRefreshTokenStore(
 
     private static string BuildFamilyKey(string familyId) =>
         $"poolhub:auth:refresh-token-family:{familyId}";
+
+    private static string BuildUserSessionsKey(long userId) =>
+        $"poolhub:auth:refresh-token-user:{userId}";
 }

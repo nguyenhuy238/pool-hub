@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { customerApi, invoiceApi, sessionApi, productApi, discountApi } from "@/lib/api/endpoints";
 import { getTotalPages, API_BASE_URL } from "@/lib/api/client";
@@ -9,9 +9,13 @@ import { money, dateTime } from "@/lib/status";
 import { formatDateTimeLocal } from "@/lib/dateTime";
 import { parseBankTransferConfig } from "@/lib/paymentQr";
 import { PaymentQrCard } from "@/components/payments/PaymentQrCard";
+import { DepositRefundSummaryPanel } from "@/components/refunds/DepositRefundSummaryPanel";
 import { ConfirmDialog, DataTable, ListControls, PageHeader, StateBlock, useList, useLoad, Modal, Pagination, SearchableSelect } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { openInvoiceDisplay } from "@/lib/invoiceDisplay";
 import type { Invoice, PaymentMethod, Product, ReviewInvitationLink, Session, Discount } from "@/types";
+
+const EDIT_PRODUCT_PAGE_SIZE = 6;
 
 export default function InvoicesPage() {
   const toast = useToast();
@@ -34,6 +38,8 @@ export default function InvoicesPage() {
   const [loadingDiscounts, setLoadingDiscounts] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editProducts, setEditProducts] = useState<{ productId: number; name: string; quantity: number; unitPrice: number }[]>([]);
+  const [editProductSearch, setEditProductSearch] = useState("");
+  const [editProductPage, setEditProductPage] = useState(1);
   const [allProductsList, setAllProductsList] = useState<Product[]>([]);
   const [selectedAddProductId, setSelectedAddProductId] = useState("");
   const [addQty, setAddQty] = useState(1);
@@ -41,10 +47,16 @@ export default function InvoicesPage() {
   const [loyaltyPhone, setLoyaltyPhone] = useState("");
   const [loyaltyName, setLoyaltyName] = useState("");
   const [updatingCustomer, setUpdatingCustomer] = useState(false);
-  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "" });
+  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "", status: "" });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods, sessions, allInvoices] = await Promise.all([
-      invoiceApi.list({ Search: params.search, PageNumber: params.pageNumber, PageSize: params.pageSize, PaymentStatus: params.paymentStatus ? Number(params.paymentStatus) : undefined }),
+      invoiceApi.list({
+        Search: params.search,
+        PageNumber: params.pageNumber,
+        PageSize: params.pageSize,
+        PaymentStatus: params.paymentStatus ? Number(params.paymentStatus) : undefined,
+        Status: params.status ? Number(params.status) : undefined
+      }),
       invoiceApi.paymentMethods(),
       sessionApi.list({ PageSize: 100 }),
       invoiceApi.list({ PageSize: 1000 })
@@ -55,6 +67,21 @@ export default function InvoicesPage() {
   const methods = (data?.methods || []) as PaymentMethod[];
   const sessions = useList<Session>(data?.sessions);
   const allInvoices = useList<Invoice>(data?.allInvoices);
+  const filteredEditProducts = useMemo(() => {
+    const keyword = editProductSearch.trim().toLocaleLowerCase("vi");
+    if (!keyword) return editProducts;
+    return editProducts.filter((product) =>
+      product.name.toLocaleLowerCase("vi").includes(keyword) ||
+      String(product.productId).includes(keyword)
+    );
+  }, [editProductSearch, editProducts]);
+  const editProductTotalPages = Math.max(1, Math.ceil(filteredEditProducts.length / EDIT_PRODUCT_PAGE_SIZE));
+  const visibleEditProducts = filteredEditProducts.slice(
+    (editProductPage - 1) * EDIT_PRODUCT_PAGE_SIZE,
+    editProductPage * EDIT_PRODUCT_PAGE_SIZE
+  );
+  const editProductTotalQuantity = editProducts.reduce((total, product) => total + product.quantity, 0);
+  const editProductTotalAmount = editProducts.reduce((total, product) => total + product.quantity * product.unitPrice, 0);
 
   const paidSessionIds = new Set(
     allInvoices
@@ -261,6 +288,10 @@ export default function InvoicesPage() {
     }
   }, [editModalOpen, toast]);
 
+  useEffect(() => {
+    setEditProductPage((current) => Math.min(current, editProductTotalPages));
+  }, [editProductTotalPages]);
+
   const updateEditQty = (productId: number, qty: number) => {
     if (qty < 0) qty = 0;
 
@@ -348,14 +379,25 @@ export default function InvoicesPage() {
         pageSize={params.pageSize}
         onChange={(next) => setParams((prev) => ({ ...prev, ...next }))}
         extra={
-          <label>
-            <span>Trạng thái</span>
-            <select value={params.paymentStatus} onChange={(e) => setParams((prev) => ({ ...prev, paymentStatus: e.target.value, pageNumber: 1 }))}>
-              <option value="">Tất cả</option>
-              <option value="1">Chưa thanh toán</option>
-              <option value="2">Đã thanh toán</option>
-            </select>
-          </label>
+          <>
+            <label>
+              <span>Trạng thái thanh toán</span>
+              <select value={params.paymentStatus} onChange={(e) => setParams((prev) => ({ ...prev, paymentStatus: e.target.value, pageNumber: 1 }))}>
+                <option value="">Tất cả</option>
+                <option value="1">Chưa thanh toán</option>
+                <option value="3">Đã thanh toán</option>
+              </select>
+            </label>
+            <label>
+              <span>Trạng thái hóa đơn</span>
+              <select value={params.status} onChange={(e) => setParams((prev) => ({ ...prev, status: e.target.value, pageNumber: 1 }))}>
+                <option value="">Tất cả</option>
+                <option value="1">Nháp</option>
+                <option value="2">Đã phát hành</option>
+                <option value="3">Đã hủy</option>
+              </select>
+            </label>
+          </>
         }
       />
       <form className="card" style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end", marginBottom: "18px" }} onSubmit={async (e) => {
@@ -401,9 +443,23 @@ export default function InvoicesPage() {
           { key: "invoiceCode", label: "Mã" },
           { key: "sessionId", label: "Phiên chơi" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
-          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3 ? <span className="badge green">Đã thanh toán</span> : <span className="badge yellow">Chưa thanh toán</span> }
+          { key: "status", label: "Trạng thái hóa đơn", render: (row) => Number(row.status) === 3
+            ? <span className="badge red">Đã hủy</span>
+            : Number(row.status) === 2
+              ? <span className="badge green">Đã phát hành</span>
+              : <span className="badge blue">Nháp</span> },
+          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.status) === 3
+            ? <span className="badge neutral">Không áp dụng</span>
+            : Number(row.paymentStatus) === 3
+              ? <span className="badge green">Đã thanh toán</span>
+              : <span className="badge yellow">Chưa thanh toán</span> }
         ]}
-        actions={(row) => <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>}
+        actions={(row) => (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="ghost-btn" onClick={() => loadDetail(Number(row.invoiceId)).catch((err) => toast(err.message, "error"))}>Chi tiết</button>
+            <button className="secondary-btn" onClick={() => openInvoiceDisplay(Number(row.invoiceId))}>Mở màn hình khách</button>
+          </div>
+        )}
       />
       <Pagination
         pageNumber={params.pageNumber}
@@ -416,7 +472,11 @@ export default function InvoicesPage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`}</span>
-                {Number(invoice.paymentStatus) === 3 ? <span className="badge green" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN</span> : Number(invoice.status) === 3 ? <span className="badge red" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ HỦY</span> : <span className="badge yellow" style={{ fontSize: '13px', padding: '4px 10px' }}>CHƯA THANH TOÁN</span>}
+              {Number(invoice.paymentStatus) === 3
+                ? <span className="badge green" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN</span>
+                : Number(invoice.status) === 3
+                  ? <span className="badge red" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ HỦY</span>
+                  : <span className="badge yellow" style={{ fontSize: '13px', padding: '4px 10px' }}>CHƯA THANH TOÁN</span>}
               </div>
               <p style={{ fontSize: '13px', color: 'var(--muted)', margin: 0 }}>Mã phiên chơi: #{invoice.sessionId}</p>
             </div>
@@ -435,6 +495,8 @@ export default function InvoicesPage() {
                         unitPrice: Number(l.unitPrice)
                       }));
                     setEditProducts(initialProducts);
+                    setEditProductSearch("");
+                    setEditProductPage(1);
                     setEditModalOpen(true);
                   }}
                 >
@@ -482,6 +544,9 @@ export default function InvoicesPage() {
                   printWindow.document.close();
                 }
               }}>🖨️ In bill chi tiết</button>
+              <button className="secondary-btn" type="button" onClick={() => openInvoiceDisplay(invoice.invoiceId)}>
+                Mở màn hình khách
+              </button>
             </div>
           </div>
 
@@ -557,12 +622,7 @@ export default function InvoicesPage() {
               <span>Đã đặt cọc:</span>
               <span style={{ fontWeight: 600, color: '#0f766e' }}>{money(invoice.depositAppliedAmount || 0)}</span>
             </div>
-            {(invoice.depositRefundAmount || 0) > 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
-                <span>Hoàn lại do cọc dư:</span>
-                <span style={{ fontWeight: 600, color: '#7c3aed' }}>{money(invoice.depositRefundAmount || 0)}</span>
-              </div>
-            ) : null}
+            <DepositRefundSummaryPanel summary={invoice.depositRefundSummary} variant="bill" />
             <div style={{ borderTop: '1px dashed var(--line)', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '16px', fontWeight: 'bold' }}>TỔNG THANH TOÁN:</span>
               <span style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--brand)' }}>{money(invoice.grandTotalAmount || 0)}</span>
@@ -901,53 +961,95 @@ export default function InvoicesPage() {
                   />
                 </div>
                 <button className="primary-btn" type="button" style={{ height: '38px' }} onClick={addProductToEdit}>
-                  Thêm vào list
+                  Thêm món
                 </button>
               </div>
             </div>
 
-            <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--line)', borderRadius: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                <thead style={{ background: 'var(--soft)', borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
-                  <tr>
-                    <th style={{ padding: '10px 14px' }}>Tên sản phẩm</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Đơn giá</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Số lượng</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Thành tiền</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Hành động</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {editProducts.length > 0 ? editProducts.map((p) => (
-                    <tr key={p.productId} style={{ borderBottom: '1px solid var(--line)' }}>
-                      <td style={{ padding: '10px 14px', fontWeight: 500 }}>{p.name}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>{money(p.unitPrice)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                          <button className="ghost-btn compact" type="button" style={{ padding: '2px 8px', fontSize: '14px', minWidth: '24px' }} onClick={() => updateEditQty(p.productId, p.quantity - 1)}>-</button>
-                          <input
-                            type="number"
-                            min={1}
-                            style={{ width: '60px', textAlign: 'center', padding: '2px 4px', border: '1px solid var(--line)', borderRadius: '4px' }}
-                            value={p.quantity}
-                            onChange={(e) => updateEditQty(p.productId, Math.max(1, Number(e.target.value)))}
-                          />
-                          <button className="ghost-btn compact" type="button" style={{ padding: '2px 8px', fontSize: '14px', minWidth: '24px' }} onClick={() => updateEditQty(p.productId, p.quantity + 1)}>+</button>
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>{money(p.quantity * p.unitPrice)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <button className="ghost-btn" type="button" style={{ color: 'var(--danger)', padding: '2px 8px' }} onClick={() => removeProductFromEdit(p.productId)}>🗑️ Xóa</button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)' }}>Không có sản phẩm nào. Vui lòng thêm sản phẩm bên dưới.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <section className="invoice-editor-list" aria-label="Danh sách món trong hóa đơn">
+              <header className="invoice-editor-toolbar">
+                <div>
+                  <div className="invoice-editor-title">
+                    <h5>Danh sách món</h5>
+                    <span className="badge blue">{editProducts.length} sản phẩm</span>
+                  </div>
+                  <p>{editProductTotalQuantity} món · {money(editProductTotalAmount)}</p>
+                </div>
+                <label className="invoice-editor-search">
+                  <span>Tìm trong danh sách</span>
+                  <input
+                    type="search"
+                    placeholder="Tên hoặc ID sản phẩm"
+                    value={editProductSearch}
+                    onChange={(event) => {
+                      setEditProductSearch(event.target.value);
+                      setEditProductPage(1);
+                    }}
+                  />
+                </label>
+              </header>
+
+              <div className="invoice-editor-items">
+                {visibleEditProducts.length ? visibleEditProducts.map((product) => (
+                  <article className="invoice-editor-item" key={product.productId}>
+                    <div className="invoice-editor-product">
+                      <small>ID #{product.productId}</small>
+                      <strong>{product.name}</strong>
+                      <span>{money(product.unitPrice)} / món</span>
+                    </div>
+                    <div className="invoice-editor-quantity">
+                      <button
+                        className="ghost-btn compact"
+                        type="button"
+                        aria-label={`Giảm số lượng ${product.name}`}
+                        onClick={() => updateEditQty(product.productId, product.quantity - 1)}
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        aria-label={`Số lượng ${product.name}`}
+                        value={product.quantity}
+                        onChange={(event) => updateEditQty(product.productId, Math.max(1, Number(event.target.value)))}
+                      />
+                      <button
+                        className="ghost-btn compact"
+                        type="button"
+                        aria-label={`Tăng số lượng ${product.name}`}
+                        onClick={() => updateEditQty(product.productId, product.quantity + 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="invoice-editor-line-total">
+                      <small>Thành tiền</small>
+                      <strong>{money(product.quantity * product.unitPrice)}</strong>
+                    </div>
+                    <button
+                      className="ghost-btn invoice-editor-remove"
+                      type="button"
+                      aria-label={`Xóa ${product.name}`}
+                      onClick={() => removeProductFromEdit(product.productId)}
+                    >
+                      🗑️ Xóa
+                    </button>
+                  </article>
+                )) : (
+                  <div className="invoice-editor-empty">
+                    {editProducts.length ? "Không tìm thấy món phù hợp." : "Chưa có món nào trong hóa đơn."}
+                  </div>
+                )}
+              </div>
+
+              {editProductTotalPages > 1 ? (
+                <nav className="invoice-editor-pagination" aria-label="Phân trang danh sách món">
+                  <button className="ghost-btn compact" type="button" disabled={editProductPage <= 1} onClick={() => setEditProductPage((page) => page - 1)}>Trước</button>
+                  <span>Trang {editProductPage}/{editProductTotalPages}</span>
+                  <button className="ghost-btn compact" type="button" disabled={editProductPage >= editProductTotalPages} onClick={() => setEditProductPage((page) => page + 1)}>Sau</button>
+                </nav>
+              ) : null}
+            </section>
 
             <div className="modal-actions" style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button className="ghost-btn" onClick={() => setEditModalOpen(false)}>Hủy</button>

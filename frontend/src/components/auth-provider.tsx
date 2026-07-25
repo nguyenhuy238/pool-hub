@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { landingPathFor } from "@/lib/auth/constants";
+import { isInternalPath } from "@/lib/auth/routes";
 import { authService } from "@/services/auth-service";
 import type { AuthUser, RegisterRequest, RoleName } from "@/types";
 
@@ -11,7 +12,7 @@ type AuthContextValue = {
   roles: RoleName[];
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<AuthUser>;
+  login: (email: string, password: string, portal?: "customer" | "admin") => Promise<AuthUser>;
   register: (payload: RegisterRequest) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
@@ -54,7 +55,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleInvalidAuth = () => {
       clearAuth();
-      router.replace("/login");
+      const currentPath = window.location.pathname;
+      if (isInternalPath(currentPath)) {
+        router.replace("/admin/login");
+      } else if (currentPath.startsWith("/customer")) {
+        router.replace("/?login=customer");
+      }
     };
     window.addEventListener("poolhub:auth-invalid", handleInvalidAuth);
     return () => window.removeEventListener("poolhub:auth-invalid", handleInvalidAuth);
@@ -73,11 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return currentUser;
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const currentUser = await establishSession(await authService.login({ email, password }));
-    router.replace(landingPathFor(currentUser.roles));
+  const login = useCallback(async (email: string, password: string, portal: "customer" | "admin" = "customer") => {
+    const currentUser = await establishSession(await authService.login({ email, password }, portal));
     return currentUser;
-  }, [establishSession, router]);
+  }, [establishSession]);
 
   const register = useCallback(async (payload: RegisterRequest) => {
     const currentUser = await establishSession(await authService.register(payload));
@@ -88,7 +93,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await authService.logout().catch(() => undefined);
     clearAuth();
-    router.replace("/login");
+    const currentPath = typeof window === "undefined" ? "/" : window.location.pathname;
+    router.replace(isInternalPath(currentPath) ? "/admin/login" : "/");
   }, [clearAuth, router]);
 
   const refreshToken = useCallback(async () => {
