@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using PoolHub.Core.DTOs.Invoice;
+using PoolHub.Core.DTOs.Session;
 using PoolHub.Core.Entities;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Infrastructure.Data;
@@ -28,10 +29,18 @@ public class InvoiceService(
     IPosNotificationService? posNotificationService = null,
     ICustomerReviewService? customerReviewService = null,
     IClock? clock = null,
-    IBookingDepositRefundService? refundService = null) : IInvoiceService
+    IBookingDepositRefundService? refundService = null,
+    ISessionService? sessionService = null) : IInvoiceService
 {
     private readonly IClock _clock = clock ?? SystemClock.Instance;
     private IBookingDepositRefundService RefundService => refundService ?? new PoolHub.Services.Booking.BookingDepositRefundService(db, null, _clock);
+    private ISessionService SessionLifecycleService => sessionService
+        ?? new PoolHub.Services.Session.SessionService(
+            db,
+            posNotificationService ?? new NoOpPosNotificationService(),
+            config,
+            _clock,
+            refundService);
 
     public async Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQueryRequest request, CancellationToken ct)
     {
@@ -91,17 +100,27 @@ public class InvoiceService(
 
     public async Task<InvoiceDto> GenerateFromSessionAsync(long sessionId, long? issuedByUserId, CancellationToken ct)
     {
-        var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.Status != 3, ct);
-        if (exists is not null) 
-        {
-            return await MapInvoiceDtoAsync(exists, ct);
-        }
-
         var session = await db.Sessions.FindAsync([sessionId], ct) ?? throw new NotFoundException("Session not found.");
-        
+
         if (session.Status == 1)
         {
-            throw new ConflictException("Cannot generate invoice while the session is still active. Release all active tables first.");
+            await SessionLifecycleService.CloseWithSummaryAsync(
+                sessionId,
+                issuedByUserId,
+                new CloseSessionRequest { GenerateInvoice = true },
+                ct);
+
+            var generatedInvoice = await db.Invoices
+                .FirstOrDefaultAsync(x => x.SessionId == sessionId && x.Status != 3, ct)
+                ?? throw new ConflictException("Session was closed but its invoice could not be generated.");
+
+            return await MapInvoiceDtoAsync(generatedInvoice, ct);
+        }
+
+        var exists = await db.Invoices.FirstOrDefaultAsync(x => x.SessionId == sessionId && x.Status != 3, ct);
+        if (exists is not null)
+        {
+            return await MapInvoiceDtoAsync(exists, ct);
         }
 
         var hasActiveAssignments = await db.SessionTableAssignments.AnyAsync(x => x.SessionId == sessionId && x.EndedAtUtc == null, ct);

@@ -7,13 +7,9 @@ import { paymentsApi } from "@/lib/api/endpoints";
 import { openInvoiceDisplay } from "@/lib/invoiceDisplay";
 import { money, paymentStatus } from "@/lib/status";
 import { formatVietnamDateTimeWithSeconds } from "@/lib/dateTime";
-import { useToast } from "@/components/toast";
 
 export default function PaymentHistoryPage() {
-  const toast = useToast();
   const [query, setQuery] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "" });
-  const [refundPaymentId, setRefundPaymentId] = useState<number | null>(null);
-  const [refundReason, setRefundReason] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<Record<string, any> | null>(null);
   const payments = useLoad(() => paymentsApi.list({ PageNumber: query.pageNumber, PageSize: query.pageSize, PaymentStatus: query.paymentStatus ? Number(query.paymentStatus) : undefined }), [query]);
   const rows = useList(payments.data);
@@ -49,9 +45,6 @@ export default function PaymentHistoryPage() {
     ]} actions={row => (
       <div style={{ display: "flex", gap: "8px" }}>
         <button className="ghost-btn" onClick={() => setSelectedPayment(row)}>Xem chi tiết</button>
-        {Number(row.paymentStatus) === 2 ? (
-          <button className="danger-btn ghost-btn" onClick={() => setRefundPaymentId(Number(row.paymentId))}>Hoàn tiền</button>
-        ) : null}
       </div>
     )} />
     <Pagination pageNumber={query.pageNumber} totalPages={getTotalPages(payments.data, query.pageSize)} onChange={(pageNumber) => setQuery({ ...query, pageNumber })} />
@@ -97,25 +90,5 @@ export default function PaymentHistoryPage() {
       </Modal>
     ) : null}
 
-    {refundPaymentId ? <Modal title="Hoàn tiền giao dịch" onClose={() => setRefundPaymentId(null)}>
-      <div className="form-stack">
-        <label><span>Lý do hoàn tiền</span><textarea rows={4} value={refundReason} onChange={(event) => setRefundReason(event.target.value)} /></label>
-        <div className="modal-actions">
-          <button className="ghost-btn" onClick={() => setRefundPaymentId(null)}>Hủy</button>
-          <button className="danger-btn" onClick={async () => {
-            if (!refundReason.trim()) return toast("Vui lòng nhập lý do hoàn tiền.", "error");
-            try {
-              await paymentsApi.refund(refundPaymentId, refundReason.trim());
-              toast("Đã hoàn tiền thành công.", "success");
-              setRefundPaymentId(null);
-              setRefundReason("");
-              payments.reload();
-            } catch (err) {
-              toast(err instanceof Error ? err.message : "Không thể hoàn tiền.", "error");
-            }
-          }}>Xác nhận hoàn tiền</button>
-        </div>
-      </div>
-    </Modal> : null}
   </>;
 }

@@ -47,10 +47,16 @@ export default function InvoicesPage() {
   const [loyaltyPhone, setLoyaltyPhone] = useState("");
   const [loyaltyName, setLoyaltyName] = useState("");
   const [updatingCustomer, setUpdatingCustomer] = useState(false);
-  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "" });
+  const [params, setParams] = useState({ search: "", pageNumber: 1, pageSize: 20, paymentStatus: "", status: "" });
   const { data, loading, error, reload } = useLoad(async () => {
     const [invoices, methods, sessions, allInvoices] = await Promise.all([
-      invoiceApi.list({ Search: params.search, PageNumber: params.pageNumber, PageSize: params.pageSize, PaymentStatus: params.paymentStatus ? Number(params.paymentStatus) : undefined }),
+      invoiceApi.list({
+        Search: params.search,
+        PageNumber: params.pageNumber,
+        PageSize: params.pageSize,
+        PaymentStatus: params.paymentStatus ? Number(params.paymentStatus) : undefined,
+        Status: params.status ? Number(params.status) : undefined
+      }),
       invoiceApi.paymentMethods(),
       sessionApi.list({ PageSize: 100 }),
       invoiceApi.list({ PageSize: 1000 })
@@ -373,14 +379,25 @@ export default function InvoicesPage() {
         pageSize={params.pageSize}
         onChange={(next) => setParams((prev) => ({ ...prev, ...next }))}
         extra={
-          <label>
-            <span>Trạng thái</span>
-            <select value={params.paymentStatus} onChange={(e) => setParams((prev) => ({ ...prev, paymentStatus: e.target.value, pageNumber: 1 }))}>
-              <option value="">Tất cả</option>
-              <option value="1">Chưa thanh toán</option>
-            <option value="2">Đã thanh toán một phần</option>
-            </select>
-          </label>
+          <>
+            <label>
+              <span>Trạng thái thanh toán</span>
+              <select value={params.paymentStatus} onChange={(e) => setParams((prev) => ({ ...prev, paymentStatus: e.target.value, pageNumber: 1 }))}>
+                <option value="">Tất cả</option>
+                <option value="1">Chưa thanh toán</option>
+                <option value="3">Đã thanh toán</option>
+              </select>
+            </label>
+            <label>
+              <span>Trạng thái hóa đơn</span>
+              <select value={params.status} onChange={(e) => setParams((prev) => ({ ...prev, status: e.target.value, pageNumber: 1 }))}>
+                <option value="">Tất cả</option>
+                <option value="1">Nháp</option>
+                <option value="2">Đã phát hành</option>
+                <option value="3">Đã hủy</option>
+              </select>
+            </label>
+          </>
         }
       />
       <form className="card" style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end", marginBottom: "18px" }} onSubmit={async (e) => {
@@ -426,10 +443,15 @@ export default function InvoicesPage() {
           { key: "invoiceCode", label: "Mã" },
           { key: "sessionId", label: "Phiên chơi" },
           { key: "grandTotalAmount", label: "Tổng tiền", render: (row) => <strong>{money(Number(row.grandTotalAmount || 0))}</strong> },
-          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.paymentStatus) === 3
-            ? <span className="badge green">Đã thanh toán</span>
-            : Number(row.paymentStatus) === 2
-              ? <span className="badge blue">Đã thanh toán một phần</span>
+          { key: "status", label: "Trạng thái hóa đơn", render: (row) => Number(row.status) === 3
+            ? <span className="badge red">Đã hủy</span>
+            : Number(row.status) === 2
+              ? <span className="badge green">Đã phát hành</span>
+              : <span className="badge blue">Nháp</span> },
+          { key: "paymentStatus", label: "Trạng thái thanh toán", render: (row) => Number(row.status) === 3
+            ? <span className="badge neutral">Không áp dụng</span>
+            : Number(row.paymentStatus) === 3
+              ? <span className="badge green">Đã thanh toán</span>
               : <span className="badge yellow">Chưa thanh toán</span> }
         ]}
         actions={(row) => (
@@ -454,9 +476,7 @@ export default function InvoicesPage() {
                 ? <span className="badge green" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN</span>
                 : Number(invoice.status) === 3
                   ? <span className="badge red" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ HỦY</span>
-                  : Number(invoice.paymentStatus) === 2
-                    ? <span className="badge blue" style={{ fontSize: '13px', padding: '4px 10px' }}>ĐÃ THANH TOÁN MỘT PHẦN</span>
-                    : <span className="badge yellow" style={{ fontSize: '13px', padding: '4px 10px' }}>CHƯA THANH TOÁN</span>}
+                  : <span className="badge yellow" style={{ fontSize: '13px', padding: '4px 10px' }}>CHƯA THANH TOÁN</span>}
               </div>
               <p style={{ fontSize: '13px', color: 'var(--muted)', margin: 0 }}>Mã phiên chơi: #{invoice.sessionId}</p>
             </div>

@@ -10,7 +10,7 @@ type InvoiceWithIssuedAt = Invoice & { issuedAtUtc?: string };
 
 const invoicePaymentStatus: Record<number, string> = {
   1: "Chưa thanh toán",
-  2: "Thanh toán một phần",
+  2: "Chưa thanh toán",
   3: "Đã thanh toán"
 };
 

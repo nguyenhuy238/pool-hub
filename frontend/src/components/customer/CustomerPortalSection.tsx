@@ -24,7 +24,7 @@ const pageSize = 10;
 const loadPageSize = 100;
 const invoicePaymentStatus: Record<number, string> = {
   1: "Chưa thanh toán",
-  2: "Đã thanh toán một phần",
+  2: "Chưa thanh toán",
   3: "Đã thanh toán"
 };
 
@@ -203,7 +203,11 @@ function filterRows(section: CustomerPortalSection, rows: unknown[], search: str
     if (keyword && !haystack.includes(keyword)) return false;
     if (filter === "all") return true;
     if (section === "bookings" || section === "sessions") return String(row.status) === filter;
-    if (section === "invoices") return String(row.paymentStatus) === filter;
+    if (section === "invoices") {
+      if (filter === "cancelled") return Number(row.status) === 3;
+      if (filter === "unpaid") return Number(row.status) !== 3 && Number(row.paymentStatus) !== 3;
+      if (filter === "paid") return Number(row.status) !== 3 && Number(row.paymentStatus) === 3;
+    }
     if (section === "vouchers") return filter === "active" ? row.isActive === true : row.isActive === false;
     if (section === "points") return String(row.transactionType).toUpperCase() === filter;
     return true;
@@ -219,7 +223,7 @@ function CustomerTableFilters({ section, search, filter, onSearch, onFilter }: {
 }) {
   const options = section === "bookings" ? Object.entries(bookingStatus)
     : section === "sessions" ? Object.entries(sessionStatus)
-      : section === "invoices" ? Object.entries(invoicePaymentStatus)
+      : section === "invoices" ? [["unpaid", "Chưa thanh toán"], ["paid", "Đã thanh toán"], ["cancelled", "Đã hủy"]]
         : section === "vouchers" ? [["active", "Có thể dùng"], ["inactive", "Đã dùng / hết hạn"]]
           : [["EARN", "Tích điểm"], ["REDEEM", "Đổi voucher"]];
   return (
@@ -323,7 +327,7 @@ function SessionsTable({ rows }: { rows: CustomerSessionHistory[] }) {
   return <TableShell headers={["Mã phiên", "Bắt đầu", "Kết thúc", "Trạng thái"]}>{rows.map((row) => <tr key={row.sessionId}><td><strong>{row.sessionCode}</strong></td><td>{dateTime(row.startedAtUtc)}</td><td>{row.endedAtUtc ? dateTime(row.endedAtUtc) : "Đang diễn ra"}</td><td><Badge tone={row.status === 1 ? "green" : "blue"}>{label(sessionStatus, row.status)}</Badge></td></tr>)}</TableShell>;
 }
 function InvoicesTable({ rows, onOpen }: { rows: CustomerInvoiceHistory[]; onOpen: (id: number) => void }) {
-  return <TableShell headers={["Mã hóa đơn", "Tổng tiền", "Đã trả", "Trạng thái", "Ngày lập", ""]}>{rows.map((row) => <tr key={row.invoiceId}><td><strong>{row.invoiceCode}</strong></td><td>{money(row.grandTotalAmount)}</td><td>{money(row.paidAmount)}</td><td><Badge tone={row.paymentStatus === 3 ? "green" : row.paymentStatus === 2 ? "blue" : "yellow"}>{invoicePaymentStatus[row.paymentStatus] || "Chờ xử lý"}</Badge></td><td>{row.issuedAtUtc ? dateTime(row.issuedAtUtc) : "—"}</td><td><button className="ghost-btn compact" onClick={() => onOpen(row.invoiceId)}>Xem chi tiết</button></td></tr>)}</TableShell>;
+  return <TableShell headers={["Mã hóa đơn", "Tổng tiền", "Đã trả", "Trạng thái", "Ngày lập", ""]}>{rows.map((row) => <tr key={row.invoiceId}><td><strong>{row.invoiceCode}</strong></td><td>{money(row.grandTotalAmount)}</td><td>{money(row.paidAmount)}</td><td><Badge tone={row.status === 3 ? "neutral" : row.paymentStatus === 3 ? "green" : "yellow"}>{row.status === 3 ? "Đã hủy" : invoicePaymentStatus[row.paymentStatus] || "Chờ xử lý"}</Badge></td><td>{row.issuedAtUtc ? dateTime(row.issuedAtUtc) : "—"}</td><td><button className="ghost-btn compact" onClick={() => onOpen(row.invoiceId)}>Xem chi tiết</button></td></tr>)}</TableShell>;
 }
 function VouchersTable({ rows }: { rows: Discount[] }) {
   return <TableShell headers={["Mã voucher", "Tên ưu đãi", "Giá trị", "Hiệu lực đến", "Trạng thái"]}>{rows.map((row) => <tr key={row.discountId}><td><strong>{row.discountCode}</strong></td><td>{row.name}</td><td>{row.discountType === "PERCENTAGE" ? `${row.value}%` : money(row.value)}</td><td>{row.endsAtUtc ? dateTime(row.endsAtUtc) : "Vô thời hạn"}</td><td><Badge tone={row.isActive ? "green" : "red"}>{row.isActive ? "Có thể dùng" : "Đã dùng / hết hạn"}</Badge></td></tr>)}</TableShell>;
@@ -335,7 +339,7 @@ function TableShell({ headers, children }: { headers: string[]; children: React.
 
 function InvoiceModal({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
   return <Modal title={invoice.invoiceCode || `Hóa đơn #${invoice.invoiceId}`} onClose={onClose} size="large"><div className="customer-invoice-detail">
-    <div className="customer-invoice-meta"><span>Trạng thái</span><Badge tone={invoice.paymentStatus === 3 ? "green" : invoice.paymentStatus === 2 ? "blue" : "yellow"}>{invoicePaymentStatus[invoice.paymentStatus || 1] || "Chờ thanh toán"}</Badge><span>Tổng thanh toán</span><strong>{money(invoice.grandTotalAmount)}</strong></div>
+    <div className="customer-invoice-meta"><span>Trạng thái</span><Badge tone={invoice.status === 3 ? "neutral" : invoice.paymentStatus === 3 ? "green" : "yellow"}>{invoice.status === 3 ? "Đã hủy" : invoicePaymentStatus[invoice.paymentStatus || 1] || "Chờ thanh toán"}</Badge><span>Tổng thanh toán</span><strong>{money(invoice.grandTotalAmount)}</strong></div>
     <div className="customer-table-scroll"><table className="customer-table"><thead><tr><th>Diễn giải</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>{(invoice.lines || []).map((line) => { const isTime = String(line.lineType || "").toUpperCase() === "TIME"; return <tr key={line.invoiceLineId}><td>{line.description}</td><td>{isTime ? `${Math.round(line.quantity * 60).toLocaleString("vi-VN")} phút` : line.quantity.toLocaleString("vi-VN")}</td><td>{isTime ? `${money(line.unitPrice)} / giờ` : money(line.unitPrice)}</td><td>{money(line.lineTotalAmount)}</td></tr>; })}</tbody></table></div>
     <DepositRefundSummaryPanel summary={invoice.depositRefundSummary} variant="bill" />
     <div className="customer-invoice-total"><span>Còn phải trả</span><strong>{money(invoice.remainingAmount ?? 0)}</strong></div>

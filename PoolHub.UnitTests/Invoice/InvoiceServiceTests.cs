@@ -5,6 +5,7 @@ using PoolHub.Services.Invoice;
 using PoolHub.Infrastructure.Data;
 using PoolHub.Shared.Constants;
 using PoolHub.Shared.Exceptions;
+using PoolHub.Shared.Time;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -206,6 +207,79 @@ public class InvoiceServiceTests
     }
 
     [Fact]
+    public async Task GenerateFromSessionAsync_WhenSessionIsActive_ClosesSessionAndGeneratesInvoice()
+    {
+        var options = new DbContextOptionsBuilder<PoolHubDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var db = new PoolHubDbContext(options);
+        var startedAt = new DateTime(2026, 6, 8, 10, 0, 0, DateTimeKind.Utc);
+        var endedAt = startedAt.AddMinutes(30);
+
+        db.PricingPlans.Add(new PricingPlan
+        {
+            PricingPlanId = 1,
+            Name = "Default Plan",
+            IsDefault = true,
+            IsActive = true,
+            StartsAtUtc = startedAt.AddDays(-1)
+        });
+        db.PricingPlanRules.Add(new PricingPlanRule
+        {
+            PricingPlanRuleId = 1,
+            PricingPlanId = 1,
+            TableTypeId = 1,
+            DayType = 1,
+            StartTime = TimeSpan.Zero,
+            EndTime = new TimeSpan(23, 59, 59),
+            HourlyRate = 60000,
+            MinimumMinutes = 30,
+            BillingBlockMinutes = 15,
+            IsActive = true
+        });
+        db.VenueTables.Add(new VenueTable
+        {
+            TableId = 1,
+            TableTypeId = 1,
+            TableCode = "T1",
+            TableName = "Table 1",
+            OperationalStatus = TableOperationalStatuses.InUse
+        });
+        db.Sessions.Add(new Session
+        {
+            SessionId = 1,
+            SessionCode = "SS1",
+            Status = 1,
+            StartedAtUtc = startedAt,
+            OpenedByUserId = 99
+        });
+        db.SessionTableAssignments.Add(new SessionTableAssignment
+        {
+            SessionTableAssignmentId = 1,
+            SessionId = 1,
+            TableId = 1,
+            StartedAtUtc = startedAt,
+            HourlyRateSnapshot = 60000
+        });
+        await db.SaveChangesAsync();
+
+        var service = new InvoiceService(db, clock: new FixedClock(endedAt));
+
+        var result = await service.GenerateFromSessionAsync(1, 99, CancellationToken.None);
+
+        var session = await db.Sessions.FindAsync([1L]);
+        var assignment = await db.SessionTableAssignments.FindAsync([1L]);
+        Assert.Equal(2, session!.Status);
+        Assert.Equal(endedAt, session.EndedAtUtc);
+        Assert.Equal(99, session.ClosedByUserId);
+        Assert.Equal(endedAt, assignment!.EndedAtUtc);
+        Assert.Equal(30, assignment.DurationMinutes);
+        Assert.Equal(30000, result.GrandTotalAmount);
+        Assert.Equal(result.InvoiceId, (await db.Invoices.SingleAsync()).InvoiceId);
+    }
+
+    [Fact]
     public async Task CreatePaymentAsync_WhenAmountIsNotPositive_ThrowsValidationException()
     {
         var options = new DbContextOptionsBuilder<PoolHubDbContext>()
@@ -241,5 +315,11 @@ public class InvoiceServiceTests
             service.CreatePaymentAsync(new CreatePaymentRequest { InvoiceId = 1, PaymentMethodId = 1, Amount = 50000 }, 99, CancellationToken.None));
 
         Assert.Equal("Cannot pay a cancelled invoice.", exception.Message);
+    }
+
+    private sealed class FixedClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; } = utcNow;
+        public DateTimeOffset UtcNowOffset => new(UtcNow);
     }
 }
