@@ -10,7 +10,8 @@ const navItems = [
   { href: "/customer/sessions", label: "Lịch sử phiên chơi" },
   { href: "/customer/invoices", label: "Lịch sử hóa đơn" },
   { href: "/customer/vouchers", label: "Voucher của tôi" },
-  { href: "/customer/points", label: "Lịch sử điểm" }
+  { href: "/customer/points", label: "Lịch sử điểm" },
+  { href: "/customer/change-password", label: "Đổi mật khẩu" }
 ];
 
 export function CustomerShell({ children }: { children: React.ReactNode }) {
