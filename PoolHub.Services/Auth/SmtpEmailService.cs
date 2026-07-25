@@ -275,8 +275,19 @@ public class SmtpEmailService(
         var rows = string.Join("", details.Select(x =>
             $"<tr><td style=\"padding:8px 0;color:#718096;width:42%\">{HtmlEncoder.Default.Encode(x.Key)}:</td><td style=\"padding:8px 0;font-weight:700;color:#1a202c\">{HtmlEncoder.Default.Encode(x.Value)}</td></tr>"));
         var encodedMessage = HtmlEncoder.Default.Encode(message);
+        var encodedActionUrl = !string.IsNullOrWhiteSpace(actionUrl)
+            ? HtmlEncoder.Default.Encode(actionUrl)
+            : string.Empty;
         var button = !string.IsNullOrWhiteSpace(actionUrl)
-            ? $"<p style=\"margin:28px 0\"><a href=\"{HtmlEncoder.Default.Encode(actionUrl)}\" style=\"display:inline-block;padding:12px 18px;background:#0f5d4b;color:#fff;text-decoration:none;border-radius:8px;font-weight:700\">{HtmlEncoder.Default.Encode(actionText ?? "Xem chi tiết")}</a></p>"
+            ? $"""
+              <p style='margin:20px 0 10px'>
+                <a href='{encodedActionUrl}' target='_blank' style='display:inline-block;padding:12px 18px;background:#0f5d4b;color:#fff;text-decoration:none;border-radius:8px;font-weight:700'>{HtmlEncoder.Default.Encode(actionText ?? "Mở trang hoàn cọc")}</a>
+              </p>
+              <p style='margin:0 0 20px;color:#60746d;font-size:13px;line-height:1.5'>
+                Nếu nút không mở được, bấm trực tiếp vào liên kết này:<br>
+                <a href='{encodedActionUrl}' target='_blank' style='color:#0f5d4b;word-break:break-all'>{encodedActionUrl}</a>
+              </p>
+              """
             : string.Empty;
         return $$"""
             <!doctype html>
@@ -289,8 +300,8 @@ public class SmtpEmailService(
                       <div style="font-size:22px;font-weight:800;color:#0f5d4b">PoolHub</div>
                       <h1 style="font-size:22px;margin:24px 0 12px">{{HtmlEncoder.Default.Encode(title)}}</h1>
                       <p style="line-height:1.6;color:#60746d">{{encodedMessage}}</p>
-                      <table style="width:100%;border-collapse:collapse;font-size:15px;margin-top:16px">{{rows}}</table>
                       {{button}}
+                      <table style="width:100%;border-collapse:collapse;font-size:15px;margin-top:16px">{{rows}}</table>
                       <hr style="border:0;border-top:1px solid #dce7e2;margin:24px 0">
                       <p style="font-size:12px;color:#60746d">Email này không chứa số tài khoản ngân hàng đầy đủ hoặc mã bảo mật nội bộ.</p>
                     </td></tr>

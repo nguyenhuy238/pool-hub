@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using PoolHub.Core.DTOs.BookingDepositRefund;
 using PoolHub.Core.Interfaces.Services;
 using PoolHub.Shared;
+using PoolHub.Shared.Exceptions;
 
 namespace PoolHub.API.Controllers.Booking;
 
@@ -25,8 +26,17 @@ public class PublicDepositRefundsController(IBookingDepositRefundService service
     }
 
     [HttpPost("{token}/verify")]
-    public async Task<ActionResult<ApiResponse<PublicDepositRefundDto>>> Verify(string token, [FromBody] VerifyDepositRefundRequest request, CancellationToken ct) =>
-        Ok(ApiResponse<PublicDepositRefundDto>.Ok(await service.VerifyCustomerAsync(token, request, ct), "Customer verified."));
+    public async Task<ActionResult<ApiResponse<PublicDepositRefundDto>>> Verify(string token, [FromBody] VerifyDepositRefundRequest request, CancellationToken ct)
+    {
+        try
+        {
+            return Ok(ApiResponse<PublicDepositRefundDto>.Ok(await service.VerifyCustomerAsync(token, request, ct), "Customer verified."));
+        }
+        catch (UnauthorizedException ex)
+        {
+            return Unauthorized(ApiResponse<PublicDepositRefundDto>.Fail(ex.Message, ex.Errors.Count > 0 ? ex.Errors : [ex.Message]));
+        }
+    }
 
     [HttpPost("{token}/submit-method")]
     public async Task<ActionResult<ApiResponse<PublicDepositRefundDto>>> SubmitMethod(string token, [FromBody] SubmitDepositRefundMethodRequest request, CancellationToken ct) =>
